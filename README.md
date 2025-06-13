@@ -13,7 +13,13 @@ uvicorn app.main:app --reload
 
 ## Frontend
 
-The frontend is a minimal React application located in the `frontend` folder. Open `frontend/index.html` in a browser to see the app.
+The frontend was bootstrapped with Create React App and lives in the `frontend` folder. Install dependencies and start the development server with:
+
+```bash
+cd frontend
+npm install
+npm start
+```
 
 ## Tests
 
