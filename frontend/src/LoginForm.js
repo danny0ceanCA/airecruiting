@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import axios from 'axios/dist/node/axios.cjs';
+import axios from "axios";
 import { Link } from 'react-router-dom';
 import './LoginForm.css';
 
