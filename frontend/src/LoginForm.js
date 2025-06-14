@@ -17,7 +17,7 @@ function LoginForm() {
         email,
         password,
       });
-      const token = resp.data.token;
+      const token = resp.data.access_token;
       if (token) {
         localStorage.setItem('token', token);
         console.log('Token:', token);
