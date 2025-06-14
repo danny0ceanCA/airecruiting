@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import axios from 'axios/dist/node/axios.cjs';
+import { Link } from 'react-router-dom';
 import './LoginForm.css';
 
 function LoginForm() {
@@ -44,6 +45,7 @@ function LoginForm() {
           onChange={(e) => setPassword(e.target.value)}
         />
         <button type="submit">Login</button>
+        <Link to="/register" className="register-link">Register</Link>
         {error && <p className="error">{error}</p>}
       </form>
     </div>

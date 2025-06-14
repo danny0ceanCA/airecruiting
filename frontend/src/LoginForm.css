@@ -36,3 +36,10 @@
   margin-top: 1rem;
   color: #ff4136;
 }
+
+.register-link {
+  margin-top: 1rem;
+  color: #61dafb;
+  text-align: center;
+  display: block;
+}
