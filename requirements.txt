@@ -1,2 +1,6 @@
 fastapi
 uvicorn
+bcrypt
+python-jose[cryptography]
+httpx
+pydantic[email]

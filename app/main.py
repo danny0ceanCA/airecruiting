@@ -1,21 +1,43 @@
+from datetime import datetime, timedelta
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, EmailStr
+from jose import jwt
+import bcrypt
+
+JWT_SECRET = "secret"
+ALGORITHM = "HS256"
 
 app = FastAPI()
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # In-memory user storage
-# username -> {"password": str, "is_approved": bool, "is_admin": bool}
-users = {"admin": {"password": "adminpass", "is_approved": True, "is_admin": True}}
+# email -> user dict
+users = {}
 
 
-class Credentials(BaseModel):
-    username: str
+class RegisterRequest(BaseModel):
+    email: EmailStr
+    first_name: str
+    last_name: str
+    school: str
     password: str
 
 
-class AdminApproval(BaseModel):
-    admin_username: str
-    admin_password: str
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class ApproveRequest(BaseModel):
+    email: EmailStr
 
 
 @app.get("/")
@@ -24,38 +46,41 @@ def read_root():
 
 
 @app.post("/register")
-def register(creds: Credentials):
-    if creds.username in users:
+def register(req: RegisterRequest):
+    if req.email in users:
         raise HTTPException(status_code=400, detail="User already exists")
-    users[creds.username] = {
-        "password": creds.password,
-        "is_approved": False,
-        "is_admin": False,
+    hashed = bcrypt.hashpw(req.password.encode(), bcrypt.gensalt())
+    users[req.email] = {
+        "first_name": req.first_name,
+        "last_name": req.last_name,
+        "school": req.school,
+        "password": hashed,
+        "role": "user",
+        "approved": False,
     }
-    return {"message": "User registered successfully, awaiting approval"}
+    return {"message": "Registration submitted. Awaiting admin approval"}
 
 
 @app.post("/login")
-def login(creds: Credentials):
-    user = users.get(creds.username)
-    if not user or user["password"] != creds.password:
+def login(req: LoginRequest):
+    user = users.get(req.email)
+    if not user or not bcrypt.checkpw(req.password.encode(), user["password"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    if not user.get("is_approved"):
+    if not user.get("approved"):
         raise HTTPException(status_code=403, detail="User not approved")
-    return {"token": "dummy-token"}
+    payload = {
+        "sub": req.email,
+        "role": user["role"],
+        "exp": datetime.utcnow() + timedelta(hours=1),
+    }
+    token = jwt.encode(payload, JWT_SECRET, algorithm=ALGORITHM)
+    return {"token": token}
 
 
-@app.post("/admin/approve/{username}")
-def approve_user(username: str, admin: AdminApproval):
-    admin_user = users.get(admin.admin_username)
-    if (
-        not admin_user
-        or not admin_user.get("is_admin")
-        or admin_user["password"] != admin.admin_password
-    ):
-        raise HTTPException(status_code=401, detail="Invalid admin credentials")
-    user = users.get(username)
+@app.post("/approve")
+def approve(req: ApproveRequest):
+    user = users.get(req.email)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    user["is_approved"] = True
-    return {"message": f"{username} approved"}
+    user["approved"] = True
+    return {"message": f"{req.email} approved"}
