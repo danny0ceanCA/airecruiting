@@ -1,8 +1,8 @@
 from datetime import datetime, timedelta
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
-from jose import jwt
+from jose import jwt, JWTError
 import bcrypt
 
 JWT_SECRET = "secret"
@@ -38,6 +38,18 @@ class LoginRequest(BaseModel):
 
 class ApproveRequest(BaseModel):
     email: EmailStr
+
+
+def get_current_user(authorization: str = Header(..., alias="Authorization")):
+    """Decode the JWT token from the Authorization header and return the payload."""
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid authorization header")
+    token = authorization.split(" ", 1)[1]
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM])
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    return payload
 
 
 @app.get("/")
@@ -78,7 +90,9 @@ def login(req: LoginRequest):
 
 
 @app.post("/approve")
-def approve(req: ApproveRequest):
+def approve(req: ApproveRequest, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
     user = users.get(req.email)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
