@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 from jose import jwt
-from app.main import app, JWT_SECRET, ALGORITHM, users
+from app.main import app, JWT_SECRET, ALGORITHM, users, init_default_admin
 
 client = TestClient(app)
 
@@ -11,23 +11,21 @@ def test_read_root():
     assert resp.json() == {"message": "Hello, World"}
 
 
+def test_default_admin_exists():
+    users.clear()
+    init_default_admin()
+    admin = users.get("admin@example.com")
+    assert admin is not None
+    assert admin["role"] == "admin"
+    assert admin["approved"] is True
+
+
 def test_registration_flow():
     users.clear()
-
-    admin_data = {
-        "email": "admin@example.com",
-        "first_name": "Admin",
-        "last_name": "User",
-        "school": "Admin School",
-        "password": "adminpass",
-    }
-
-    # Create admin user and elevate role
-    client.post("/register", json=admin_data)
-    users[admin_data["email"]]["role"] = "admin"
-    users[admin_data["email"]]["approved"] = True
+    init_default_admin()
     admin_login = client.post(
-        "/login", json={"email": admin_data["email"], "password": admin_data["password"]}
+        "/login",
+        json={"email": "admin@example.com", "password": "admin123"},
     )
     admin_token = admin_login.json()["token"]
 
