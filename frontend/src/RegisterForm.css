@@ -1,4 +1,4 @@
-.login-container {
+.register-container {
   background-color: #001f3f;
   height: 100vh;
   display: flex;
@@ -6,7 +6,7 @@
   align-items: center;
 }
 
-.login-form {
+.register-form {
   background-color: #003366;
   padding: 2rem;
   border-radius: 10px;
@@ -16,20 +16,26 @@
   width: 300px;
 }
 
-.login-form input {
+.register-form input {
   margin-bottom: 1rem;
   padding: 0.5rem;
   border-radius: 5px;
   border: none;
+  color: black;
 }
 
-.login-form button {
+.register-form button {
   background-color: #0074d9;
   color: white;
   border: none;
   padding: 0.7rem;
   border-radius: 5px;
   cursor: pointer;
+  margin-top: 0.5rem;
+}
+
+.message {
+  margin-top: 1rem;
 }
 
 .error {
