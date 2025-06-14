@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import './App.css';
 import LoginForm from './LoginForm';
 import RegisterForm from './RegisterForm';
+import Dashboard from './Dashboard'; // ✅ Import the dashboard
 
 function App() {
   return (
@@ -12,6 +13,7 @@ function App() {
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="/login" element={<LoginForm />} />
           <Route path="/register" element={<RegisterForm />} />
+          <Route path="/dashboard" element={<Dashboard />} /> {/* ✅ Add this */}
         </Routes>
       </div>
     </Router>
