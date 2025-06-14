@@ -1,0 +1,30 @@
+.dashboard-container {
+  background-color: #001f3f;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  color: white;
+}
+
+.tile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  width: 80%;
+  max-width: 600px;
+}
+
+.dashboard-tile {
+  background-color: white;
+  color: black;
+  text-decoration: none;
+  padding: 2rem;
+  border-radius: 10px;
+  text-align: center;
+  transition: box-shadow 0.3s, border 0.3s;
+}
+
+.dashboard-tile:hover {
+  box-shadow: 0 0 10px rgba(0, 116, 217, 0.6);
+}
