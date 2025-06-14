@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import axios from "axios";
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import './LoginForm.css';
 
 function LoginForm() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -20,6 +21,7 @@ function LoginForm() {
       if (token) {
         localStorage.setItem('token', token);
         console.log('Token:', token);
+        navigate('/dashboard');
       }
     } catch (err) {
       setError(err.response?.data?.detail || 'Login failed');
