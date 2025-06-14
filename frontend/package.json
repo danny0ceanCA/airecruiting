@@ -1,4 +1,7 @@
 {
+  "name": "frontend",
+  "version": "0.1.0",
+  "private": true,
   "dependencies": {
     "@testing-library/dom": "^10.4.0",
     "@testing-library/jest-dom": "^6.6.3",
@@ -32,16 +35,5 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
-  },
-  "name": "frontend",
-  "version": "1.0.0",
-  "description": "This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).",
-  "main": "index.js",
-  "devDependencies": {
-    "jest": "^27.5.1"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs"
+  }
 }

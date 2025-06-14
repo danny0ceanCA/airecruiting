@@ -1,41 +1,33 @@
 .login-container {
-  background-color: #001f3f; /* dark blue */
-  color: white;
-  min-height: 100vh;
+  background-color: #001f3f;
+  height: 100vh;
   display: flex;
-  align-items: center;
   justify-content: center;
+  align-items: center;
 }
 
 .login-form {
+  background-color: #003366;
+  padding: 2rem;
+  border-radius: 10px;
+  color: white;
   display: flex;
   flex-direction: column;
   width: 300px;
 }
 
-.login-form label {
-  margin-top: 10px;
-  margin-bottom: 5px;
-}
-
 .login-form input {
-  padding: 8px;
+  margin-bottom: 1rem;
+  padding: 0.5rem;
+  border-radius: 5px;
   border: none;
-  border-radius: 4px;
-  background-color: white;
-  color: black;
 }
 
 .login-form button {
-  margin-top: 20px;
-  padding: 10px;
-  border: none;
-  border-radius: 4px;
-  background-color: #0056b3;
+  background-color: #0074d9;
   color: white;
+  border: none;
+  padding: 0.7rem;
+  border-radius: 5px;
   cursor: pointer;
-}
-
-.login-form button:hover {
-  background-color: #003f7f;
 }

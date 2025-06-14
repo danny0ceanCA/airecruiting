@@ -7,7 +7,6 @@ function LoginForm() {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    // Placeholder for login logic
     console.log('Logging in:', { username, password });
   };
 
