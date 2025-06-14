@@ -23,6 +23,23 @@ app.add_middleware(
 users = {}
 
 
+def init_default_admin():
+    """Create the default admin account if it doesn't exist."""
+    if "admin@example.com" not in users:
+        hashed = bcrypt.hashpw("admin123".encode(), bcrypt.gensalt())
+        users["admin@example.com"] = {
+            "first_name": "Admin",
+            "last_name": "User",
+            "school": "Admin School",
+            "password": hashed,
+            "role": "admin",
+            "approved": True,
+        }
+
+
+init_default_admin()
+
+
 class RegisterRequest(BaseModel):
     email: EmailStr
     first_name: str
