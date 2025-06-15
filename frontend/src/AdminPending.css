@@ -1,0 +1,110 @@
+.pending-container {
+  background-color: #001f3f;
+  min-height: 100vh;
+  color: white;
+  padding: 2rem;
+  position: relative;
+}
+
+.pending-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1rem;
+}
+
+.pending-table th,
+.pending-table td {
+  border: 1px solid #ccc;
+  padding: 0.5rem;
+}
+
+.pending-table th {
+  background-color: #003366;
+}
+
+.pending-table td {
+  background-color: white;
+  color: black;
+}
+
+.pending-table button {
+  background-color: #0074d9;
+  color: white;
+  border: none;
+  padding: 0.4rem 0.8rem;
+  border-radius: 5px;
+  cursor: pointer;
+  margin-right: 0.5rem;
+}
+
+.pending-table button.reject-button {
+  background-color: #ff4136;
+  color: white;
+  border-radius: 5px;
+}
+
+.pending-table button.reject-button:hover {
+  background-color: #e61900;
+}
+
+.message {
+  color: #2ecc40;
+}
+
+.error {
+  color: #ff4136;
+}
+
+/* Toast style for approval message */
+.toast {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  background-color: #2ecc40;
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 5px;
+}
+
+.admin-menu {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+}
+
+.menu-button {
+  background-color: #0074d9;
+  color: white;
+  border: none;
+  padding: 0.4rem 0.8rem;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.dropdown-menu {
+  position: absolute;
+  right: 0;
+  margin-top: 0.5rem;
+  background-color: #003366;
+  border-radius: 5px;
+  display: flex;
+  flex-direction: column;
+  min-width: 150px;
+  z-index: 10;
+}
+
+.dropdown-menu a,
+.dropdown-menu button {
+  color: white;
+  text-decoration: none;
+  padding: 0.5rem 1rem;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dropdown-menu a:hover,
+.dropdown-menu button:hover {
+  background-color: #001f3f;
+}

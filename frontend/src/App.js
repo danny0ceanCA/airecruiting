@@ -5,6 +5,7 @@ import LoginForm from './LoginForm';
 import RegisterForm from './RegisterForm';
 import Dashboard from './Dashboard';
 import ProtectedRoute from './ProtectedRoute';
+import AdminPending from './AdminPending';
 
 function App() {
   return (
@@ -19,6 +20,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <Dashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/pending"
+            element={
+              <ProtectedRoute>
+                <AdminPending />
               </ProtectedRoute>
             }
           />
