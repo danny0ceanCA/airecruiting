@@ -4,7 +4,8 @@ import './AdminPending.css';
 
 function AdminPending() {
   const [pendingUsers, setPendingUsers] = useState([]);
-  const [message, setMessage] = useState('');
+  // Temporary toast message shown when a user is approved
+  const [toast, setToast] = useState('');
   const [error, setError] = useState('');
 
   const token = localStorage.getItem('token');
@@ -29,7 +30,7 @@ function AdminPending() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const approve = async (email) => {
-    setMessage('');
+    setToast('');
     setError('');
     try {
       await axios.post(
@@ -37,9 +38,10 @@ function AdminPending() {
         { email },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      setMessage(`${email} approved`);
+      setToast('User approved!');
       // refresh list
       fetchPending();
+      setTimeout(() => setToast(''), 3000);
     } catch (err) {
       console.error('Error approving user:', err);
       setError(err.response?.data?.detail || 'Approval failed');
@@ -53,7 +55,7 @@ function AdminPending() {
   return (
     <div className="pending-container">
       <h2>Pending Registrations</h2>
-      {message && <p className="message">{message}</p>}
+      {toast && <div className="toast">{toast}</div>}
       {error && <p className="error">{error}</p>}
       <table className="pending-table">
         <thead>
