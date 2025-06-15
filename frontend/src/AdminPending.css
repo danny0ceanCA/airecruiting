@@ -42,3 +42,14 @@
 .error {
   color: #ff4136;
 }
+
+/* Toast style for approval message */
+.toast {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  background-color: #2ecc40;
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 5px;
+}
