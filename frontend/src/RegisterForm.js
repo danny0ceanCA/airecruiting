@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import axios from "axios";
+import { Link, useNavigate } from 'react-router-dom';
 import './RegisterForm.css';
 
 function RegisterForm() {
@@ -12,6 +13,7 @@ function RegisterForm() {
   });
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const navigate = useNavigate();
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -28,7 +30,8 @@ function RegisterForm() {
         school: formData.school,
         password: formData.password,
       });
-      setMessage(resp.data.message || 'Registration submitted. Awaiting admin approval');
+      setMessage('Registration submitted. Awaiting admin approval.');
+      setTimeout(() => navigate('/login'), 3000);
     } catch (err) {
       setError(err.response?.data?.detail || 'Registration failed');
     }
@@ -79,6 +82,7 @@ function RegisterForm() {
           onChange={handleChange}
         />
         <button type="submit">Register</button>
+        <Link to="/login" className="login-link">Back to Login</Link>
         {message && <p className="message">{message}</p>}
         {error && <p className="error">{error}</p>}
       </form>
