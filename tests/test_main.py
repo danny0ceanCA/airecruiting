@@ -105,3 +105,62 @@ def test_non_admin_cannot_approve():
     )
     assert resp.status_code == 403
 
+
+def test_pending_users_endpoint():
+    users.clear()
+    init_default_admin()
+
+    admin_login = client.post(
+        "/login",
+        json={"email": "admin@example.com", "password": "admin123"},
+    )
+    admin_token = admin_login.json()["token"]
+
+    u1 = {
+        "email": "pend1@example.com",
+        "first_name": "Pending",
+        "last_name": "One",
+        "school": "PU",
+        "password": "pass1",
+    }
+    u2 = {
+        "email": "pend2@example.com",
+        "first_name": "Pending",
+        "last_name": "Two",
+        "school": "PU",
+        "password": "pass2",
+    }
+    client.post("/register", json=u1)
+    client.post("/register", json=u2)
+
+    resp = client.get(
+        "/pending-users",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert resp.status_code == 200
+    emails = [u["email"] for u in resp.json()]
+    assert u1["email"] in emails and u2["email"] in emails
+
+
+def test_pending_users_forbidden_for_non_admin():
+    users.clear()
+    init_default_admin()
+
+    regular = {
+        "email": "regular@example.com",
+        "first_name": "Reg",
+        "last_name": "User",
+        "school": "RU",
+        "password": "secret",
+    }
+    client.post("/register", json=regular)
+    users[regular["email"]]["approved"] = True
+    login_resp = client.post("/login", json={"email": regular["email"], "password": regular["password"]})
+    token = login_resp.json()["token"]
+
+    resp = client.get(
+        "/pending-users",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 403
+

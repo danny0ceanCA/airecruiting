@@ -115,3 +115,15 @@ def approve(req: ApproveRequest, current_user: dict = Depends(get_current_user))
         raise HTTPException(status_code=404, detail="User not found")
     user["approved"] = True
     return {"message": f"{req.email} approved"}
+
+
+@app.get("/pending-users")
+def pending_users(current_user: dict = Depends(get_current_user)):
+    """Return all users who have not yet been approved."""
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+    return [
+        {"email": email, **{k: v for k, v in info.items() if k != "password"}}
+        for email, info in users.items()
+        if not info.get("approved")
+    ]
