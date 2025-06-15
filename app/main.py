@@ -57,6 +57,10 @@ class ApproveRequest(BaseModel):
     email: EmailStr
 
 
+class RejectRequest(BaseModel):
+    email: EmailStr
+
+
 def get_current_user(authorization: str = Header(..., alias="Authorization")):
     """Decode the JWT token from the Authorization header and return the payload."""
     if not authorization.startswith("Bearer "):
@@ -117,6 +121,17 @@ def approve(req: ApproveRequest, current_user: dict = Depends(get_current_user))
     return {"message": f"{req.email} approved"}
 
 
+@app.post("/reject")
+def reject(req: RejectRequest, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+    user = users.get(req.email)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    user["rejected"] = True
+    return {"message": f"{req.email} rejected"}
+
+
 @app.get("/pending-users")
 def pending_users(current_user: dict = Depends(get_current_user)):
     """Return all users who have not yet been approved."""
@@ -125,5 +140,5 @@ def pending_users(current_user: dict = Depends(get_current_user)):
     return [
         {"email": email, **{k: v for k, v in info.items() if k != "password"}}
         for email, info in users.items()
-        if not info.get("approved")
+        if not info.get("approved") and not info.get("rejected")
     ]

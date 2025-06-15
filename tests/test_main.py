@@ -164,3 +164,70 @@ def test_pending_users_forbidden_for_non_admin():
     )
     assert resp.status_code == 403
 
+
+def test_admin_can_reject_user():
+    users.clear()
+    init_default_admin()
+
+    admin_login = client.post(
+        "/login",
+        json={"email": "admin@example.com", "password": "admin123"},
+    )
+    admin_token = admin_login.json()["token"]
+
+    target = {
+        "email": "rejectme@example.com",
+        "first_name": "Reject",
+        "last_name": "Me",
+        "school": "RMU",
+        "password": "pwd",
+    }
+    client.post("/register", json=target)
+
+    resp = client.post(
+        "/reject",
+        json={"email": target["email"]},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert resp.status_code == 200
+    assert users[target["email"]]["rejected"] is True
+
+    pending = client.get(
+        "/pending-users",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    emails = [u["email"] for u in pending.json()]
+    assert target["email"] not in emails
+
+
+def test_non_admin_cannot_reject():
+    users.clear()
+
+    regular = {
+        "email": "reg@example.com",
+        "first_name": "Reg",
+        "last_name": "User",
+        "school": "RU",
+        "password": "pass",
+    }
+    client.post("/register", json=regular)
+    users[regular["email"]]["approved"] = True
+    login_resp = client.post("/login", json={"email": regular["email"], "password": regular["password"]})
+    token = login_resp.json()["token"]
+
+    target = {
+        "email": "victim@example.com",
+        "first_name": "Vic",
+        "last_name": "Tim",
+        "school": "TU",
+        "password": "secret",
+    }
+    client.post("/register", json=target)
+
+    resp = client.post(
+        "/reject",
+        json={"email": target["email"]},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 403
+
