@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 from jose import jwt
 from app.main import app, JWT_SECRET, ALGORITHM, users, init_default_admin
+import app.main as main_app
 
 client = TestClient(app)
 
@@ -230,4 +231,44 @@ def test_non_admin_cannot_reject():
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 403
+
+
+def test_upload_students(monkeypatch):
+    users.clear()
+    init_default_admin()
+
+    login_resp = client.post("/login", json={"email": "admin@example.com", "password": "admin123"})
+    token = login_resp.json()["token"]
+
+    class FakeResp:
+        def __init__(self):
+            self.data = [type("obj", (), {"embedding": [0.0, 0.1]})]
+
+    def fake_create(input, model):
+        return FakeResp()
+
+    stored = {}
+
+    def fake_set(key, value):
+        stored[key] = value
+
+    class DummyOpenAI:
+        class embeddings:
+            @staticmethod
+            def create(input, model):
+                return FakeResp()
+
+    monkeypatch.setattr(main_app, "openai", DummyOpenAI)
+    monkeypatch.setattr(main_app.redis_client, "set", fake_set)
+
+    csv_data = (
+        "first_name,last_name,email,phone,education_level,skills,experience_summary,interests\n"
+        "John,Doe,john@example.com,123,College,python,summary,coding\n"
+        "Jane,Smith,jane@example.com,456,College,sql,summary2,data\n"
+    )
+    files = {"file": ("students.csv", csv_data, "text/csv")}
+    resp = client.post("/students/upload", files=files, headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200
+    assert resp.json()["count"] == 2
+    assert len(stored) == 2
 
