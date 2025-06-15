@@ -33,6 +33,17 @@
   padding: 0.4rem 0.8rem;
   border-radius: 5px;
   cursor: pointer;
+  margin-right: 0.5rem;
+}
+
+.pending-table button.reject-button {
+  background-color: #ff4136;
+  color: white;
+  border-radius: 5px;
+}
+
+.pending-table button.reject-button:hover {
+  background-color: #e61900;
 }
 
 .message {

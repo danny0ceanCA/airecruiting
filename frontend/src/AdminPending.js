@@ -48,6 +48,24 @@ function AdminPending() {
     }
   };
 
+  const reject = async (email) => {
+    setToast('');
+    setError('');
+    try {
+      await axios.post(
+        'http://localhost:8000/reject',
+        { email },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setToast('User rejected!');
+      fetchPending();
+      setTimeout(() => setToast(''), 3000);
+    } catch (err) {
+      console.error('Error rejecting user:', err);
+      setError(err.response?.data?.detail || 'Rejection failed');
+    }
+  };
+
   if (!token) {
     return <p className="pending-container">Login required.</p>;
   }
@@ -73,7 +91,8 @@ function AdminPending() {
               <td>{user.school}</td>
               <td>{user.role}</td>
               <td>
-                <button onClick={() => approve(user.email)}>Approve</button>
+                <button className="approve-button" onClick={() => approve(user.email)}>Approve</button>
+                <button className="reject-button" onClick={() => reject(user.email)}>Reject</button>
               </td>
             </tr>
           ))}
