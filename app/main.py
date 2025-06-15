@@ -7,6 +7,8 @@ from jose import jwt, JWTError
 import bcrypt
 import openai
 import redis
+import csv
+from fastapi import UploadFile, File
 
 JWT_SECRET = "secret"
 ALGORITHM = "HS256"
@@ -183,3 +185,43 @@ def create_student(
     data["embedding"] = embedding
     redis_client.set(student.email, json.dumps(data))
     return {"message": "Student stored"}
+
+@app.post("/students/upload")
+def upload_students(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user),
+):
+    """Upload and process a CSV of students."""
+    content = file.file.read().decode("utf-8").splitlines()
+    reader = csv.DictReader(content)
+    count = 0
+    for row in reader:
+        try:
+            skills = [s.strip() for s in row.get("skills", "").split(",") if s.strip()]
+            student = StudentRequest(
+                first_name=row["first_name"],
+                last_name=row["last_name"],
+                email=row["email"],
+                phone=row["phone"],
+                education_level=row["education_level"],
+                skills=skills,
+                experience_summary=row["experience_summary"],
+                interests=row["interests"],
+            )
+        except KeyError:
+            continue
+        combined = " ".join([
+            ", ".join(student.skills),
+            student.experience_summary,
+            student.interests,
+        ])
+        try:
+            resp = openai.embeddings.create(input=combined, model="text-embedding-3-small")
+            embedding = resp.data[0].embedding
+        except Exception:
+            raise HTTPException(status_code=500, detail="Embedding generation failed")
+        data = student.model_dump()
+        data["embedding"] = embedding
+        redis_client.set(student.email, json.dumps(data))
+        count += 1
+    return {"message": f"Processed {count} students", "count": count}
