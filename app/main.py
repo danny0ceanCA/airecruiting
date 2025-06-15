@@ -1,9 +1,12 @@
 from datetime import datetime, timedelta
+import json
 from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
 from jose import jwt, JWTError
 import bcrypt
+import openai
+import redis
 
 JWT_SECRET = "secret"
 ALGORITHM = "HS256"
@@ -21,6 +24,9 @@ app.add_middleware(
 # In-memory user storage
 # email -> user dict
 users = {}
+
+# Redis connection
+redis_client = redis.Redis(host="localhost", port=6379, decode_responses=True)
 
 
 def init_default_admin():
@@ -59,6 +65,17 @@ class ApproveRequest(BaseModel):
 
 class RejectRequest(BaseModel):
     email: EmailStr
+
+
+class StudentRequest(BaseModel):
+    first_name: str
+    last_name: str
+    email: EmailStr
+    phone: str
+    education_level: str
+    skills: list[str]
+    experience_summary: str
+    interests: str
 
 
 def get_current_user(authorization: str = Header(..., alias="Authorization")):
@@ -142,3 +159,27 @@ def pending_users(current_user: dict = Depends(get_current_user)):
         for email, info in users.items()
         if not info.get("approved") and not info.get("rejected")
     ]
+
+
+@app.post("/students")
+def create_student(
+    student: StudentRequest, current_user: dict = Depends(get_current_user)
+):
+    """Create a student record with embedding and store in Redis."""
+    combined = " ".join(
+        [
+            ", ".join(student.skills),
+            student.experience_summary,
+            student.interests,
+        ]
+    )
+    try:
+        resp = openai.embeddings.create(input=combined, model="text-embedding-3-small")
+        embedding = resp.data[0].embedding
+    except Exception:
+        raise HTTPException(status_code=500, detail="Embedding generation failed")
+
+    data = student.model_dump()
+    data["embedding"] = embedding
+    redis_client.set(student.email, json.dumps(data))
+    return {"message": "Student stored"}
