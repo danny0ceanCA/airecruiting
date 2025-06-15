@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import './AdminPending.css';
 
@@ -7,6 +8,8 @@ function AdminPending() {
   // Temporary toast message shown when a user is approved
   const [toast, setToast] = useState('');
   const [error, setError] = useState('');
+  const [menuOpen, setMenuOpen] = useState(false);
+  const navigate = useNavigate();
 
   const token = localStorage.getItem('token');
 
@@ -66,12 +69,32 @@ function AdminPending() {
     }
   };
 
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    navigate('/login');
+  };
+
   if (!token) {
     return <p className="pending-container">Login required.</p>;
   }
 
   return (
     <div className="pending-container">
+      <div className="admin-menu">
+        <button
+          className="menu-button"
+          onClick={() => setMenuOpen((open) => !open)}
+        >
+          Admin Menu
+        </button>
+        {menuOpen && (
+          <div className="dropdown-menu">
+            <Link to="/dashboard">Dashboard</Link>
+            <Link to="/admin/jobs">Job Matching</Link>
+            <button onClick={handleLogout}>Logout</button>
+          </div>
+        )}
+      </div>
       <h2>Pending Registrations</h2>
       {toast && <div className="toast">{toast}</div>}
       {error && <p className="error">{error}</p>}
