@@ -1,0 +1,44 @@
+.pending-container {
+  background-color: #001f3f;
+  min-height: 100vh;
+  color: white;
+  padding: 2rem;
+}
+
+.pending-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1rem;
+}
+
+.pending-table th,
+.pending-table td {
+  border: 1px solid #ccc;
+  padding: 0.5rem;
+}
+
+.pending-table th {
+  background-color: #003366;
+}
+
+.pending-table td {
+  background-color: white;
+  color: black;
+}
+
+.pending-table button {
+  background-color: #0074d9;
+  color: white;
+  border: none;
+  padding: 0.4rem 0.8rem;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.message {
+  color: #2ecc40;
+}
+
+.error {
+  color: #ff4136;
+}
