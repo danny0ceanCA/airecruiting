@@ -171,8 +171,8 @@ def create_student(student: StudentRequest, current_user: dict = Depends(get_cur
         student.interests
     ])
     try:
-        resp = openai.Embedding.create(input=combined, model="text-embedding-3-small")
-        embedding = resp["data"][0]["embedding"]
+        resp = openai.embeddings.create(input=combined, model="text-embedding-3-small")
+        embedding = resp["data"][0]["embedding"] if isinstance(resp, dict) else resp.data[0].embedding
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Embedding failed: {str(e)}")
 
@@ -203,7 +203,7 @@ def upload_students(file: UploadFile = File(...), current_user: dict = Depends(g
             continue
 
         if redis_client.exists(student.email):
-            continue  # Skip duplicates
+            redis_client.delete(student.email)
 
         combined = " ".join([
             ", ".join(student.skills),
@@ -211,8 +211,8 @@ def upload_students(file: UploadFile = File(...), current_user: dict = Depends(g
             student.interests
         ])
         try:
-            resp = openai.Embedding.create(input=combined, model="text-embedding-3-small")
-            embedding = resp["data"][0]["embedding"]
+            resp = openai.embeddings.create(input=combined, model="text-embedding-3-small")
+            embedding = resp["data"][0]["embedding"] if isinstance(resp, dict) else resp.data[0].embedding
         except Exception as e:
             continue  # Skip failed entries
 

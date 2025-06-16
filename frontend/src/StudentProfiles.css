@@ -52,3 +52,20 @@
   margin-top: 0.5rem;
 }
 
+.back-button {
+  display: inline-block;
+  margin-bottom: 1rem;
+  background-color: #003366;
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 5px;
+  text-decoration: none;
+  border: 1px solid transparent;
+  transition: background-color 0.3s, border 0.3s;
+}
+
+.back-button:hover {
+  background-color: #004080;
+  border-color: #0074d9;
+}
+
