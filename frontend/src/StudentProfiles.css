@@ -1,0 +1,54 @@
+.profiles-container {
+  background-color: #001f3f;
+  min-height: 100vh;
+  color: white;
+  padding: 2rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2rem;
+}
+
+.form-section,
+.upload-section {
+  background-color: #003366;
+  padding: 1rem 2rem;
+  border-radius: 10px;
+  flex: 1 1 300px;
+  max-width: 500px;
+}
+
+.profile-form {
+  display: flex;
+  flex-direction: column;
+}
+
+.profile-form input,
+.profile-form textarea {
+  margin-bottom: 0.8rem;
+  padding: 0.5rem;
+  border-radius: 5px;
+  border: none;
+  color: black;
+}
+
+.profile-form button,
+.upload-section button {
+  background-color: #0074d9;
+  color: white;
+  border: none;
+  padding: 0.6rem 1rem;
+  border-radius: 5px;
+  cursor: pointer;
+  margin-top: 0.5rem;
+}
+
+.message {
+  color: #2ecc40;
+  margin-top: 0.5rem;
+}
+
+.error {
+  color: #ff4136;
+  margin-top: 0.5rem;
+}
+
