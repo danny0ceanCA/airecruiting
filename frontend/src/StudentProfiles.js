@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import axios from 'axios';
+import { Link } from 'react-router-dom';
 import './StudentProfiles.css';
 
 function StudentProfiles() {
@@ -98,6 +99,7 @@ function StudentProfiles() {
 
   return (
     <div className="profiles-container">
+      <Link to="/dashboard" className="back-button">Back to Dashboard</Link>
       <div className="form-section">
         <h2>New Student Profile</h2>
         <form className="profile-form" onSubmit={handleSubmit}>
