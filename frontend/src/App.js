@@ -6,6 +6,7 @@ import RegisterForm from './RegisterForm';
 import Dashboard from './Dashboard';
 import ProtectedRoute from './ProtectedRoute';
 import AdminPending from './AdminPending';
+import StudentProfiles from './StudentProfiles';
 
 function App() {
   return (
@@ -20,6 +21,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <Dashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/students"
+            element={
+              <ProtectedRoute>
+                <StudentProfiles />
               </ProtectedRoute>
             }
           />
