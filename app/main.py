@@ -84,6 +84,17 @@ class StudentRequest(BaseModel):
     experience_summary: str
     interests: str
 
+class JobRequest(BaseModel):
+    job_title: str
+    job_description: str
+    desired_skills: list[str]
+    job_code: str
+    source: str
+    rate_of_pay_range: str
+
+class JobCodeRequest(BaseModel):
+    job_code: str
+
 # -------- Auth -------- #
 def get_current_user(authorization: str = Header(..., alias="Authorization")):
     if not authorization.startswith("Bearer "):
@@ -222,3 +233,56 @@ def upload_students(file: UploadFile = File(...), current_user: dict = Depends(g
         count += 1
 
     return {"message": f"Processed {count} students", "count": count}
+
+
+@app.post("/jobs")
+def create_job(job: JobRequest, current_user: dict = Depends(get_current_user)):
+    key = f"job:{job.job_code}"
+    if redis_client.exists(key):
+        raise HTTPException(status_code=400, detail="Job already exists")
+
+    data = job.model_dump()
+    data["posted_by"] = current_user.get("sub")
+    data["timestamp"] = datetime.now().isoformat()
+    redis_client.set(key, json.dumps(data))
+    return {"message": "Job stored"}
+
+
+@app.post("/match")
+def match_job(req: JobCodeRequest, current_user: dict = Depends(get_current_user)):
+    key = f"job:{req.job_code}"
+    raw = redis_client.get(key)
+    if not raw:
+        raise HTTPException(status_code=404, detail="Job not found")
+    job = json.loads(raw)
+
+    combined = job.get("job_description", "") + " " + " ".join(job.get("desired_skills", []))
+    try:
+        resp = openai.embeddings.create(input=combined, model="text-embedding-3-small")
+        job_emb = resp["data"][0]["embedding"] if isinstance(resp, dict) else resp.data[0].embedding
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Embedding failed: {str(e)}")
+
+    matches = []
+    for key in redis_client.scan_iter("*"):
+        if str(key).startswith("job:"):
+            continue
+        student_raw = redis_client.get(key)
+        if not student_raw:
+            continue
+        try:
+            student = json.loads(student_raw)
+            emb = student.get("embedding")
+            if not emb:
+                continue
+            score = sum(a * b for a, b in zip(job_emb, emb))
+            matches.append({
+                "name": f"{student.get('first_name', '')} {student.get('last_name', '')}",
+                "email": student.get("email"),
+                "score": score,
+            })
+        except Exception:
+            continue
+
+    matches.sort(key=lambda x: x["score"], reverse=True)
+    return {"matches": matches[:5]}
