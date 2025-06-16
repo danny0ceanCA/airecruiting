@@ -1,14 +1,29 @@
 from datetime import datetime, timedelta
 import json
-from fastapi import FastAPI, HTTPException, Depends, Header
+import csv
+import os
+
+from fastapi import FastAPI, HTTPException, Depends, Header, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
 from jose import jwt, JWTError
+from dotenv import load_dotenv
 import bcrypt
 import openai
 import redis
-import csv
-from fastapi import UploadFile, File
+
+# Load environment variables
+load_dotenv()
+openai.api_key = os.getenv("OPENAI_API_KEY")
+redis_url = os.getenv("REDIS_URL")
+
+if not redis_url:
+    raise RuntimeError("Missing REDIS_URL in .env")
+if not openai.api_key:
+    raise RuntimeError("Missing OPENAI_API_KEY in .env")
+
+# Redis connection
+redis_client = redis.Redis.from_url(redis_url, decode_responses=True)
 
 JWT_SECRET = "secret"
 ALGORITHM = "HS256"
@@ -23,16 +38,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# In-memory user storage
-# email -> user dict
+# In-memory user store
 users = {}
 
-# Redis connection
-redis_client = redis.Redis(host="localhost", port=6379, decode_responses=True)
-
-
 def init_default_admin():
-    """Create the default admin account if it doesn't exist."""
+    """Seed default admin user."""
     if "admin@example.com" not in users:
         hashed = bcrypt.hashpw("admin123".encode(), bcrypt.gensalt())
         users["admin@example.com"] = {
@@ -44,10 +54,9 @@ def init_default_admin():
             "approved": True,
         }
 
-
 init_default_admin()
 
-
+# -------- Models -------- #
 class RegisterRequest(BaseModel):
     email: EmailStr
     first_name: str
@@ -55,19 +64,15 @@ class RegisterRequest(BaseModel):
     school: str
     password: str
 
-
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
 
-
 class ApproveRequest(BaseModel):
     email: EmailStr
 
-
 class RejectRequest(BaseModel):
     email: EmailStr
-
 
 class StudentRequest(BaseModel):
     first_name: str
@@ -79,9 +84,8 @@ class StudentRequest(BaseModel):
     experience_summary: str
     interests: str
 
-
+# -------- Auth -------- #
 def get_current_user(authorization: str = Header(..., alias="Authorization")):
-    """Decode the JWT token from the Authorization header and return the payload."""
     if not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Invalid authorization header")
     token = authorization.split(" ", 1)[1]
@@ -91,11 +95,10 @@ def get_current_user(authorization: str = Header(..., alias="Authorization")):
         raise HTTPException(status_code=401, detail="Invalid token")
     return payload
 
-
+# -------- Routes -------- #
 @app.get("/")
 def read_root():
     return {"message": "Hello, World"}
-
 
 @app.post("/register")
 def register(req: RegisterRequest):
@@ -112,7 +115,6 @@ def register(req: RegisterRequest):
     }
     return {"message": "Registration submitted. Awaiting admin approval"}
 
-
 @app.post("/login")
 def login(req: LoginRequest):
     user = users.get(req.email)
@@ -128,7 +130,6 @@ def login(req: LoginRequest):
     token = jwt.encode(payload, JWT_SECRET, algorithm=ALGORITHM)
     return {"token": token}
 
-
 @app.post("/approve")
 def approve(req: ApproveRequest, current_user: dict = Depends(get_current_user)):
     if current_user.get("role") != "admin":
@@ -138,7 +139,6 @@ def approve(req: ApproveRequest, current_user: dict = Depends(get_current_user))
         raise HTTPException(status_code=404, detail="User not found")
     user["approved"] = True
     return {"message": f"{req.email} approved"}
-
 
 @app.post("/reject")
 def reject(req: RejectRequest, current_user: dict = Depends(get_current_user)):
@@ -150,10 +150,8 @@ def reject(req: RejectRequest, current_user: dict = Depends(get_current_user)):
     user["rejected"] = True
     return {"message": f"{req.email} rejected"}
 
-
 @app.get("/pending-users")
 def pending_users(current_user: dict = Depends(get_current_user)):
-    """Return all users who have not yet been approved."""
     if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin privileges required")
     return [
@@ -162,24 +160,21 @@ def pending_users(current_user: dict = Depends(get_current_user)):
         if not info.get("approved") and not info.get("rejected")
     ]
 
-
 @app.post("/students")
-def create_student(
-    student: StudentRequest, current_user: dict = Depends(get_current_user)
-):
-    """Create a student record with embedding and store in Redis."""
-    combined = " ".join(
-        [
-            ", ".join(student.skills),
-            student.experience_summary,
-            student.interests,
-        ]
-    )
+def create_student(student: StudentRequest, current_user: dict = Depends(get_current_user)):
+    if redis_client.exists(student.email):
+        raise HTTPException(status_code=400, detail="Student already exists")
+
+    combined = " ".join([
+        ", ".join(student.skills),
+        student.experience_summary,
+        student.interests
+    ])
     try:
-        resp = openai.embeddings.create(input=combined, model="text-embedding-3-small")
-        embedding = resp.data[0].embedding
-    except Exception:
-        raise HTTPException(status_code=500, detail="Embedding generation failed")
+        resp = openai.Embedding.create(input=combined, model="text-embedding-3-small")
+        embedding = resp["data"][0]["embedding"]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Embedding failed: {str(e)}")
 
     data = student.model_dump()
     data["embedding"] = embedding
@@ -187,11 +182,7 @@ def create_student(
     return {"message": "Student stored"}
 
 @app.post("/students/upload")
-def upload_students(
-    file: UploadFile = File(...),
-    current_user: dict = Depends(get_current_user),
-):
-    """Upload and process a CSV of students."""
+def upload_students(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
     content = file.file.read().decode("utf-8").splitlines()
     reader = csv.DictReader(content)
     count = 0
@@ -210,18 +201,24 @@ def upload_students(
             )
         except KeyError:
             continue
+
+        if redis_client.exists(student.email):
+            continue  # Skip duplicates
+
         combined = " ".join([
             ", ".join(student.skills),
             student.experience_summary,
-            student.interests,
+            student.interests
         ])
         try:
-            resp = openai.embeddings.create(input=combined, model="text-embedding-3-small")
-            embedding = resp.data[0].embedding
-        except Exception:
-            raise HTTPException(status_code=500, detail="Embedding generation failed")
+            resp = openai.Embedding.create(input=combined, model="text-embedding-3-small")
+            embedding = resp["data"][0]["embedding"]
+        except Exception as e:
+            continue  # Skip failed entries
+
         data = student.model_dump()
         data["embedding"] = embedding
         redis_client.set(student.email, json.dumps(data))
         count += 1
+
     return {"message": f"Processed {count} students", "count": count}
