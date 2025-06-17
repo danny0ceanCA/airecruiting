@@ -39,17 +39,18 @@ def test_create_job_and_match(monkeypatch):
     monkeypatch.setattr(main_app.redis_client, "exists", fake_exists)
     monkeypatch.setattr(main_app.redis_client, "scan_iter", fake_scan_iter)
 
-    class DummyOpenAI:
-        class embeddings:
-            @staticmethod
-            def create(input, model):
-                if "python" in input:
-                    return {"data": [{"embedding": [1.0, 0.0]}]}
-                elif "java" in input:
-                    return {"data": [{"embedding": [0.0, 1.0]}]}
-                return {"data": [{"embedding": [0.5, 0.5]}]}
+    class FakeResp:
+        def __init__(self, emb):
+            self.data = [type("obj", (), {"embedding": emb})]
 
-    monkeypatch.setattr(main_app, "openai", DummyOpenAI)
+    def fake_create(input, model):
+        if "python" in input:
+            return FakeResp([1.0, 0.0])
+        elif "java" in input:
+            return FakeResp([0.0, 1.0])
+        return FakeResp([0.5, 0.5])
+
+    monkeypatch.setattr(main_app.client.embeddings, "create", fake_create)
 
     # create two students
     s1 = {
@@ -87,8 +88,9 @@ def test_create_job_and_match(monkeypatch):
 
     resp = client.post("/jobs", json=job, headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 200
+    job_code = resp.json()["job_code"]
 
-    match_resp = client.post("/match", json={"job_code": "ABC123"}, headers={"Authorization": f"Bearer {token}"})
+    match_resp = client.post("/match", json={"job_code": job_code}, headers={"Authorization": f"Bearer {token}"})
     assert match_resp.status_code == 200
     data = match_resp.json()["matches"]
     assert len(data) == 2
