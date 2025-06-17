@@ -3,7 +3,7 @@ import json
 import csv
 import os
 import uuid
-
+from typing import Optional
 from fastapi import FastAPI, HTTPException, Depends, Header, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
@@ -87,7 +87,7 @@ class JobRequest(BaseModel):
     job_title: str
     job_description: str
     desired_skills: list[str]
-    job_code: str | None = None
+    job_code: Optional[str] = None
     source: str
     rate_of_pay_range: str
 
