@@ -57,9 +57,17 @@ def init_default_admin():
                 }
             ),
         )
+        print("Default admin user created")
 
 @app.on_event("startup")
 def on_startup():
+    # Verify Redis connection and seed the default admin
+    try:
+        redis_client.ping()
+        print("Redis connection established")
+    except Exception as e:
+        print(f"Redis connection failed: {e}")
+        raise
     init_default_admin()
 
 # -------- Models -------- #
@@ -142,14 +150,19 @@ def register(req: RegisterRequest):
 
 @app.post("/login")
 def login(req: LoginRequest):
+    print(f"Login attempt for {req.email}")
     key = f"user:{req.email}"
     raw = redis_client.get(key)
+    print(f"User found: {bool(raw)}")
     if not raw:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     user = json.loads(raw)
     stored_pw = user.get("password", "").encode()
-    if not bcrypt.checkpw(req.password.encode(), stored_pw):
+    if bcrypt.checkpw(req.password.encode(), stored_pw):
+        print("Password match")
+    else:
+        print("Password mismatch")
         raise HTTPException(status_code=401, detail="Invalid credentials")
     if not user.get("approved"):
         raise HTTPException(status_code=403, detail="User not approved")
@@ -160,6 +173,7 @@ def login(req: LoginRequest):
         "exp": datetime.utcnow() + timedelta(hours=1),
     }
     token = jwt.encode(payload, JWT_SECRET, algorithm=ALGORITHM)
+    print(f"Login successful for {req.email}")
     return {"token": token}
 
 @app.post("/approve")
