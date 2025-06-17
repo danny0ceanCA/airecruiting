@@ -10,7 +10,6 @@ from pydantic import BaseModel, EmailStr
 from jose import jwt, JWTError
 from dotenv import load_dotenv
 import bcrypt
-import openai
 from openai import OpenAI
 import redis
 
@@ -32,7 +31,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:3000", "http://localhost:3001"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -41,7 +40,6 @@ app.add_middleware(
 # ----- User Utilities ----- #
 
 def init_default_admin():
-    """Seed a default admin account if it doesn't exist."""
     key = "user:admin@example.com"
     if not redis_client.exists(key):
         hashed = bcrypt.hashpw("admin123".encode(), bcrypt.gensalt()).decode()
@@ -59,7 +57,6 @@ def init_default_admin():
                 }
             ),
         )
-
 
 @app.on_event("startup")
 def on_startup():
@@ -298,7 +295,7 @@ def match_job(req: JobCodeRequest, current_user: dict = Depends(get_current_user
 
     matches = []
     for key in redis_client.scan_iter("*"):
-        if str(key).startswith("job:"):
+        if str(key).startswith("job:") or str(key).startswith("user:"):
             continue
         student_raw = redis_client.get(key)
         if not student_raw:
