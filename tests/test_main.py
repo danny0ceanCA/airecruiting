@@ -1,7 +1,41 @@
+import os
+os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
+os.environ.setdefault("OPENAI_API_KEY", "test")
+
 from fastapi.testclient import TestClient
 from jose import jwt
-from app.main import app, JWT_SECRET, ALGORITHM, users, init_default_admin
+import json
 import app.main as main_app
+
+
+class DummyRedis:
+    def __init__(self):
+        self.store = {}
+
+    def set(self, key, value):
+        self.store[key] = value
+
+    def get(self, key):
+        return self.store.get(key)
+
+    def exists(self, key):
+        return key in self.store
+
+    def delete(self, key):
+        self.store.pop(key, None)
+
+    def scan_iter(self, pattern="*"):
+        from fnmatch import fnmatch
+        for k in list(self.store.keys()):
+            if fnmatch(k, pattern):
+                yield k
+
+    def flushdb(self):
+        self.store.clear()
+
+
+main_app.redis_client = DummyRedis()
+from app.main import app, JWT_SECRET, ALGORITHM, init_default_admin
 
 client = TestClient(app)
 
@@ -13,16 +47,17 @@ def test_read_root():
 
 
 def test_default_admin_exists():
-    users.clear()
+    main_app.redis_client.flushdb()
     init_default_admin()
-    admin = users.get("admin@example.com")
+    raw = main_app.redis_client.get("user:admin@example.com")
+    admin = json.loads(raw)
     assert admin is not None
     assert admin["role"] == "admin"
     assert admin["approved"] is True
 
 
 def test_registration_flow():
-    users.clear()
+    main_app.redis_client.flushdb()
     init_default_admin()
     admin_login = client.post(
         "/login",
@@ -74,7 +109,7 @@ def test_registration_flow():
 
 
 def test_non_admin_cannot_approve():
-    users.clear()
+    main_app.redis_client.flushdb()
 
     # Create regular user who will attempt approval
     user1 = {
@@ -85,7 +120,10 @@ def test_non_admin_cannot_approve():
         "password": "pass1",
     }
     client.post("/register", json=user1)
-    users[user1["email"]]["approved"] = True
+    key = f"user:{user1['email']}"
+    data = json.loads(main_app.redis_client.get(key))
+    data["approved"] = True
+    main_app.redis_client.set(key, json.dumps(data))
     login_resp = client.post("/login", json={"email": user1["email"], "password": user1["password"]})
     token = login_resp.json()["token"]
 
@@ -108,7 +146,7 @@ def test_non_admin_cannot_approve():
 
 
 def test_pending_users_endpoint():
-    users.clear()
+    main_app.redis_client.flushdb()
     init_default_admin()
 
     admin_login = client.post(
@@ -144,7 +182,7 @@ def test_pending_users_endpoint():
 
 
 def test_pending_users_forbidden_for_non_admin():
-    users.clear()
+    main_app.redis_client.flushdb()
     init_default_admin()
 
     regular = {
@@ -155,7 +193,10 @@ def test_pending_users_forbidden_for_non_admin():
         "password": "secret",
     }
     client.post("/register", json=regular)
-    users[regular["email"]]["approved"] = True
+    key = f"user:{regular['email']}"
+    data = json.loads(main_app.redis_client.get(key))
+    data["approved"] = True
+    main_app.redis_client.set(key, json.dumps(data))
     login_resp = client.post("/login", json={"email": regular["email"], "password": regular["password"]})
     token = login_resp.json()["token"]
 
@@ -167,7 +208,7 @@ def test_pending_users_forbidden_for_non_admin():
 
 
 def test_admin_can_reject_user():
-    users.clear()
+    main_app.redis_client.flushdb()
     init_default_admin()
 
     admin_login = client.post(
@@ -191,7 +232,8 @@ def test_admin_can_reject_user():
         headers={"Authorization": f"Bearer {admin_token}"},
     )
     assert resp.status_code == 200
-    assert users[target["email"]]["rejected"] is True
+    raw = main_app.redis_client.get(f"user:{target['email']}")
+    assert json.loads(raw)["rejected"] is True
 
     pending = client.get(
         "/pending-users",
@@ -202,7 +244,7 @@ def test_admin_can_reject_user():
 
 
 def test_non_admin_cannot_reject():
-    users.clear()
+    main_app.redis_client.flushdb()
 
     regular = {
         "email": "reg@example.com",
@@ -212,7 +254,10 @@ def test_non_admin_cannot_reject():
         "password": "pass",
     }
     client.post("/register", json=regular)
-    users[regular["email"]]["approved"] = True
+    key = f"user:{regular['email']}"
+    data = json.loads(main_app.redis_client.get(key))
+    data["approved"] = True
+    main_app.redis_client.set(key, json.dumps(data))
     login_resp = client.post("/login", json={"email": regular["email"], "password": regular["password"]})
     token = login_resp.json()["token"]
 
@@ -234,7 +279,7 @@ def test_non_admin_cannot_reject():
 
 
 def test_upload_students(monkeypatch):
-    users.clear()
+    main_app.redis_client.flushdb()
     init_default_admin()
 
     login_resp = client.post("/login", json={"email": "admin@example.com", "password": "admin123"})
