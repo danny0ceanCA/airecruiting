@@ -8,7 +8,6 @@ function JobPosting() {
     job_title: '',
     job_description: '',
     desired_skills: '',
-    job_code: '',
     source: '',
     rate_of_pay_range: ''
   });
@@ -48,7 +47,7 @@ function JobPosting() {
     e.preventDefault();
     setMessage('');
     try {
-      await axios.post(
+      const resp = await axios.post(
         'http://localhost:8000/jobs',
         {
           job_title: formData.job_title,
@@ -57,18 +56,16 @@ function JobPosting() {
             .split(',')
             .map((s) => s.trim())
             .filter(Boolean),
-          job_code: formData.job_code,
           source: formData.source,
           rate_of_pay_range: formData.rate_of_pay_range
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      setMessage('Job posted successfully!');
+      setMessage(`Job posted successfully! Job code: ${resp.data.job_code}`);
       setFormData({
         job_title: '',
         job_description: '',
         desired_skills: '',
-        job_code: '',
         source: '',
         rate_of_pay_range: ''
       });
@@ -144,14 +141,6 @@ function JobPosting() {
           name="desired_skills"
           type="text"
           value={formData.desired_skills}
-          onChange={handleChange}
-        />
-        <label htmlFor="job_code">Job Code</label>
-        <input
-          id="job_code"
-          name="job_code"
-          type="text"
-          value={formData.job_code}
           onChange={handleChange}
         />
         <label htmlFor="source">Source</label>
