@@ -26,7 +26,8 @@ function JobPosting() {
       const resp = await axios.get('http://localhost:8000/jobs', {
         headers: { Authorization: `Bearer ${token}` }
       });
-      setJobs(resp.data || []);
+      // resp.data has shape { jobs: [...] }
+      setJobs(resp.data.jobs || []);
     } catch (err) {
       console.error('Error fetching jobs:', err);
       setJobs([]);
