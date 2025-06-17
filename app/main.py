@@ -11,7 +11,7 @@ from jose import jwt, JWTError
 from dotenv import load_dotenv
 import bcrypt
 import openai
-openai.api_key = os.getenv("OPENAI_API_KEY")
+from openai import OpenAI
 import redis
 
 # Load environment variables

@@ -252,14 +252,12 @@ def test_upload_students(monkeypatch):
     def fake_set(key, value):
         stored[key] = value
 
-    class DummyOpenAI:
-        class embeddings:
-            @staticmethod
-            def create(input, model):
-                return FakeResp()
+    def fake_create(input, model):
+        return FakeResp()
 
-    monkeypatch.setattr(main_app, "openai", DummyOpenAI)
+    monkeypatch.setattr(main_app.client.embeddings, "create", fake_create)
     monkeypatch.setattr(main_app.redis_client, "set", fake_set)
+    monkeypatch.setattr(main_app.redis_client, "exists", lambda key: False)
 
     csv_data = (
         "first_name,last_name,email,phone,education_level,skills,experience_summary,interests\n"
