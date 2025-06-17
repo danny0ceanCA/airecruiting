@@ -22,7 +22,7 @@ function JobPosting() {
 
   const fetchJobs = async () => {
     try {
-      const resp = await axios.get('http://localhost:8000/jobs', {
+      const resp = await axios.get('/jobs', {
         headers: { Authorization: `Bearer ${token}` }
       });
       // resp.data has shape { jobs: [...] }
@@ -48,7 +48,7 @@ function JobPosting() {
     setMessage('');
     try {
       const resp = await axios.post(
-        'http://localhost:8000/jobs',
+        '/jobs',
         {
           job_title: formData.job_title,
           job_description: formData.job_description,
@@ -78,7 +78,7 @@ function JobPosting() {
   const handleMatch = async (code) => {
     try {
       const resp = await axios.post(
-        'http://localhost:8000/match',
+        '/match',
         { job_code: code },
         { headers: { Authorization: `Bearer ${token}` } }
       );
