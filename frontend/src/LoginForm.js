@@ -15,13 +15,8 @@ function LoginForm() {
     console.log('Submitting login...');
 
     try {
-      const resp = await axios.post('http://localhost:8000/login',
-        { email, password },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        }
+      const resp = await axios.post('/login',
+        { email, password }
       );
 
       console.log('Response data:', resp.data);

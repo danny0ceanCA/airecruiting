@@ -29,9 +29,21 @@ ALGORITHM = "HS256"
 
 app = FastAPI()
 
+# Simple request logging for debugging
+@app.middleware("http")
+async def log_requests(request, call_next):
+    print(f"Incoming {request.method} {request.url}")
+    response = await call_next(request)
+    print(f"Response status: {response.status_code}")
+    return response
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://localhost:3002",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
