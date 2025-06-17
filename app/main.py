@@ -38,22 +38,32 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# In-memory user store
-users = {}
+# ----- User Utilities ----- #
 
 def init_default_admin():
-    if "admin@example.com" not in users:
-        hashed = bcrypt.hashpw("admin123".encode(), bcrypt.gensalt())
-        users["admin@example.com"] = {
-            "first_name": "Admin",
-            "last_name": "User",
-            "school": "Admin School",
-            "password": hashed,
-            "role": "admin",
-            "approved": True,
-        }
+    """Seed a default admin account if it doesn't exist."""
+    key = "user:admin@example.com"
+    if not redis_client.exists(key):
+        hashed = bcrypt.hashpw("admin123".encode(), bcrypt.gensalt()).decode()
+        redis_client.set(
+            key,
+            json.dumps(
+                {
+                    "first_name": "Admin",
+                    "last_name": "User",
+                    "school": "Admin School",
+                    "password": hashed,
+                    "role": "admin",
+                    "approved": True,
+                    "rejected": False,
+                }
+            ),
+        )
 
-init_default_admin()
+
+@app.on_event("startup")
+def on_startup():
+    init_default_admin()
 
 # -------- Models -------- #
 class RegisterRequest(BaseModel):
@@ -112,26 +122,41 @@ def read_root():
 
 @app.post("/register")
 def register(req: RegisterRequest):
-    if req.email in users:
+    key = f"user:{req.email}"
+    if redis_client.exists(key):
         raise HTTPException(status_code=400, detail="User already exists")
-    hashed = bcrypt.hashpw(req.password.encode(), bcrypt.gensalt())
-    users[req.email] = {
-        "first_name": req.first_name,
-        "last_name": req.last_name,
-        "school": req.school,
-        "password": hashed,
-        "role": "user",
-        "approved": False,
-    }
+
+    hashed = bcrypt.hashpw(req.password.encode(), bcrypt.gensalt()).decode()
+    redis_client.set(
+        key,
+        json.dumps(
+            {
+                "first_name": req.first_name,
+                "last_name": req.last_name,
+                "school": req.school,
+                "password": hashed,
+                "role": "user",
+                "approved": False,
+                "rejected": False,
+            }
+        ),
+    )
     return {"message": "Registration submitted. Awaiting admin approval"}
 
 @app.post("/login")
 def login(req: LoginRequest):
-    user = users.get(req.email)
-    if not user or not bcrypt.checkpw(req.password.encode(), user["password"]):
+    key = f"user:{req.email}"
+    raw = redis_client.get(key)
+    if not raw:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    user = json.loads(raw)
+    stored_pw = user.get("password", "").encode()
+    if not bcrypt.checkpw(req.password.encode(), stored_pw):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     if not user.get("approved"):
         raise HTTPException(status_code=403, detail="User not approved")
+
     payload = {
         "sub": req.email,
         "role": user["role"],
@@ -144,31 +169,43 @@ def login(req: LoginRequest):
 def approve(req: ApproveRequest, current_user: dict = Depends(get_current_user)):
     if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin privileges required")
-    user = users.get(req.email)
-    if not user:
+    key = f"user:{req.email}"
+    raw = redis_client.get(key)
+    if not raw:
         raise HTTPException(status_code=404, detail="User not found")
+    user = json.loads(raw)
     user["approved"] = True
+    redis_client.set(key, json.dumps(user))
     return {"message": f"{req.email} approved"}
 
 @app.post("/reject")
 def reject(req: RejectRequest, current_user: dict = Depends(get_current_user)):
     if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin privileges required")
-    user = users.get(req.email)
-    if not user:
+    key = f"user:{req.email}"
+    raw = redis_client.get(key)
+    if not raw:
         raise HTTPException(status_code=404, detail="User not found")
+    user = json.loads(raw)
     user["rejected"] = True
+    redis_client.set(key, json.dumps(user))
     return {"message": f"{req.email} rejected"}
 
 @app.get("/pending-users")
 def pending_users(current_user: dict = Depends(get_current_user)):
     if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin privileges required")
-    return [
-        {"email": email, **{k: v for k, v in info.items() if k != "password"}}
-        for email, info in users.items()
-        if not info.get("approved") and not info.get("rejected")
-    ]
+    pending = []
+    for key in redis_client.scan_iter("user:*"):
+        raw = redis_client.get(key)
+        if not raw:
+            continue
+        info = json.loads(raw)
+        if info.get("approved") or info.get("rejected"):
+            continue
+        email = key.split("user:", 1)[1]
+        pending.append({"email": email, **{k: v for k, v in info.items() if k != "password"}})
+    return pending
 
 @app.post("/students")
 def create_student(student: StudentRequest, current_user: dict = Depends(get_current_user)):

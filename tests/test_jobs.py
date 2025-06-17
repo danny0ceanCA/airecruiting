@@ -1,12 +1,42 @@
+import os
+os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
+os.environ.setdefault("OPENAI_API_KEY", "test")
+
 from fastapi.testclient import TestClient
-from app.main import app, users, init_default_admin
 import app.main as main_app
+
+
+class DummyRedis:
+    def __init__(self):
+        self.store = {}
+
+    def set(self, key, value):
+        self.store[key] = value
+
+    def get(self, key):
+        return self.store.get(key)
+
+    def exists(self, key):
+        return key in self.store
+
+    def scan_iter(self, pattern="*"):
+        from fnmatch import fnmatch
+        for k in list(self.store.keys()):
+            if fnmatch(k, pattern):
+                yield k
+
+    def flushdb(self):
+        self.store.clear()
+
+
+main_app.redis_client = DummyRedis()
+from app.main import app, init_default_admin
 
 client = TestClient(app)
 
 
 def setup_module():
-    users.clear()
+    main_app.redis_client.flushdb()
     init_default_admin()
 
 
