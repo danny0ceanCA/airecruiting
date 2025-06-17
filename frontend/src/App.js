@@ -7,6 +7,7 @@ import Dashboard from './Dashboard';
 import ProtectedRoute from './ProtectedRoute';
 import AdminPending from './AdminPending';
 import StudentProfiles from './StudentProfiles';
+import JobPosting from './JobPosting';
 
 function App() {
   return (
@@ -37,6 +38,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <AdminPending />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/jobs"
+            element={
+              <ProtectedRoute>
+                <JobPosting />
               </ProtectedRoute>
             }
           />
