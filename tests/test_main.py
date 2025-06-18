@@ -40,6 +40,9 @@ class DummyRedis:
         self.store[key] = val
         return val
 
+    def mget(self, keys):
+        return [self.store.get(k) for k in keys]
+
     def flushdb(self):
         self.store.clear()
 
@@ -359,6 +362,11 @@ def test_metrics_endpoint():
     main_app.redis_client.set("metrics:total_matches", 2)
     main_app.redis_client.set("metrics:total_match_score", 5.0)
     main_app.redis_client.set("metrics:last_match_timestamp", "2020-01-01T00:00:00")
+    main_app.redis_client.set("metrics:total_placements", 2)
+    main_app.redis_client.set("metrics:total_rematches", 1)
+    main_app.redis_client.set("metrics:sum_time_to_place", 5.0)
+    main_app.redis_client.set("metrics:licensed:A", 1)
+    main_app.redis_client.set("metrics:licensed:B", 2)
 
     login_resp = client.post("/login", json={"email": "admin@example.com", "password": "admin123"})
     token = login_resp.json()["token"]
@@ -374,4 +382,8 @@ def test_metrics_endpoint():
     assert data["total_jobs_posted"] == 1
     assert data["total_matches"] == 2
     assert abs(data["average_match_score"] - 2.5) < 1e-6
+    assert data["placement_rate"] == 1
+    assert abs(data["avg_time_to_placement_days"] - 2.5) < 1e-6
+    assert data["license_breakdown"] == {"A": 1, "B": 2}
+    assert data["rematch_rate"] == 0.5
 

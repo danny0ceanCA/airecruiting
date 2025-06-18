@@ -35,6 +35,9 @@ class DummyRedis:
         self.store[key] = val
         return val
 
+    def mget(self, keys):
+        return [self.store.get(k) for k in keys]
+
     def flushdb(self):
         self.store.clear()
 
