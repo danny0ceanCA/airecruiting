@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, Navigate } from 'react-router-dom';
+import jwtDecode from 'jwt-decode';
 import axios from 'axios';
 import './JobPosting.css';
 
@@ -13,12 +14,16 @@ function JobPosting() {
   });
   const [message, setMessage] = useState('');
   const [jobs, setJobs] = useState([]);
-  const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState('');
+  const [expandedJob, setExpandedJob] = useState(null); // job_code or null
+  const [selectedRows, setSelectedRows] = useState({}); // { job_code: [emails] }
   const [matches, setMatches] = useState({});
   const [menuOpen, setMenuOpen] = useState(false);
   const navigate = useNavigate();
 
   const token = localStorage.getItem('token');
+  const { role } = token ? jwtDecode(token) : {};
+  if (role !== 'admin') return <Navigate to="/dashboard" />;
 
   const fetchJobs = async () => {
     try {
@@ -38,6 +43,12 @@ function JobPosting() {
       fetchJobs();
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (expandedJob && !matches[expandedJob]) {
+      handleMatch(expandedJob);
+    }
+  }, [expandedJob]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -88,19 +99,88 @@ function JobPosting() {
     }
   };
 
+  const handleSelect = (jobCode, email) => (e) => {
+    setSelectedRows((prev) => {
+      const current = prev[jobCode] || [];
+      if (e.target.checked) {
+        return { ...prev, [jobCode]: [...current, email] };
+      }
+      return {
+        ...prev,
+        [jobCode]: current.filter((em) => em !== email),
+      };
+    });
+  };
+
+  const handleAssign = async (job, row) => {
+    try {
+      await axios.post(
+        '/assign',
+        { student_email: row.email, job_code: job.job_code },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setMatches((prev) => ({
+        ...prev,
+        [job.job_code]: prev[job.job_code].map((m) =>
+          m.email === row.email ? { ...m, status: 'assigned' } : m
+        ),
+      }));
+    } catch (err) {
+      console.error('Assign failed', err);
+    }
+  };
+
+  const handlePlace = async (job, row) => {
+    try {
+      await axios.post(
+        '/place',
+        { student_email: row.email, job_code: job.job_code },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setMatches((prev) => ({
+        ...prev,
+        [job.job_code]: prev[job.job_code].map((m) =>
+          m.email === row.email ? { ...m, status: 'placed' } : m
+        ),
+      }));
+    } catch (err) {
+      console.error('Place failed', err);
+    }
+  };
+
+  const bulkAssign = async (job) => {
+    const emails = selectedRows[job.job_code] || [];
+    for (const email of emails) {
+      try {
+        await axios.post(
+          '/assign',
+          { student_email: email, job_code: job.job_code },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        setMatches((prev) => ({
+          ...prev,
+          [job.job_code]: prev[job.job_code].map((m) =>
+            m.email === email ? { ...m, status: 'assigned' } : m
+          ),
+        }));
+      } catch (err) {
+        console.error('Bulk assign failed', err);
+      }
+    }
+    setSelectedRows((prev) => ({ ...prev, [job.job_code]: [] }));
+  };
+
   const handleLogout = () => {
     localStorage.removeItem('token');
     navigate('/login');
   };
 
-  const filteredJobs = jobs.filter((j) => {
-    const q = search.toLowerCase();
-    return (
-      j.job_code.toLowerCase().includes(q) ||
-      j.job_title.toLowerCase().includes(q) ||
-      j.source.toLowerCase().includes(q)
+  const matchFilter = (j) =>
+    [j.job_code, j.job_title, j.source].some((x) =>
+      x?.toLowerCase().includes(filter.toLowerCase())
     );
-  });
+
+  const filteredJobs = jobs.filter(matchFilter);
 
   return (
     <div className="job-posting-container">
@@ -166,19 +246,20 @@ function JobPosting() {
       <div className="jobs-section">
         <h2>Jobs</h2>
         <input
-          className="search-input"
+          className="filter-box"
           type="text"
-          placeholder="Search..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Filter by code, title, source"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
         />
-        <table className="jobs-table">
+        <table className="job-table">
           <thead>
             <tr>
               <th>Job Code</th>
               <th>Title</th>
               <th>Source</th>
               <th>Rate</th>
+              <th>Status</th>
               <th>Action</th>
             </tr>
           </thead>
@@ -191,32 +272,100 @@ function JobPosting() {
                   <td>{job.source}</td>
                   <td>{job.rate_of_pay_range}</td>
                   <td>
-                    <button onClick={() => handleMatch(job.job_code)}>Match</button>
+                    {job.placed_students?.length > 0 ? (
+                      <span className="badge placed">Placed</span>
+                    ) : job.assigned_students?.length > 0 ? (
+                      <span className="badge assigned">Assigned</span>
+                    ) : null}
+                  </td>
+                  <td>
+                    <button
+                      onClick={() =>
+                        setExpandedJob(
+                          expandedJob === job.job_code ? null : job.job_code
+                        )
+                      }
+                    >
+                      Match
+                    </button>
                   </td>
                 </tr>
-                {matches[job.job_code] && (
-                  <tr className="matches-row">
-                    <td colSpan="5">
-                      <table className="matches-table">
-                        <thead>
-                          <tr>
-                            <th>First Name</th>
-                            <th>Last Name</th>
-                            <th>Email</th>
-                            <th>Score</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {matches[job.job_code].map((m, idx) => (
-                            <tr key={idx}>
-                              <td>{m.first_name || m.name?.split(' ')[0]}</td>
-                              <td>{m.last_name || m.name?.split(' ')[1]}</td>
-                              <td>{m.email}</td>
-                              <td>{m.score.toFixed(2)}</td>
+                {expandedJob === job.job_code && (
+                  <tr className="match-table-row">
+                    <td colSpan="6">
+                      <button
+                        disabled={
+                          (selectedRows[job.job_code]?.length || 0) === 0
+                        }
+                        onClick={() => bulkAssign(job)}
+                      >
+                        Assign Selected ({
+                          selectedRows[job.job_code]?.length || 0
+                        })
+                      </button>
+                      {matches[job.job_code] && (
+                        <table className="matches-table">
+                          <thead>
+                            <tr>
+                              <th></th>
+                              <th>Name</th>
+                              <th>Email</th>
+                              <th>Score</th>
+                              <th>Action</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody>
+                            {matches[job.job_code].map((row, idx) => {
+                              const selectedCount =
+                                selectedRows[job.job_code]?.length || 0;
+                              const checked =
+                                selectedRows[job.job_code]?.includes(row.email);
+                              const disableCheckbox =
+                                row.status !== null ||
+                                (selectedCount >= 3 && !checked);
+                              return (
+                                <tr key={idx}>
+                                  <td>
+                                    <input
+                                      type="checkbox"
+                                      disabled={disableCheckbox}
+                                      checked={checked || false}
+                                      onChange={handleSelect(job.job_code, row.email)}
+                                    />
+                                  </td>
+                                  <td>
+                                    {row.first_name || row.name?.split(' ')[0]}{' '}
+                                    {row.last_name || row.name?.split(' ')[1]}
+                                  </td>
+                                  <td>{row.email}</td>
+                                  <td>{row.score.toFixed(2)}</td>
+                                  <td>
+                                    {row.status === 'placed' ? (
+                                      <span className="badge placed">Placed</span>
+                                    ) : row.status === 'assigned' ? (
+                                      <>
+                                        <span className="badge assigned">Assigned</span>
+                                        <button onClick={() => handlePlace(job, row)}>
+                                          Place
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <button onClick={() => handleAssign(job, row)}>
+                                          Assign
+                                        </button>
+                                        <button onClick={() => handlePlace(job, row)}>
+                                          Place
+                                        </button>
+                                      </>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      )}
                     </td>
                   </tr>
                 )}

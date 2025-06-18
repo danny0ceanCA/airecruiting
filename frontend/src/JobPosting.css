@@ -57,22 +57,22 @@
   max-width: 300px;
 }
 
-.jobs-table {
+.job-table {
   width: 100%;
   border-collapse: collapse;
 }
 
-.jobs-table th,
-.jobs-table td {
+.job-table th,
+.job-table td {
   border: 1px solid #ccc;
   padding: 0.5rem;
 }
 
-.jobs-table th {
+.job-table th {
   background-color: #003366;
 }
 
-.jobs-table td {
+.job-table td {
   background-color: white;
   color: black;
 }
@@ -140,4 +140,32 @@
 .dropdown-menu a:hover,
 .dropdown-menu button:hover {
   background-color: #001f3f;
+}
+
+.filter-box {
+  margin-bottom: 1rem;
+  width: 260px;
+  padding: 6px;
+  border-radius: 8px;
+  border: 1px solid #ccc;
+}
+.badge.assigned {
+  background: #f0ad4e;
+  color: #fff;
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+}
+.badge.placed {
+  background: #32CD32;
+  color: #fff;
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+}
+@media (max-width: 768px) {
+  .match-table-row,
+  .job-table {
+    overflow-x: auto;
+  }
 }
