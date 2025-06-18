@@ -10,6 +10,7 @@ function Metrics() {
   const [data, setData] = useState(null);
   const [role, setRole] = useState('');
   const [loading, setLoading] = useState(true);
+  const [interval, setInterval] = useState(30);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -24,6 +25,7 @@ function Metrics() {
       try {
         const resp = await axios.get('/metrics', {
           headers: { Authorization: `Bearer ${token}` },
+          params: { interval },
         });
         setData(resp.data);
       } catch (err) {
@@ -33,7 +35,7 @@ function Metrics() {
       }
     };
     fetchMetrics();
-  }, []);
+  }, [interval]);
 
   if (loading) {
     return <div className="metrics-container">Loading...</div>;
@@ -61,6 +63,17 @@ function Metrics() {
 
   return (
     <div className="metrics-container">
+      <div className="interval-controls">
+        <h2>Metrics (Last {interval} Days)</h2>
+        <select value={interval} onChange={(e) => setInterval(Number(e.target.value))}>
+          <option value={7}>Last 7 Days</option>
+          <option value={14}>Last 14 Days</option>
+          <option value={30}>Last 30 Days</option>
+          <option value={60}>Last 60 Days</option>
+          <option value={90}>Last 90 Days</option>
+          <option value={120}>Last 120 Days</option>
+        </select>
+      </div>
       <div className="highlight-grid">
         {highlight.map((h) => (
           <div key={h.label} className="highlight-card">
