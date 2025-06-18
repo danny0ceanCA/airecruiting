@@ -306,6 +306,8 @@ def create_job(job: JobRequest, current_user: dict = Depends(get_current_user)):
     data["job_code"] = generated_code
     data["posted_by"] = current_user.get("sub")
     data["timestamp"] = datetime.now().isoformat()
+    data.setdefault("assigned_students", [])
+    data.setdefault("placed_students", [])
 
     redis_client.set(key, json.dumps(data))
     print(f"Stored job at {key}: {data}")
@@ -374,6 +376,8 @@ def list_jobs(current_user: dict = Depends(get_current_user)):
         job_data = redis_client.get(key)
         if job_data:
             job = json.loads(job_data)
+            job.setdefault("assigned_students", [])
+            job.setdefault("placed_students", [])
             jobs.append(job)
     print(f"Returning {len(jobs)} jobs from Redis")
     return {"jobs": jobs}
@@ -530,6 +534,53 @@ def place_student(
         redis_client.incr(f"metrics:licensed:{license_type}")
 
     return {"message": "Placement recorded", "rematch": placement_count > 1}
+
+
+@app.post("/assign")
+async def assign_student(payload: dict, current_user: dict = Depends(get_current_user)):
+    """
+    Body = { "student_email": str, "job_code": str }
+    Admin only: mark student as 'assigned' for this job.
+    """
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admins only")
+    student_email = payload.get("student_email")
+    job_code = payload.get("job_code")
+    if not (student_email and job_code):
+        raise HTTPException(status_code=400, detail="Missing fields")
+
+    student_key = f"student:{student_email}"
+    job_key = f"job:{job_code}"
+
+    if not redis_client.exists(student_key):
+        raise HTTPException(status_code=404, detail="Student not found")
+    if not redis_client.exists(job_key):
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    student_data = json.loads(redis_client.get(student_key))
+    student_data.setdefault("assignment_history", [])
+    student_data.setdefault("placement_count", 0)
+    student_data.setdefault("status_by_job", {})
+
+    if student_data["status_by_job"].get(job_code) in ("assigned", "placed"):
+        return {"success": True, "message": "Already assigned"}
+
+    student_data["assignment_history"].append({
+        "job_code": job_code,
+        "assigned_at": datetime.utcnow().isoformat()
+    })
+    student_data["status_by_job"][job_code] = "assigned"
+    redis_client.set(student_key, json.dumps(student_data))
+
+    job_data = json.loads(redis_client.get(job_key))
+    job_data.setdefault("assigned_students", [])
+    if student_email not in job_data["assigned_students"]:
+        job_data["assigned_students"].append(student_email)
+    redis_client.set(job_key, json.dumps(job_data))
+
+    redis_client.incr("metrics:total_assignments")
+
+    return {"success": True}
 
 
 @app.get("/placements/{student_email}")
