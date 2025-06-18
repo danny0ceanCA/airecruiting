@@ -25,6 +25,19 @@ class DummyRedis:
             if fnmatch(k, pattern):
                 yield k
 
+    def incr(self, key, amount=1):
+        val = int(self.store.get(key, 0)) + amount
+        self.store[key] = val
+        return val
+
+    def incrbyfloat(self, key, amount=1.0):
+        val = float(self.store.get(key, 0.0)) + amount
+        self.store[key] = val
+        return val
+
+    def mget(self, keys):
+        return [self.store.get(k) for k in keys]
+
     def flushdb(self):
         self.store.clear()
 

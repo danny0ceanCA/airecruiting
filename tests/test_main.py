@@ -30,6 +30,19 @@ class DummyRedis:
             if fnmatch(k, pattern):
                 yield k
 
+    def incr(self, key, amount=1):
+        val = int(self.store.get(key, 0)) + amount
+        self.store[key] = val
+        return val
+
+    def incrbyfloat(self, key, amount=1.0):
+        val = float(self.store.get(key, 0.0)) + amount
+        self.store[key] = val
+        return val
+
+    def mget(self, keys):
+        return [self.store.get(k) for k in keys]
+
     def flushdb(self):
         self.store.clear()
 
@@ -314,4 +327,63 @@ def test_upload_students(monkeypatch):
     assert resp.status_code == 200
     assert resp.json()["count"] == 2
     assert len(stored) == 2
+
+
+def test_metrics_endpoint():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    # Seed some users
+    u1 = {
+        "first_name": "A",
+        "last_name": "B",
+        "school": "X",
+        "password": "p",
+        "role": "user",
+        "approved": True,
+        "rejected": False,
+    }
+    main_app.redis_client.set("user:user1@example.com", json.dumps(u1))
+
+    u2 = {**u1, "approved": False, "rejected": False}
+    main_app.redis_client.set("user:user2@example.com", json.dumps(u2))
+
+    u3 = {**u1, "approved": False, "rejected": True}
+    main_app.redis_client.set("user:user3@example.com", json.dumps(u3))
+
+    # Seed student profiles
+    main_app.redis_client.set("stud1@example.com", json.dumps({"email": "stud1@example.com"}))
+    main_app.redis_client.set("stud2@example.com", json.dumps({"email": "stud2@example.com"}))
+
+    # Seed jobs
+    main_app.redis_client.set("job:abc", json.dumps({"job_code": "abc"}))
+
+    # Seed metrics values
+    main_app.redis_client.set("metrics:total_matches", 2)
+    main_app.redis_client.set("metrics:total_match_score", 5.0)
+    main_app.redis_client.set("metrics:last_match_timestamp", "2020-01-01T00:00:00")
+    main_app.redis_client.set("metrics:total_placements", 2)
+    main_app.redis_client.set("metrics:total_rematches", 1)
+    main_app.redis_client.set("metrics:sum_time_to_place", 5.0)
+    main_app.redis_client.set("metrics:licensed:A", 1)
+    main_app.redis_client.set("metrics:licensed:B", 2)
+
+    login_resp = client.post("/login", json={"email": "admin@example.com", "password": "admin123"})
+    token = login_resp.json()["token"]
+
+    resp = client.get("/metrics", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total_users"] == 4  # including default admin
+    assert data["approved_users"] == 2  # admin + u1
+    assert data["rejected_users"] == 1
+    assert data["pending_registrations"] == 1
+    assert data["total_student_profiles"] == 2
+    assert data["total_jobs_posted"] == 1
+    assert data["total_matches"] == 2
+    assert abs(data["average_match_score"] - 2.5) < 1e-6
+    assert data["placement_rate"] == 1
+    assert abs(data["avg_time_to_placement_days"] - 2.5) < 1e-6
+    assert data["license_breakdown"] == {"A": 1, "B": 2}
+    assert data["rematch_rate"] == 0.5
 
