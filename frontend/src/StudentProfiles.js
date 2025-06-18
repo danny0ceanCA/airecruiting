@@ -36,7 +36,7 @@ function StudentProfiles() {
     setFormError('');
     try {
       await axios.post(
-        'http://localhost:8000/students',
+        '/students',
         {
           first_name: formData.firstName,
           last_name: formData.lastName,
@@ -80,7 +80,7 @@ function StudentProfiles() {
     const data = new FormData();
     data.append('file', csvFile);
     try {
-      const resp = await axios.post('http://localhost:8000/students/upload', data, {
+      const resp = await axios.post('/students/upload', data, {
         headers: {
           'Content-Type': 'multipart/form-data',
           Authorization: `Bearer ${token}`

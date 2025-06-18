@@ -2,25 +2,24 @@ from datetime import datetime, timedelta
 import json
 import csv
 import os
-
+import uuid
+from typing import Optional
 from fastapi import FastAPI, HTTPException, Depends, Header, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
 from jose import jwt, JWTError
 from dotenv import load_dotenv
 import bcrypt
-import openai
+from openai import OpenAI
 import redis
 
 # Load environment variables
 load_dotenv()
-openai.api_key = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 redis_url = os.getenv("REDIS_URL")
 
 if not redis_url:
     raise RuntimeError("Missing REDIS_URL in .env")
-if not openai.api_key:
-    raise RuntimeError("Missing OPENAI_API_KEY in .env")
 
 # Redis connection
 redis_client = redis.Redis.from_url(redis_url, decode_responses=True)
@@ -30,31 +29,58 @@ ALGORITHM = "HS256"
 
 app = FastAPI()
 
+# Simple request logging for debugging
+@app.middleware("http")
+async def log_requests(request, call_next):
+    print(f"Incoming {request.method} {request.url}")
+    response = await call_next(request)
+    print(f"Response status: {response.status_code}")
+    return response
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://localhost:3002",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# In-memory user store
-users = {}
+# ----- User Utilities ----- #
 
 def init_default_admin():
-    """Seed default admin user."""
-    if "admin@example.com" not in users:
-        hashed = bcrypt.hashpw("admin123".encode(), bcrypt.gensalt())
-        users["admin@example.com"] = {
-            "first_name": "Admin",
-            "last_name": "User",
-            "school": "Admin School",
-            "password": hashed,
-            "role": "admin",
-            "approved": True,
-        }
+    key = "user:admin@example.com"
+    if not redis_client.exists(key):
+        hashed = bcrypt.hashpw("admin123".encode(), bcrypt.gensalt()).decode()
+        redis_client.set(
+            key,
+            json.dumps(
+                {
+                    "first_name": "Admin",
+                    "last_name": "User",
+                    "school": "Admin School",
+                    "password": hashed,
+                    "role": "admin",
+                    "approved": True,
+                    "rejected": False,
+                }
+            ),
+        )
+        print("Default admin user created")
 
-init_default_admin()
+@app.on_event("startup")
+def on_startup():
+    # Verify Redis connection and seed the default admin
+    try:
+        redis_client.ping()
+        print("Redis connection established")
+    except Exception as e:
+        print(f"Redis connection failed: {e}")
+        raise
+    init_default_admin()
 
 # -------- Models -------- #
 class RegisterRequest(BaseModel):
@@ -84,6 +110,17 @@ class StudentRequest(BaseModel):
     experience_summary: str
     interests: str
 
+class JobRequest(BaseModel):
+    job_title: str
+    job_description: str
+    desired_skills: list[str]
+    job_code: Optional[str] = None
+    source: str
+    rate_of_pay_range: str
+
+class JobCodeRequest(BaseModel):
+    job_code: str
+
 # -------- Auth -------- #
 def get_current_user(authorization: str = Header(..., alias="Authorization")):
     if not authorization.startswith("Bearer "):
@@ -102,63 +139,96 @@ def read_root():
 
 @app.post("/register")
 def register(req: RegisterRequest):
-    if req.email in users:
+    key = f"user:{req.email}"
+    if redis_client.exists(key):
         raise HTTPException(status_code=400, detail="User already exists")
-    hashed = bcrypt.hashpw(req.password.encode(), bcrypt.gensalt())
-    users[req.email] = {
-        "first_name": req.first_name,
-        "last_name": req.last_name,
-        "school": req.school,
-        "password": hashed,
-        "role": "user",
-        "approved": False,
-    }
+
+    hashed = bcrypt.hashpw(req.password.encode(), bcrypt.gensalt()).decode()
+    redis_client.set(
+        key,
+        json.dumps(
+            {
+                "first_name": req.first_name,
+                "last_name": req.last_name,
+                "school": req.school,
+                "password": hashed,
+                "role": "user",
+                "approved": False,
+                "rejected": False,
+            }
+        ),
+    )
     return {"message": "Registration submitted. Awaiting admin approval"}
 
 @app.post("/login")
 def login(req: LoginRequest):
-    user = users.get(req.email)
-    if not user or not bcrypt.checkpw(req.password.encode(), user["password"]):
+    print(f"Login attempt for {req.email}")
+    key = f"user:{req.email}"
+    raw = redis_client.get(key)
+    print(f"User found: {bool(raw)}")
+    if not raw:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    user = json.loads(raw)
+    stored_pw = user.get("password", "").encode()
+    if bcrypt.checkpw(req.password.encode(), stored_pw):
+        print("Password match")
+    else:
+        print("Password mismatch")
         raise HTTPException(status_code=401, detail="Invalid credentials")
     if not user.get("approved"):
         raise HTTPException(status_code=403, detail="User not approved")
+
     payload = {
         "sub": req.email,
         "role": user["role"],
         "exp": datetime.utcnow() + timedelta(hours=1),
     }
     token = jwt.encode(payload, JWT_SECRET, algorithm=ALGORITHM)
+    print(f"Login successful for {req.email}")
     return {"token": token}
 
 @app.post("/approve")
 def approve(req: ApproveRequest, current_user: dict = Depends(get_current_user)):
     if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin privileges required")
-    user = users.get(req.email)
-    if not user:
+    key = f"user:{req.email}"
+    raw = redis_client.get(key)
+    if not raw:
         raise HTTPException(status_code=404, detail="User not found")
+    user = json.loads(raw)
     user["approved"] = True
+    redis_client.set(key, json.dumps(user))
     return {"message": f"{req.email} approved"}
 
 @app.post("/reject")
 def reject(req: RejectRequest, current_user: dict = Depends(get_current_user)):
     if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin privileges required")
-    user = users.get(req.email)
-    if not user:
+    key = f"user:{req.email}"
+    raw = redis_client.get(key)
+    if not raw:
         raise HTTPException(status_code=404, detail="User not found")
+    user = json.loads(raw)
     user["rejected"] = True
+    redis_client.set(key, json.dumps(user))
     return {"message": f"{req.email} rejected"}
 
 @app.get("/pending-users")
 def pending_users(current_user: dict = Depends(get_current_user)):
     if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin privileges required")
-    return [
-        {"email": email, **{k: v for k, v in info.items() if k != "password"}}
-        for email, info in users.items()
-        if not info.get("approved") and not info.get("rejected")
-    ]
+    pending = []
+    for key in redis_client.scan_iter("user:*"):
+        raw = redis_client.get(key)
+        if not raw:
+            continue
+        info = json.loads(raw)
+        if info.get("approved") or info.get("rejected"):
+            continue
+        email = key.split("user:", 1)[1]
+        pending.append({"email": email, **{k: v for k, v in info.items() if k != "password"}})
+    return pending
 
 @app.post("/students")
 def create_student(student: StudentRequest, current_user: dict = Depends(get_current_user)):
@@ -171,8 +241,8 @@ def create_student(student: StudentRequest, current_user: dict = Depends(get_cur
         student.interests
     ])
     try:
-        resp = openai.embeddings.create(input=combined, model="text-embedding-3-small")
-        embedding = resp["data"][0]["embedding"] if isinstance(resp, dict) else resp.data[0].embedding
+        resp = client.embeddings.create(input=combined, model="text-embedding-3-small")
+        embedding = resp.data[0].embedding
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Embedding failed: {str(e)}")
 
@@ -211,10 +281,10 @@ def upload_students(file: UploadFile = File(...), current_user: dict = Depends(g
             student.interests
         ])
         try:
-            resp = openai.embeddings.create(input=combined, model="text-embedding-3-small")
-            embedding = resp["data"][0]["embedding"] if isinstance(resp, dict) else resp.data[0].embedding
-        except Exception as e:
-            continue  # Skip failed entries
+            resp = client.embeddings.create(input=combined, model="text-embedding-3-small")
+            embedding = resp.data[0].embedding
+        except Exception:
+            continue
 
         data = student.model_dump()
         data["embedding"] = embedding
@@ -222,3 +292,71 @@ def upload_students(file: UploadFile = File(...), current_user: dict = Depends(g
         count += 1
 
     return {"message": f"Processed {count} students", "count": count}
+
+@app.post("/jobs")
+def create_job(job: JobRequest, current_user: dict = Depends(get_current_user)):
+    generated_code = str(uuid.uuid4())[:8]
+    key = f"job:{generated_code}"
+    # Ensure the generated job code does not collide with an existing key
+    while redis_client.exists(key):
+        generated_code = str(uuid.uuid4())[:8]
+        key = f"job:{generated_code}"
+
+    data = job.model_dump()
+    data["job_code"] = generated_code
+    data["posted_by"] = current_user.get("sub")
+    data["timestamp"] = datetime.now().isoformat()
+
+    redis_client.set(key, json.dumps(data))
+    print(f"Stored job at {key}: {data}")
+    return {"message": "Job stored", "job_code": generated_code}
+
+@app.post("/match")
+def match_job(req: JobCodeRequest, current_user: dict = Depends(get_current_user)):
+    key = f"job:{req.job_code}"
+    raw = redis_client.get(key)
+    if not raw:
+        raise HTTPException(status_code=404, detail="Job not found")
+    job = json.loads(raw)
+
+    combined = job.get("job_description", "") + " " + ", ".join(job.get("desired_skills", []))
+    try:
+        resp = client.embeddings.create(input=combined, model="text-embedding-3-small")
+        job_emb = resp.data[0].embedding
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Embedding failed: {str(e)}")
+
+    matches = []
+    for key in redis_client.scan_iter("*"):
+        if str(key).startswith("job:") or str(key).startswith("user:"):
+            continue
+        student_raw = redis_client.get(key)
+        if not student_raw:
+            continue
+        try:
+            student = json.loads(student_raw)
+            emb = student.get("embedding")
+            if not emb:
+                continue
+            score = sum(a * b for a, b in zip(job_emb, emb))
+            matches.append({
+                "name": f"{student.get('first_name', '')} {student.get('last_name', '')}",
+                "email": student.get("email"),
+                "score": score,
+            })
+        except Exception:
+            continue
+
+    matches.sort(key=lambda x: x["score"], reverse=True)
+    return {"matches": matches[:5]}
+
+@app.get("/jobs")
+def list_jobs(current_user: dict = Depends(get_current_user)):
+    jobs = []
+    for key in redis_client.scan_iter("job:*"):
+        job_data = redis_client.get(key)
+        if job_data:
+            job = json.loads(job_data)
+            jobs.append(job)
+    print(f"Returning {len(jobs)} jobs from Redis")
+    return {"jobs": jobs}

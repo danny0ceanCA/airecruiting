@@ -23,7 +23,7 @@ function RegisterForm() {
     e.preventDefault();
     setError('');
     try {
-      const resp = await axios.post('http://localhost:8000/register', {
+      const resp = await axios.post('/register', {
         email: formData.email,
         first_name: formData.firstName,
         last_name: formData.lastName,

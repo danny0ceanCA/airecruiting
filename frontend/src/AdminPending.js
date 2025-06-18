@@ -16,7 +16,7 @@ function AdminPending() {
   const fetchPending = async () => {
     setError('');
     try {
-      const resp = await axios.get('http://localhost:8000/pending-users', {
+      const resp = await axios.get('/pending-users', {
         headers: { Authorization: `Bearer ${token}` },
       });
       setPendingUsers(resp.data);
@@ -37,7 +37,7 @@ function AdminPending() {
     setError('');
     try {
       await axios.post(
-        'http://localhost:8000/approve',
+        '/approve',
         { email },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -56,7 +56,7 @@ function AdminPending() {
     setError('');
     try {
       await axios.post(
-        'http://localhost:8000/reject',
+        '/reject',
         { email },
         { headers: { Authorization: `Bearer ${token}` } }
       );
