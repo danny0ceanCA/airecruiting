@@ -9,10 +9,11 @@
   gap: 2rem;
 }
 
-.highlight-grid {
-  display: flex;
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 1rem;
-  flex-wrap: wrap;
+  width: 100%;
 }
 
 .highlight-card {
@@ -43,6 +44,25 @@
   justify-content: center;
   font-size: 1.5rem;
   color: white;
+}
+
+.avg-time {
+  font-weight: bold;
+}
+
+.visual-section {
+  display: flex;
+  gap: 2rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  width: 100%;
+}
+
+@media (max-width: 768px) {
+  .visual-section {
+    flex-direction: column;
+    align-items: center;
+  }
 }
 
 .charts {
