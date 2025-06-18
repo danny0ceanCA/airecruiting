@@ -348,7 +348,24 @@ def match_job(req: JobCodeRequest, current_user: dict = Depends(get_current_user
             continue
 
     matches.sort(key=lambda x: x["score"], reverse=True)
-    return {"matches": matches[:5]}
+    top_matches = matches[:5]
+
+    # Metrics tracking
+    try:
+        avg_score = (
+            sum(m["score"] for m in matches) / len(matches)
+            if matches
+            else 0.0
+        )
+        redis_client.incr("metrics:total_matches")
+        redis_client.incrbyfloat("metrics:total_match_score", avg_score)
+        redis_client.set(
+            "metrics:last_match_timestamp", datetime.now().isoformat()
+        )
+    except Exception:
+        pass
+
+    return {"matches": top_matches}
 
 @app.get("/jobs")
 def list_jobs(current_user: dict = Depends(get_current_user)):
@@ -360,3 +377,58 @@ def list_jobs(current_user: dict = Depends(get_current_user)):
             jobs.append(job)
     print(f"Returning {len(jobs)} jobs from Redis")
     return {"jobs": jobs}
+
+
+@app.get("/metrics")
+def get_metrics(current_user: dict = Depends(get_current_user)):
+    """Return various application metrics."""
+    total_users = 0
+    approved = 0
+    rejected = 0
+    pending = 0
+    for key in redis_client.scan_iter("user:*"):
+        raw = redis_client.get(key)
+        if not raw:
+            continue
+        total_users += 1
+        info = json.loads(raw)
+        if info.get("approved"):
+            approved += 1
+        elif info.get("rejected"):
+            rejected += 1
+        else:
+            pending += 1
+
+    students = 0
+    for key in redis_client.scan_iter("*"):
+        skey = str(key)
+        if skey.startswith("user:") or skey.startswith("job:") or skey.startswith(
+            "metrics:"
+        ):
+            continue
+        if redis_client.get(key):
+            students += 1
+
+    jobs = 0
+    for key in redis_client.scan_iter("job:*"):
+        if redis_client.get(key):
+            jobs += 1
+
+    total_matches = int(redis_client.get("metrics:total_matches") or 0)
+    total_match_score = float(redis_client.get("metrics:total_match_score") or 0.0)
+    avg_match_score = (
+        total_match_score / total_matches if total_matches else None
+    )
+    latest_match_timestamp = redis_client.get("metrics:last_match_timestamp")
+
+    return {
+        "total_users": total_users,
+        "approved_users": approved,
+        "rejected_users": rejected,
+        "pending_registrations": pending,
+        "total_student_profiles": students,
+        "total_jobs_posted": jobs,
+        "total_matches": total_matches,
+        "average_match_score": avg_match_score,
+        "latest_match_timestamp": latest_match_timestamp,
+    }
