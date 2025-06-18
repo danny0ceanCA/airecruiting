@@ -297,11 +297,18 @@ def upload_students(file: UploadFile = File(...), current_user: dict = Depends(g
 def create_job(job: JobRequest, current_user: dict = Depends(get_current_user)):
     generated_code = str(uuid.uuid4())[:8]
     key = f"job:{generated_code}"
+    # Ensure the generated job code does not collide with an existing key
+    while redis_client.exists(key):
+        generated_code = str(uuid.uuid4())[:8]
+        key = f"job:{generated_code}"
+
     data = job.model_dump()
     data["job_code"] = generated_code
     data["posted_by"] = current_user.get("sub")
     data["timestamp"] = datetime.now().isoformat()
+
     redis_client.set(key, json.dumps(data))
+    print(f"Stored job at {key}: {data}")
     return {"message": "Job stored", "job_code": generated_code}
 
 @app.post("/match")
@@ -351,4 +358,5 @@ def list_jobs(current_user: dict = Depends(get_current_user)):
         if job_data:
             job = json.loads(job_data)
             jobs.append(job)
+    print(f"Returning {len(jobs)} jobs from Redis")
     return {"jobs": jobs}
