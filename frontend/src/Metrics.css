@@ -1,0 +1,51 @@
+.metrics-container {
+  background-color: #001F3F;
+  min-height: 100vh;
+  color: white;
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2rem;
+}
+
+.highlight-grid {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.highlight-card {
+  background: #111;
+  padding: 1rem 2rem;
+  border-radius: 10px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+  text-align: center;
+}
+
+.highlight-card .value {
+  font-size: 2rem;
+  font-weight: bold;
+}
+
+.gauge-wrapper {
+  display: flex;
+  justify-content: center;
+  width: 200px;
+}
+
+.gauge {
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  color: white;
+}
+
+.charts {
+  width: 100%;
+  max-width: 600px;
+}

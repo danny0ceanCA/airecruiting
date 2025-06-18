@@ -8,6 +8,7 @@ import ProtectedRoute from './ProtectedRoute';
 import AdminPending from './AdminPending';
 import StudentProfiles from './StudentProfiles';
 import JobPosting from './JobPosting';
+import Metrics from './Metrics';
 
 function App() {
   return (
@@ -46,6 +47,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <JobPosting />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/metrics"
+            element={
+              <ProtectedRoute>
+                <Metrics />
               </ProtectedRoute>
             }
           />
