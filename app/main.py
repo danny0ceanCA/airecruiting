@@ -4,7 +4,7 @@ import csv
 import os
 import uuid
 from typing import Optional
-from fastapi import FastAPI, HTTPException, Depends, Header, UploadFile, File
+from fastapi import FastAPI, HTTPException, Depends, Header, UploadFile, File, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
 from jose import jwt, JWTError
@@ -380,8 +380,22 @@ def list_jobs(current_user: dict = Depends(get_current_user)):
 
 
 @app.get("/metrics")
-def get_metrics(current_user: dict = Depends(get_current_user)):
+def get_metrics(
+    interval: int = Query(
+        30,
+        description="Lookback interval in days. Allowed: 7, 14, 30, 60, 90, 120",
+    ),
+    current_user: dict = Depends(get_current_user),
+):
     """Return various application metrics."""
+    allowed = {7, 14, 30, 60, 90, 120}
+    if interval not in allowed:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid interval {interval}. Allowed values are {sorted(allowed)}",
+        )
+    cutoff_date = datetime.utcnow() - timedelta(days=interval)
+    # cutoff_date can later be used to filter metrics from Redis
     total_users = 0
     approved = 0
     rejected = 0
@@ -431,4 +445,7 @@ def get_metrics(current_user: dict = Depends(get_current_user)):
         "total_matches": total_matches,
         "average_match_score": avg_match_score,
         "latest_match_timestamp": latest_match_timestamp,
+        "interval_days": interval,
+        "cutoff_date": cutoff_date.isoformat(),
+        "message": f"Metrics filtered for the last {interval} days",
     }
