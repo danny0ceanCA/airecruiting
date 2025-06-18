@@ -29,6 +29,9 @@ ALGORITHM = "HS256"
 
 app = FastAPI()
 
+from api.router import router as api_router
+app.include_router(api_router)
+
 # Simple request logging for debugging
 @app.middleware("http")
 async def log_requests(request, call_next):
