@@ -432,3 +432,74 @@ def get_metrics(current_user: dict = Depends(get_current_user)):
         "average_match_score": avg_match_score,
         "latest_match_timestamp": latest_match_timestamp,
     }
+
+
+class PlacementRequest(BaseModel):
+    student_email: EmailStr
+    job_code: str
+
+
+@app.post("/place")
+def place_student(
+    req: PlacementRequest, current_user: dict = Depends(get_current_user)
+):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+
+    student_key = f"student:{req.student_email}"
+    job_key = f"job:{req.job_code}"
+
+    if not redis_client.exists(student_key):
+        raise HTTPException(status_code=404, detail="Student not found")
+    if not redis_client.exists(job_key):
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    student_raw = redis_client.get(student_key)
+    student = json.loads(student_raw) if student_raw else {}
+
+    student["placed"] = True
+
+    history = student.get("placement_history", [])
+    entry = {"job_code": req.job_code, "placed_at": datetime.now().isoformat()}
+    history.append(entry)
+    student["placement_history"] = history
+
+    placement_count = int(student.get("placement_count", 0)) + 1
+    student["placement_count"] = placement_count
+
+    redis_client.set(student_key, json.dumps(student))
+
+    redis_client.incr("metrics:total_placements")
+    if placement_count > 1:
+        redis_client.incr("metrics:total_rematches")
+
+    created_at = student.get("created_at")
+    if created_at:
+        try:
+            created_dt = datetime.fromisoformat(created_at)
+            days = (datetime.now() - created_dt).total_seconds() / 86400
+            redis_client.incrbyfloat("metrics:sum_time_to_place", days)
+        except Exception:
+            pass
+
+    license_type = student.get("license_type")
+    if license_type:
+        redis_client.incr(f"metrics:licensed:{license_type}")
+
+    return {"message": "Placement recorded", "rematch": placement_count > 1}
+
+
+@app.get("/placements/{student_email}")
+def get_placements(
+    student_email: str, current_user: dict = Depends(get_current_user)
+):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+
+    key = f"student:{student_email}"
+    if not redis_client.exists(key):
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    raw = redis_client.get(key)
+    student = json.loads(raw) if raw else {}
+    return student.get("placement_history", [])
