@@ -414,12 +414,51 @@ def get_metrics(current_user: dict = Depends(get_current_user)):
         if redis_client.get(key):
             jobs += 1
 
-    total_matches = int(redis_client.get("metrics:total_matches") or 0)
-    total_match_score = float(redis_client.get("metrics:total_match_score") or 0.0)
+    (
+        total_matches,
+        total_match_score,
+        total_placements,
+        total_rematches,
+        sum_time_to_place,
+    ) = [
+        redis_client.get(k)
+        for k in [
+            "metrics:total_matches",
+            "metrics:total_match_score",
+            "metrics:total_placements",
+            "metrics:total_rematches",
+            "metrics:sum_time_to_place",
+        ]
+    ]
+    total_matches = int(total_matches or 0)
+    total_match_score = float(total_match_score or 0.0)
+    total_placements = int(total_placements or 0)
+    total_rematches = int(total_rematches or 0)
+    sum_time_to_place = float(sum_time_to_place or 0.0)
+
     avg_match_score = (
         total_match_score / total_matches if total_matches else None
     )
     latest_match_timestamp = redis_client.get("metrics:last_match_timestamp")
+
+    placement_rate = (
+        total_placements / students if students else 0
+    )
+    avg_time_to_place = (
+        sum_time_to_place / total_placements if total_placements else 0.0
+    )
+    avg_time_to_place = round(avg_time_to_place, 1)
+    rematch_rate = (
+        total_rematches / total_placements if total_placements else 0
+    )
+
+    license_counts: dict[str, int] = {}
+    license_keys = list(redis_client.scan_iter("metrics:licensed:*"))
+    if license_keys:
+        values = redis_client.mget(license_keys)
+        for k, v in zip(license_keys, values):
+            lic = k.split("metrics:licensed:", 1)[1]
+            license_counts[lic] = int(v or 0)
 
     return {
         "total_users": total_users,
@@ -431,6 +470,10 @@ def get_metrics(current_user: dict = Depends(get_current_user)):
         "total_matches": total_matches,
         "average_match_score": avg_match_score,
         "latest_match_timestamp": latest_match_timestamp,
+        "placement_rate": placement_rate,
+        "avg_time_to_placement_days": avg_time_to_place,
+        "license_breakdown": license_counts,
+        "rematch_rate": rematch_rate,
     }
 
 
