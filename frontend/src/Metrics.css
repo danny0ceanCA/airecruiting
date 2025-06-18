@@ -49,3 +49,17 @@
   width: 100%;
   max-width: 600px;
 }
+
+.interval-controls {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.interval-controls h2 {
+  margin: 0;
+}
+
+.interval-controls select {
+  padding: 0.25rem;
+}
