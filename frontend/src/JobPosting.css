@@ -22,6 +22,7 @@
   max-width: 45%;
   flex: 0 0 45%;
   margin-bottom: 0;
+  align-self: flex-start;
 }
 
 .post-job-form {
@@ -67,11 +68,20 @@
   margin-top: 0.5rem;
 }
 
+.post-job-panel h2,
+.posted-jobs-panel h2 {
+  font-size: 1.5rem;
+  margin: 0 0 1rem 0;
+  padding-top: 0;
+}
+
 .posted-jobs-panel {
   margin-top: 0;
+  padding-top: 0;
   flex: 1 1 55%;
   max-width: 55%;
   overflow-x: auto;
+  align-self: flex-start;
 }
 
 .search-input {
@@ -211,6 +221,7 @@
     flex: 1 1 100%;
     max-width: none;
     margin-bottom: 2rem;
+    align-self: flex-start;
   }
   .match-table-row,
   .job-table {
