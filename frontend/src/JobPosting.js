@@ -189,7 +189,8 @@ function JobPosting() {
         )}
       </div>
       <div className="job-matching-layout">
-      <form className="post-job-panel" onSubmit={handleSubmit}>
+        <div className="post-job-panel">
+      <form onSubmit={handleSubmit}>
         <h2>Post a Job</h2>
         <label htmlFor="job_title">Job Title</label>
         <input id="job_title" name="job_title" type="text" value={formData.job_title} onChange={handleChange} />
@@ -204,6 +205,7 @@ function JobPosting() {
         <button type="submit">Submit</button>
         {message && <p className="message">{message}</p>}
       </form>
+        </div>
 
       <div className="posted-jobs-panel">
         <h2>Jobs</h2>
