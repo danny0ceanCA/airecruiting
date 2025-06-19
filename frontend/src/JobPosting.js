@@ -15,8 +15,8 @@ function JobPosting() {
   const [message, setMessage] = useState('');
   const [jobs, setJobs] = useState([]);
   const [filter, setFilter] = useState('');
-  const [expandedJob, setExpandedJob] = useState(null); // job_code or null
-  const [selectedRows, setSelectedRows] = useState({}); // { job_code: [emails] }
+  const [expandedJob, setExpandedJob] = useState(null);
+  const [selectedRows, setSelectedRows] = useState({});
   const [matches, setMatches] = useState({});
   const [menuOpen, setMenuOpen] = useState(false);
   const navigate = useNavigate();
@@ -30,7 +30,6 @@ function JobPosting() {
       const resp = await api.get('/jobs', {
         headers: { Authorization: `Bearer ${token}` }
       });
-      // resp.data has shape { jobs: [...] }
       setJobs(resp.data.jobs || []);
     } catch (err) {
       console.error('Error fetching jobs:', err);
@@ -39,16 +38,14 @@ function JobPosting() {
   };
 
   useEffect(() => {
-    if (token) {
-      fetchJobs();
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    if (token) fetchJobs();
+  }, []);
 
   useEffect(() => {
     if (expandedJob && !matches[expandedJob]) {
       handleMatch(expandedJob);
     }
-  }, [expandedJob]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [expandedJob]);
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -58,27 +55,18 @@ function JobPosting() {
     e.preventDefault();
     setMessage('');
     try {
-      const resp = await api.post(
-        '/jobs',
-        {
-          job_title: formData.job_title,
-          job_description: formData.job_description,
-          desired_skills: formData.desired_skills
-            .split(',')
-            .map((s) => s.trim())
-            .filter(Boolean),
-          source: formData.source,
-          rate_of_pay_range: formData.rate_of_pay_range
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      const resp = await api.post('/jobs', {
+        job_title: formData.job_title,
+        job_description: formData.job_description,
+        desired_skills: formData.desired_skills.split(',').map((s) => s.trim()).filter(Boolean),
+        source: formData.source,
+        rate_of_pay_range: formData.rate_of_pay_range
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       setMessage(`Job posted successfully! Job code: ${resp.data.job_code}`);
       setFormData({
-        job_title: '',
-        job_description: '',
-        desired_skills: '',
-        source: '',
-        rate_of_pay_range: ''
+        job_title: '', job_description: '', desired_skills: '', source: '', rate_of_pay_range: ''
       });
       fetchJobs();
     } catch (err) {
@@ -88,12 +76,11 @@ function JobPosting() {
 
   const handleMatch = async (code) => {
     try {
-      const resp = await api.post(
-        '/match',
-        { job_code: code },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      setMatches((prev) => ({ ...prev, [code]: resp.data.matches }));
+      const resp = await api.post('/match', { job_code: code }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const matchResults = resp.data.matches.map(m => ({ ...m, status: null }));
+      setMatches((prev) => ({ ...prev, [code]: matchResults }));
     } catch (err) {
       console.error('Error matching job:', err);
     }
@@ -102,46 +89,46 @@ function JobPosting() {
   const handleSelect = (jobCode, email) => (e) => {
     setSelectedRows((prev) => {
       const current = prev[jobCode] || [];
-      if (e.target.checked) {
-        return { ...prev, [jobCode]: [...current, email] };
-      }
-      return {
-        ...prev,
-        [jobCode]: current.filter((em) => em !== email),
-      };
+      if (e.target.checked) return { ...prev, [jobCode]: [...current, email] };
+      return { ...prev, [jobCode]: current.filter((em) => em !== email) };
     });
   };
 
   const handleAssign = async (job, row) => {
     try {
-      await api.post(
-        '/assign',
-        { student_email: row.email, job_code: job.job_code },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await api.post('/assign', {
+        student_email: row.email,
+        job_code: job.job_code
+      }, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
       setMatches((prev) => ({
         ...prev,
         [job.job_code]: prev[job.job_code].map((m) =>
           m.email === row.email ? { ...m, status: 'assigned' } : m
-        ),
+        )
       }));
     } catch (err) {
-      console.error('Assign failed', err);
+      console.error('Assign failed', err.response?.data || err.message);
     }
   };
 
   const handlePlace = async (job, row) => {
     try {
-      await api.post(
-        '/place',
-        { student_email: row.email, job_code: job.job_code },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await api.post('/place', {
+        student_email: row.email,
+        job_code: job.job_code
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       setMatches((prev) => ({
         ...prev,
         [job.job_code]: prev[job.job_code].map((m) =>
           m.email === row.email ? { ...m, status: 'placed' } : m
-        ),
+        )
       }));
     } catch (err) {
       console.error('Place failed', err);
@@ -152,16 +139,17 @@ function JobPosting() {
     const emails = selectedRows[job.job_code] || [];
     for (const email of emails) {
       try {
-        await api.post(
-          '/assign',
-          { student_email: email, job_code: job.job_code },
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
+        await api.post('/assign', {
+          student_email: email,
+          job_code: job.job_code
+        }, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
         setMatches((prev) => ({
           ...prev,
           [job.job_code]: prev[job.job_code].map((m) =>
             m.email === email ? { ...m, status: 'assigned' } : m
-          ),
+          )
         }));
       } catch (err) {
         console.error('Bulk assign failed', err);
@@ -175,11 +163,7 @@ function JobPosting() {
     navigate('/login');
   };
 
-  const matchFilter = (j) =>
-    [j.job_code, j.job_title, j.source].some((x) =>
-      x?.toLowerCase().includes(filter.toLowerCase())
-    );
-
+  const matchFilter = (j) => [j.job_code, j.job_title, j.source].some((x) => x?.toLowerCase().includes(filter.toLowerCase()));
   const filteredJobs = jobs.filter(matchFilter);
 
   return (
@@ -201,57 +185,22 @@ function JobPosting() {
       <form className="job-form" onSubmit={handleSubmit}>
         <h2>Post a Job</h2>
         <label htmlFor="job_title">Job Title</label>
-        <input
-          id="job_title"
-          name="job_title"
-          type="text"
-          value={formData.job_title}
-          onChange={handleChange}
-        />
+        <input id="job_title" name="job_title" type="text" value={formData.job_title} onChange={handleChange} />
         <label htmlFor="job_description">Job Description</label>
-        <textarea
-          id="job_description"
-          name="job_description"
-          value={formData.job_description}
-          onChange={handleChange}
-        ></textarea>
+        <textarea id="job_description" name="job_description" value={formData.job_description} onChange={handleChange}></textarea>
         <label htmlFor="desired_skills">Desired Skills (comma separated)</label>
-        <input
-          id="desired_skills"
-          name="desired_skills"
-          type="text"
-          value={formData.desired_skills}
-          onChange={handleChange}
-        />
+        <input id="desired_skills" name="desired_skills" type="text" value={formData.desired_skills} onChange={handleChange} />
         <label htmlFor="source">Source</label>
-        <input
-          id="source"
-          name="source"
-          type="text"
-          value={formData.source}
-          onChange={handleChange}
-        />
+        <input id="source" name="source" type="text" value={formData.source} onChange={handleChange} />
         <label htmlFor="rate_of_pay_range">Rate of Pay Range</label>
-        <input
-          id="rate_of_pay_range"
-          name="rate_of_pay_range"
-          type="text"
-          value={formData.rate_of_pay_range}
-          onChange={handleChange}
-        />
+        <input id="rate_of_pay_range" name="rate_of_pay_range" type="text" value={formData.rate_of_pay_range} onChange={handleChange} />
         <button type="submit">Submit</button>
         {message && <p className="message">{message}</p>}
       </form>
 
       <div className="jobs-section">
         <h2>Jobs</h2>
-        <input
-          className="filter-box"
-          type="text"
-          placeholder="Filter by code, title, source"
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-        />
+        <input className="filter-box" type="text" placeholder="Filter by code, title, source" value={filter} onChange={(e) => setFilter(e.target.value)} />
         <table className="job-table">
           <thead>
             <tr>
@@ -279,29 +228,17 @@ function JobPosting() {
                     ) : null}
                   </td>
                   <td>
-                    <button
-                      onClick={() =>
-                        setExpandedJob(
-                          expandedJob === job.job_code ? null : job.job_code
-                        )
-                      }
-                    >
-                      Match
-                    </button>
+                    <button onClick={() => setExpandedJob(expandedJob === job.job_code ? null : job.job_code)}>Match</button>
                   </td>
                 </tr>
                 {expandedJob === job.job_code && (
                   <tr className="match-table-row">
                     <td colSpan="6">
                       <button
-                        disabled={
-                          (selectedRows[job.job_code]?.length || 0) === 0
-                        }
+                        disabled={(selectedRows[job.job_code]?.length || 0) === 0}
                         onClick={() => bulkAssign(job)}
                       >
-                        Assign Selected ({
-                          selectedRows[job.job_code]?.length || 0
-                        })
+                        Assign Selected ({selectedRows[job.job_code]?.length || 0})
                       </button>
                       {matches[job.job_code] && (
                         <table className="matches-table">
@@ -316,13 +253,9 @@ function JobPosting() {
                           </thead>
                           <tbody>
                             {matches[job.job_code].map((row, idx) => {
-                              const selectedCount =
-                                selectedRows[job.job_code]?.length || 0;
-                              const checked =
-                                selectedRows[job.job_code]?.includes(row.email);
-                              const disableCheckbox =
-                                row.status !== null ||
-                                (selectedCount >= 3 && !checked);
+                              const selectedCount = selectedRows[job.job_code]?.length || 0;
+                              const checked = selectedRows[job.job_code]?.includes(row.email);
+                              const disableCheckbox = row.status !== null || (selectedCount >= 3 && !checked);
                               return (
                                 <tr key={idx}>
                                   <td>
@@ -333,10 +266,7 @@ function JobPosting() {
                                       onChange={handleSelect(job.job_code, row.email)}
                                     />
                                   </td>
-                                  <td>
-                                    {row.first_name || row.name?.split(' ')[0]}{' '}
-                                    {row.last_name || row.name?.split(' ')[1]}
-                                  </td>
+                                  <td>{row.first_name || row.name?.split(' ')[0]} {row.last_name || row.name?.split(' ')[1]}</td>
                                   <td>{row.email}</td>
                                   <td>{row.score.toFixed(2)}</td>
                                   <td>
@@ -345,18 +275,12 @@ function JobPosting() {
                                     ) : row.status === 'assigned' ? (
                                       <>
                                         <span className="badge assigned">Assigned</span>
-                                        <button onClick={() => handlePlace(job, row)}>
-                                          Place
-                                        </button>
+                                        <button onClick={() => handlePlace(job, row)}>Place</button>
                                       </>
                                     ) : (
                                       <>
-                                        <button onClick={() => handleAssign(job, row)}>
-                                          Assign
-                                        </button>
-                                        <button onClick={() => handlePlace(job, row)}>
-                                          Place
-                                        </button>
+                                        <button onClick={() => handleAssign(job, row)}>Assign</button>
+                                        <button onClick={() => handlePlace(job, row)}>Place</button>
                                       </>
                                     )}
                                   </td>

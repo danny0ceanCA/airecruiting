@@ -37,6 +37,10 @@ async def log_requests(request, call_next):
     print(f"Response status: {response.status_code}")
     return response
 
+@app.get("/routes")
+def list_routes():
+    return [route.path for route in app.routes]
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -248,7 +252,7 @@ def create_student(student: StudentRequest, current_user: dict = Depends(get_cur
 
     data = student.model_dump()
     data["embedding"] = embedding
-    redis_client.set(student.email, json.dumps(data))
+    redis_client.set(f"student:{student.email}", json.dumps(data))
     return {"message": "Student stored"}
 
 @app.post("/students/upload")
@@ -288,7 +292,8 @@ def upload_students(file: UploadFile = File(...), current_user: dict = Depends(g
 
         data = student.model_dump()
         data["embedding"] = embedding
-        redis_client.set(student.email, json.dumps(data))
+        redis_client.set(f"student:{student.email}", json.dumps(data))
+
         count += 1
 
     return {"message": f"Processed {count} students", "count": count}
@@ -538,19 +543,20 @@ def place_student(
 
 @app.post("/assign")
 async def assign_student(payload: dict, current_user: dict = Depends(get_current_user)):
-    """
-    Body = { "student_email": str, "job_code": str }
-    Admin only: mark student as 'assigned' for this job.
-    """
-    if current_user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="Admins only")
+    print("✅ /assign route was called")
+
     student_email = payload.get("student_email")
     job_code = payload.get("job_code")
-    if not (student_email and job_code):
-        raise HTTPException(status_code=400, detail="Missing fields")
+    print("Assigning student_email:", student_email)
+    print("Assigning job_code:", job_code)
 
+    # ✅ Now uses consistent Redis key prefix
     student_key = f"student:{student_email}"
     job_key = f"job:{job_code}"
+
+    print("Checking Redis for:")
+    print(" -", student_key, "exists?", redis_client.exists(student_key))
+    print(" -", job_key, "exists?", redis_client.exists(job_key))
 
     if not redis_client.exists(student_key):
         raise HTTPException(status_code=404, detail="Student not found")
@@ -581,6 +587,9 @@ async def assign_student(payload: dict, current_user: dict = Depends(get_current
     redis_client.incr("metrics:total_assignments")
 
     return {"success": True}
+
+print("✅ FastAPI has registered /assign")
+
 
 
 @app.get("/placements/{student_email}")
