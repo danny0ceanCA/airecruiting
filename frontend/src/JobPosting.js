@@ -190,47 +190,57 @@ function JobPosting() {
       </div>
       <div className="job-matching-layout">
         <div className="post-job-panel">
-          <form onSubmit={handleSubmit}>
+          <form onSubmit={handleSubmit} className="post-job-form">
             <h2>Post a Job</h2>
-            <label htmlFor="job_title">Job Title</label>
-            <input
-              id="job_title"
-              name="job_title"
-              type="text"
-              value={formData.job_title}
-              onChange={handleChange}
-            />
-            <label htmlFor="job_description">Job Description</label>
-            <textarea
-              id="job_description"
-              name="job_description"
-              value={formData.job_description}
-              onChange={handleChange}
-            ></textarea>
-            <label htmlFor="desired_skills">Desired Skills (comma separated)</label>
-            <input
-              id="desired_skills"
-              name="desired_skills"
-              type="text"
-              value={formData.desired_skills}
-              onChange={handleChange}
-            />
-            <label htmlFor="source">Source</label>
-            <input
-              id="source"
-              name="source"
-              type="text"
-              value={formData.source}
-              onChange={handleChange}
-            />
-            <label htmlFor="rate_of_pay_range">Rate of Pay Range</label>
-            <input
-              id="rate_of_pay_range"
-              name="rate_of_pay_range"
-              type="text"
-              value={formData.rate_of_pay_range}
-              onChange={handleChange}
-            />
+            <div className="form-field">
+              <label htmlFor="job_title">Job Title</label>
+              <input
+                id="job_title"
+                name="job_title"
+                type="text"
+                value={formData.job_title}
+                onChange={handleChange}
+              />
+            </div>
+            <div className="form-field">
+              <label htmlFor="job_description">Job Description</label>
+              <textarea
+                id="job_description"
+                name="job_description"
+                value={formData.job_description}
+                onChange={handleChange}
+              ></textarea>
+            </div>
+            <div className="form-field">
+              <label htmlFor="desired_skills">Desired Skills (comma separated)</label>
+              <input
+                id="desired_skills"
+                name="desired_skills"
+                type="text"
+                value={formData.desired_skills}
+                onChange={handleChange}
+              />
+            </div>
+            <div className="form-field">
+              <label htmlFor="source">Source</label>
+              <input
+                id="source"
+                name="source"
+                type="text"
+                value={formData.source}
+                onChange={handleChange}
+              />
+            </div>
+            <div className="form-field">
+              <label htmlFor="rate_of_pay_range">Rate of Pay Range</label>
+              <input
+                id="rate_of_pay_range"
+                name="rate_of_pay_range"
+                type="text"
+                value={formData.rate_of_pay_range}
+                onChange={handleChange}
+              />
+            </div>
             <button type="submit">Submit</button>
             {message && <p className="message">{message}</p>}
           </form>
