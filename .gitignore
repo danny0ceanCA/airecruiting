@@ -8,4 +8,5 @@ venv/
 ENV/
 **/node_modules/
 **/package-lock.json
-.env
+!.env
+!frontend/.env

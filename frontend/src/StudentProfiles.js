@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import axios from 'axios';
+import api from './api';
 import { Link } from 'react-router-dom';
 import './StudentProfiles.css';
 
@@ -35,7 +35,7 @@ function StudentProfiles() {
     setFormMessage('');
     setFormError('');
     try {
-      await axios.post(
+      await api.post(
         '/students',
         {
           first_name: formData.firstName,
@@ -80,7 +80,7 @@ function StudentProfiles() {
     const data = new FormData();
     data.append('file', csvFile);
     try {
-      const resp = await axios.post('/students/upload', data, {
+      const resp = await api.post('/students/upload', data, {
         headers: {
           'Content-Type': 'multipart/form-data',
           Authorization: `Bearer ${token}`

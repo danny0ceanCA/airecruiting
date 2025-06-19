@@ -37,6 +37,10 @@ async def log_requests(request, call_next):
     print(f"Response status: {response.status_code}")
     return response
 
+@app.get("/routes")
+def list_routes():
+    return [route.path for route in app.routes]
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -248,7 +252,7 @@ def create_student(student: StudentRequest, current_user: dict = Depends(get_cur
 
     data = student.model_dump()
     data["embedding"] = embedding
-    redis_client.set(student.email, json.dumps(data))
+    redis_client.set(f"student:{student.email}", json.dumps(data))
     return {"message": "Student stored"}
 
 @app.post("/students/upload")
@@ -288,7 +292,8 @@ def upload_students(file: UploadFile = File(...), current_user: dict = Depends(g
 
         data = student.model_dump()
         data["embedding"] = embedding
-        redis_client.set(student.email, json.dumps(data))
+        redis_client.set(f"student:{student.email}", json.dumps(data))
+
         count += 1
 
     return {"message": f"Processed {count} students", "count": count}
@@ -306,6 +311,8 @@ def create_job(job: JobRequest, current_user: dict = Depends(get_current_user)):
     data["job_code"] = generated_code
     data["posted_by"] = current_user.get("sub")
     data["timestamp"] = datetime.now().isoformat()
+    data.setdefault("assigned_students", [])
+    data.setdefault("placed_students", [])
 
     redis_client.set(key, json.dumps(data))
     print(f"Stored job at {key}: {data}")
@@ -374,6 +381,8 @@ def list_jobs(current_user: dict = Depends(get_current_user)):
         job_data = redis_client.get(key)
         if job_data:
             job = json.loads(job_data)
+            job.setdefault("assigned_students", [])
+            job.setdefault("placed_students", [])
             jobs.append(job)
     print(f"Returning {len(jobs)} jobs from Redis")
     return {"jobs": jobs}
@@ -530,6 +539,57 @@ def place_student(
         redis_client.incr(f"metrics:licensed:{license_type}")
 
     return {"message": "Placement recorded", "rematch": placement_count > 1}
+
+
+@app.post("/assign")
+async def assign_student(payload: dict, current_user: dict = Depends(get_current_user)):
+    print("✅ /assign route was called")
+
+    student_email = payload.get("student_email")
+    job_code = payload.get("job_code")
+    print("Assigning student_email:", student_email)
+    print("Assigning job_code:", job_code)
+
+    # ✅ Now uses consistent Redis key prefix
+    student_key = f"student:{student_email}"
+    job_key = f"job:{job_code}"
+
+    print("Checking Redis for:")
+    print(" -", student_key, "exists?", redis_client.exists(student_key))
+    print(" -", job_key, "exists?", redis_client.exists(job_key))
+
+    if not redis_client.exists(student_key):
+        raise HTTPException(status_code=404, detail="Student not found")
+    if not redis_client.exists(job_key):
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    student_data = json.loads(redis_client.get(student_key))
+    student_data.setdefault("assignment_history", [])
+    student_data.setdefault("placement_count", 0)
+    student_data.setdefault("status_by_job", {})
+
+    if student_data["status_by_job"].get(job_code) in ("assigned", "placed"):
+        return {"success": True, "message": "Already assigned"}
+
+    student_data["assignment_history"].append({
+        "job_code": job_code,
+        "assigned_at": datetime.utcnow().isoformat()
+    })
+    student_data["status_by_job"][job_code] = "assigned"
+    redis_client.set(student_key, json.dumps(student_data))
+
+    job_data = json.loads(redis_client.get(job_key))
+    job_data.setdefault("assigned_students", [])
+    if student_email not in job_data["assigned_students"]:
+        job_data["assigned_students"].append(student_email)
+    redis_client.set(job_key, json.dumps(job_data))
+
+    redis_client.incr("metrics:total_assignments")
+
+    return {"success": True}
+
+print("✅ FastAPI has registered /assign")
+
 
 
 @app.get("/placements/{student_email}")

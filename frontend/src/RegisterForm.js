@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import axios from "axios";
+import api from "./api";
 import { Link, useNavigate } from 'react-router-dom';
 import './RegisterForm.css';
 
@@ -23,7 +23,7 @@ function RegisterForm() {
     e.preventDefault();
     setError('');
     try {
-      const resp = await axios.post('/register', {
+      const resp = await api.post('/register', {
         email: formData.email,
         first_name: formData.firstName,
         last_name: formData.lastName,
