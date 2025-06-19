@@ -14,7 +14,9 @@ function JobPosting() {
   });
   const [message, setMessage] = useState('');
   const [jobs, setJobs] = useState([]);
-  const [filter, setFilter] = useState('');
+  const [codeFilter, setCodeFilter] = useState('');
+  const [titleFilter, setTitleFilter] = useState('');
+  const [sourceFilter, setSourceFilter] = useState('');
   const [expandedJob, setExpandedJob] = useState(null);
   const [selectedRows, setSelectedRows] = useState({});
   const [matches, setMatches] = useState({});
@@ -163,7 +165,12 @@ function JobPosting() {
     navigate('/login');
   };
 
-  const matchFilter = (j) => [j.job_code, j.job_title, j.source].some((x) => x?.toLowerCase().includes(filter.toLowerCase()));
+  const matchFilter = (j) => {
+    const codeMatch = j.job_code?.toLowerCase().includes(codeFilter.toLowerCase());
+    const titleMatch = j.job_title?.toLowerCase().includes(titleFilter.toLowerCase());
+    const sourceMatch = j.source?.toLowerCase().includes(sourceFilter.toLowerCase());
+    return codeMatch && titleMatch && sourceMatch;
+  };
   const filteredJobs = jobs.filter(matchFilter);
 
   return (
@@ -181,7 +188,7 @@ function JobPosting() {
           </div>
         )}
       </div>
-
+      <div className="job-posting-layout">
       <form className="job-form" onSubmit={handleSubmit}>
         <h2>Post a Job</h2>
         <label htmlFor="job_title">Job Title</label>
@@ -200,7 +207,6 @@ function JobPosting() {
 
       <div className="jobs-section">
         <h2>Jobs</h2>
-        <input className="filter-box" type="text" placeholder="Filter by code, title, source" value={filter} onChange={(e) => setFilter(e.target.value)} />
         <table className="job-table">
           <thead>
             <tr>
@@ -210,6 +216,12 @@ function JobPosting() {
               <th>Rate</th>
               <th>Status</th>
               <th>Action</th>
+            </tr>
+            <tr className="filter-row">
+              <th><input className="column-filter" type="text" value={codeFilter} onChange={(e) => setCodeFilter(e.target.value)} placeholder="Filter" /></th>
+              <th><input className="column-filter" type="text" value={titleFilter} onChange={(e) => setTitleFilter(e.target.value)} placeholder="Filter" /></th>
+              <th><input className="column-filter" type="text" value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)} placeholder="Filter" /></th>
+              <th colSpan="3"></th>
             </tr>
           </thead>
           <tbody>
@@ -297,6 +309,7 @@ function JobPosting() {
             ))}
           </tbody>
         </table>
+      </div>
       </div>
     </div>
   );
