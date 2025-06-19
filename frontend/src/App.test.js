@@ -1,9 +1,22 @@
 import { render, screen } from '@testing-library/react';
 import App from './App';
 import Metrics from './Metrics';
+import api from './api';
 import axios from 'axios';
 
-jest.mock('axios');
+jest.mock('axios', () => {
+  const mockAxios = { get: jest.fn(), post: jest.fn(), create: jest.fn() };
+  mockAxios.create.mockReturnValue(mockAxios);
+  return mockAxios;
+});
+
+beforeAll(() => {
+  global.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+});
 
 test('renders login form', () => {
   render(<App />);
@@ -12,7 +25,7 @@ test('renders login form', () => {
 });
 
 test('admin metrics shows placement rate', async () => {
-  axios.get.mockResolvedValueOnce({
+  api.get.mockResolvedValueOnce({
     data: {
       total_student_profiles: 1,
       total_jobs_posted: 1,
