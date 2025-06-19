@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import axios from 'axios';
+import api from './api';
 import jwtDecode from 'jwt-decode';
 import {
   BarChart,
@@ -37,7 +37,7 @@ function Metrics() {
     }
     const fetchMetrics = async () => {
       try {
-        const resp = await axios.get(`/metrics?interval=${interval}`, {
+        const resp = await api.get(`/metrics?interval=${interval}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         setMetricsData(resp.data);

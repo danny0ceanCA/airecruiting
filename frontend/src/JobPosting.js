@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, Navigate } from 'react-router-dom';
 import jwtDecode from 'jwt-decode';
-import axios from 'axios';
+import api from './api';
 import './JobPosting.css';
 
 function JobPosting() {
@@ -27,7 +27,7 @@ function JobPosting() {
 
   const fetchJobs = async () => {
     try {
-      const resp = await axios.get('/jobs', {
+      const resp = await api.get('/jobs', {
         headers: { Authorization: `Bearer ${token}` }
       });
       // resp.data has shape { jobs: [...] }
@@ -58,7 +58,7 @@ function JobPosting() {
     e.preventDefault();
     setMessage('');
     try {
-      const resp = await axios.post(
+      const resp = await api.post(
         '/jobs',
         {
           job_title: formData.job_title,
@@ -88,7 +88,7 @@ function JobPosting() {
 
   const handleMatch = async (code) => {
     try {
-      const resp = await axios.post(
+      const resp = await api.post(
         '/match',
         { job_code: code },
         { headers: { Authorization: `Bearer ${token}` } }
@@ -114,7 +114,7 @@ function JobPosting() {
 
   const handleAssign = async (job, row) => {
     try {
-      await axios.post(
+      await api.post(
         '/assign',
         { student_email: row.email, job_code: job.job_code },
         { headers: { Authorization: `Bearer ${token}` } }
@@ -132,7 +132,7 @@ function JobPosting() {
 
   const handlePlace = async (job, row) => {
     try {
-      await axios.post(
+      await api.post(
         '/place',
         { student_email: row.email, job_code: job.job_code },
         { headers: { Authorization: `Bearer ${token}` } }
@@ -152,7 +152,7 @@ function JobPosting() {
     const emails = selectedRows[job.job_code] || [];
     for (const email of emails) {
       try {
-        await axios.post(
+        await api.post(
           '/assign',
           { student_email: email, job_code: job.job_code },
           { headers: { Authorization: `Bearer ${token}` } }

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import api from './api';
 import './AdminPending.css';
 
 function AdminPending() {
@@ -16,7 +16,7 @@ function AdminPending() {
   const fetchPending = async () => {
     setError('');
     try {
-      const resp = await axios.get('/pending-users', {
+      const resp = await api.get('/pending-users', {
         headers: { Authorization: `Bearer ${token}` },
       });
       setPendingUsers(resp.data);
@@ -36,7 +36,7 @@ function AdminPending() {
     setToast('');
     setError('');
     try {
-      await axios.post(
+      await api.post(
         '/approve',
         { email },
         { headers: { Authorization: `Bearer ${token}` } }
@@ -55,7 +55,7 @@ function AdminPending() {
     setToast('');
     setError('');
     try {
-      await axios.post(
+      await api.post(
         '/reject',
         { email },
         { headers: { Authorization: `Bearer ${token}` } }
