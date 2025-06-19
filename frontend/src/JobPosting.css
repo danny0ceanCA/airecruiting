@@ -19,8 +19,8 @@
   border-radius: 10px;
   display: flex;
   flex-direction: column;
-  max-width: 600px;
-  flex: 0 0 48%;
+  max-width: 45%;
+  flex: 0 0 45%;
   margin-bottom: 0;
 }
 
@@ -53,7 +53,8 @@
 
 .posted-jobs-panel {
   margin-top: 0;
-  flex: 1 1 52%;
+  flex: 1 1 55%;
+  max-width: 55%;
   overflow-x: auto;
 }
 
