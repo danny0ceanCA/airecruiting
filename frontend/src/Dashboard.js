@@ -19,17 +19,17 @@ function Dashboard() {
   }, []);
 
   const tiles = [
-    { label: 'Student Profiles', path: '/students', admin: false },
-    { label: 'School Metrics', path: '/metrics', admin: false },
-    { label: 'Pending Registrations', path: '/admin/pending', admin: true },
-    { label: 'Job Matching', path: '/admin/jobs', admin: true },
+    { label: 'Student Profiles', path: '/students', roles: ['admin', 'career'] },
+    { label: 'School Metrics', path: '/metrics', roles: ['admin', 'career'] },
+    { label: 'Pending Registrations', path: '/admin/pending', roles: ['admin'] },
+    { label: 'Job Matching', path: '/admin/jobs', roles: ['admin', 'recruiter'] },
   ];
 
   return (
     <div className="dashboard-container">
       <div className="tile-grid">
         {tiles
-          .filter(tile => !tile.admin || role === 'admin')
+          .filter(tile => tile.roles.includes(role))
           .map(tile => (
             <Link key={tile.path} to={tile.path} className="dashboard-tile">
               {tile.label}
