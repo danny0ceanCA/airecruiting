@@ -14,7 +14,9 @@ function JobPosting() {
   });
   const [message, setMessage] = useState('');
   const [jobs, setJobs] = useState([]);
-  const [filter, setFilter] = useState('');
+  const [codeFilter, setCodeFilter] = useState('');
+  const [titleFilter, setTitleFilter] = useState('');
+  const [sourceFilter, setSourceFilter] = useState('');
   const [expandedJob, setExpandedJob] = useState(null);
   const [selectedRows, setSelectedRows] = useState({});
   const [matches, setMatches] = useState({});
@@ -163,7 +165,12 @@ function JobPosting() {
     navigate('/login');
   };
 
-  const matchFilter = (j) => [j.job_code, j.job_title, j.source].some((x) => x?.toLowerCase().includes(filter.toLowerCase()));
+  const matchFilter = (j) => {
+    const codeMatch = j.job_code?.toLowerCase().includes(codeFilter.toLowerCase());
+    const titleMatch = j.job_title?.toLowerCase().includes(titleFilter.toLowerCase());
+    const sourceMatch = j.source?.toLowerCase().includes(sourceFilter.toLowerCase());
+    return codeMatch && titleMatch && sourceMatch;
+  };
   const filteredJobs = jobs.filter(matchFilter);
 
   return (
@@ -181,26 +188,66 @@ function JobPosting() {
           </div>
         )}
       </div>
+      <div className="job-matching-layout">
+        <div className="post-job-panel">
+          <form onSubmit={handleSubmit} className="post-job-form">
+            <h2>Post a Job</h2>
+            <div className="form-field">
+              <label htmlFor="job_title">Job Title</label>
+              <input
+                id="job_title"
+                name="job_title"
+                type="text"
+                value={formData.job_title}
+                onChange={handleChange}
+              />
+            </div>
+            <div className="form-field">
+              <label htmlFor="job_description">Job Description</label>
+              <textarea
+                id="job_description"
+                name="job_description"
+                value={formData.job_description}
+                onChange={handleChange}
+              ></textarea>
+            </div>
+            <div className="form-field">
+              <label htmlFor="desired_skills">Desired Skills (comma separated)</label>
+              <input
+                id="desired_skills"
+                name="desired_skills"
+                type="text"
+                value={formData.desired_skills}
+                onChange={handleChange}
+              />
+            </div>
+            <div className="form-field">
+              <label htmlFor="source">Source</label>
+              <input
+                id="source"
+                name="source"
+                type="text"
+                value={formData.source}
+                onChange={handleChange}
+              />
+            </div>
+            <div className="form-field">
+              <label htmlFor="rate_of_pay_range">Rate of Pay Range</label>
+              <input
+                id="rate_of_pay_range"
+                name="rate_of_pay_range"
+                type="text"
+                value={formData.rate_of_pay_range}
+                onChange={handleChange}
+              />
+            </div>
+            <button type="submit">Submit</button>
+            {message && <p className="message">{message}</p>}
+          </form>
+        </div>
 
-      <form className="job-form" onSubmit={handleSubmit}>
-        <h2>Post a Job</h2>
-        <label htmlFor="job_title">Job Title</label>
-        <input id="job_title" name="job_title" type="text" value={formData.job_title} onChange={handleChange} />
-        <label htmlFor="job_description">Job Description</label>
-        <textarea id="job_description" name="job_description" value={formData.job_description} onChange={handleChange}></textarea>
-        <label htmlFor="desired_skills">Desired Skills (comma separated)</label>
-        <input id="desired_skills" name="desired_skills" type="text" value={formData.desired_skills} onChange={handleChange} />
-        <label htmlFor="source">Source</label>
-        <input id="source" name="source" type="text" value={formData.source} onChange={handleChange} />
-        <label htmlFor="rate_of_pay_range">Rate of Pay Range</label>
-        <input id="rate_of_pay_range" name="rate_of_pay_range" type="text" value={formData.rate_of_pay_range} onChange={handleChange} />
-        <button type="submit">Submit</button>
-        {message && <p className="message">{message}</p>}
-      </form>
-
-      <div className="jobs-section">
+        <div className="posted-jobs-panel">
         <h2>Jobs</h2>
-        <input className="filter-box" type="text" placeholder="Filter by code, title, source" value={filter} onChange={(e) => setFilter(e.target.value)} />
         <table className="job-table">
           <thead>
             <tr>
@@ -210,6 +257,12 @@ function JobPosting() {
               <th>Rate</th>
               <th>Status</th>
               <th>Action</th>
+            </tr>
+            <tr className="filter-row">
+              <th><input className="column-filter" type="text" value={codeFilter} onChange={(e) => setCodeFilter(e.target.value)} placeholder="Filter" /></th>
+              <th><input className="column-filter" type="text" value={titleFilter} onChange={(e) => setTitleFilter(e.target.value)} placeholder="Filter" /></th>
+              <th><input className="column-filter" type="text" value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)} placeholder="Filter" /></th>
+              <th colSpan="3"></th>
             </tr>
           </thead>
           <tbody>
@@ -297,6 +350,7 @@ function JobPosting() {
             ))}
           </tbody>
         </table>
+      </div>
       </div>
     </div>
   );
