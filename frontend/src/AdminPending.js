@@ -93,7 +93,7 @@ function AdminPending() {
         {menuOpen && (
           <div className="dropdown-menu">
             <Link to="/dashboard">Dashboard</Link>
-            <Link to="/admin/jobs">Job Matching</Link>
+            <Link to="/jobs">Job Matching</Link>
             <button onClick={handleLogout}>Logout</button>
           </div>
         )}
