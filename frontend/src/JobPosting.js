@@ -138,6 +138,12 @@ function JobPosting() {
     }
   };
 
+  const handleRowClick = (job) => {
+    if (matches[job.job_code]) {
+      setExpandedJob(expandedJob === job.job_code ? null : job.job_code);
+    }
+  };
+
   const bulkAssign = async (job) => {
     const emails = selectedRows[job.job_code] || [];
     for (const email of emails) {
@@ -275,9 +281,11 @@ function JobPosting() {
             </tr>
           </thead>
           <tbody>
-            {filteredJobs.map((job) => (
+            {filteredJobs.map((job) => {
+              const isMatched = !!matches[job.job_code];
+              return (
               <React.Fragment key={job.job_code}>
-                <tr>
+                <tr onClick={() => handleRowClick(job)}>
                   <td>{job.job_code}</td>
                   <td>{job.job_title}</td>
                   <td>{job.source}</td>
@@ -290,7 +298,17 @@ function JobPosting() {
                     ) : null}
                   </td>
                   <td>
-                    <button onClick={() => setExpandedJob(expandedJob === job.job_code ? null : job.job_code)}>Match</button>
+                    <button
+                      disabled={isMatched}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (!isMatched) {
+                          setExpandedJob(job.job_code);
+                        }
+                      }}
+                    >
+                      {isMatched ? 'Matched' : 'Match'}
+                    </button>
                   </td>
                 </tr>
                 {(matches[job.job_code] || expandedJob === job.job_code) && (
