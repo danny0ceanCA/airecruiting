@@ -383,14 +383,31 @@ def match_job(req: JobCodeRequest, current_user: dict = Depends(get_current_user
 @app.get("/jobs")
 def list_jobs(current_user: dict = Depends(get_current_user)):
     jobs = []
+    role = str(current_user.get("role", "")).lower()
+    current_email = str(current_user.get("sub", "")).lower()
+
     for key in redis_client.scan_iter("job:*"):
         job_data = redis_client.get(key)
-        if job_data:
-            job = json.loads(job_data)
-            job.setdefault("assigned_students", [])
-            job.setdefault("placed_students", [])
+        if not job_data:
+            continue
+        job = json.loads(job_data)
+        job.setdefault("assigned_students", [])
+        job.setdefault("placed_students", [])
+
+        if role == "admin":
             jobs.append(job)
-    print(f"Returning {len(jobs)} jobs from Redis")
+            continue
+
+        if role == "recruiter":
+            posted_by = job.get("posted_by")
+            if posted_by and posted_by.lower() == current_email:
+                jobs.append(job)
+            continue
+
+        # Other roles - keep previous behavior (return all jobs)
+        jobs.append(job)
+
+    print(f"Returning {len(jobs)} jobs from Redis for role {role}")
     return {"jobs": jobs}
 
 
