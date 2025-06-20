@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import api from './api';
+import api, { approveUser } from './api';
 import './AdminPending.css';
 
 function AdminPending() {
@@ -8,10 +8,15 @@ function AdminPending() {
   // Temporary toast message shown when a user is approved
   const [toast, setToast] = useState('');
   const [error, setError] = useState('');
+  const [selectedRoles, setSelectedRoles] = useState({});
   const [menuOpen, setMenuOpen] = useState(false);
   const navigate = useNavigate();
 
   const token = localStorage.getItem('token');
+
+  const handleRoleChange = (email, role) => {
+    setSelectedRoles((prev) => ({ ...prev, [email]: role }));
+  };
 
   const fetchPending = async () => {
     setError('');
@@ -32,15 +37,13 @@ function AdminPending() {
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const approve = async (email) => {
+  const approve = async (email, role) => {
     setToast('');
     setError('');
     try {
-      await api.post(
-        '/approve',
-        { email },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await approveUser(email, role, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       setToast('User approved!');
       // refresh list
       fetchPending();
@@ -108,17 +111,39 @@ function AdminPending() {
           </tr>
         </thead>
         <tbody>
-          {pendingUsers.map((user) => (
-            <tr key={user.email}>
-              <td>{user.email}</td>
-              <td>{user.school}</td>
-              <td>{user.role}</td>
-              <td>
-                <button className="approve-button" onClick={() => approve(user.email)}>Approve</button>
-                <button className="reject-button" onClick={() => reject(user.email)}>Reject</button>
-              </td>
-            </tr>
-          ))}
+          {pendingUsers.map((user) => {
+            const role = selectedRoles[user.email] || 'career';
+            return (
+              <tr key={user.email}>
+                <td>{user.email}</td>
+                <td>{user.school}</td>
+                <td>
+                  <select
+                    value={role}
+                    onChange={(e) => handleRoleChange(user.email, e.target.value)}
+                  >
+                    <option value="admin">Administrator</option>
+                    <option value="career">Career Services Staff</option>
+                    <option value="recruiter">Recruiter</option>
+                  </select>
+                </td>
+                <td>
+                  <button
+                    className="approve-button"
+                    onClick={() => approve(user.email, role)}
+                  >
+                    Approve
+                  </button>
+                  <button
+                    className="reject-button"
+                    onClick={() => reject(user.email)}
+                  >
+                    Reject
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
