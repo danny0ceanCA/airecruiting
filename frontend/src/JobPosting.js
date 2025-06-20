@@ -25,7 +25,7 @@ function JobPosting() {
 
   const token = localStorage.getItem('token');
   const { role } = token ? jwtDecode(token) : {};
-  if (role !== 'admin') return <Navigate to="/dashboard" />;
+  if (!['admin', 'recruiter'].includes(role)) return <Navigate to="/dashboard" />;
 
   const fetchJobs = async () => {
     try {

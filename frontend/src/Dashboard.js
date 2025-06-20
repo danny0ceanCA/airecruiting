@@ -22,7 +22,7 @@ function Dashboard() {
     { label: 'Student Profiles', path: '/students', roles: ['admin', 'career'] },
     { label: 'School Metrics', path: '/metrics', roles: ['admin', 'career'] },
     { label: 'Pending Registrations', path: '/admin/pending', roles: ['admin'] },
-    { label: 'Job Matching', path: '/admin/jobs', roles: ['admin', 'recruiter'] },
+    { label: 'Job Matching', path: '/jobs', roles: ['admin', 'recruiter'] },
   ];
 
   return (
