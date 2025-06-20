@@ -131,6 +131,11 @@
   color: white;
 }
 
+.expand-toggle {
+  cursor: pointer;
+  width: 1.5rem;
+}
+
 .matches-table td {
   background-color: white;
   color: black;
