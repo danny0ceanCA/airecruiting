@@ -17,6 +17,7 @@ function JobPosting() {
   const [codeFilter, setCodeFilter] = useState('');
   const [titleFilter, setTitleFilter] = useState('');
   const [sourceFilter, setSourceFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
   const [expandedJob, setExpandedJob] = useState(null);
   const [selectedRows, setSelectedRows] = useState({});
   const [matches, setMatches] = useState({});
@@ -169,7 +170,13 @@ function JobPosting() {
     const codeMatch = j.job_code?.toLowerCase().includes(codeFilter.toLowerCase());
     const titleMatch = j.job_title?.toLowerCase().includes(titleFilter.toLowerCase());
     const sourceMatch = j.source?.toLowerCase().includes(sourceFilter.toLowerCase());
-    return codeMatch && titleMatch && sourceMatch;
+    const status = j.placed_students?.length > 0
+      ? 'Placed'
+      : j.assigned_students?.length > 0
+      ? 'Assigned'
+      : '';
+    const statusMatch = status.toLowerCase().includes(statusFilter.toLowerCase());
+    return codeMatch && titleMatch && sourceMatch && statusMatch;
   };
   const filteredJobs = jobs.filter(matchFilter);
 
@@ -262,7 +269,9 @@ function JobPosting() {
               <th><input className="column-filter" type="text" value={codeFilter} onChange={(e) => setCodeFilter(e.target.value)} placeholder="Filter" /></th>
               <th><input className="column-filter" type="text" value={titleFilter} onChange={(e) => setTitleFilter(e.target.value)} placeholder="Filter" /></th>
               <th><input className="column-filter" type="text" value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)} placeholder="Filter" /></th>
-              <th colSpan="3"></th>
+              <th></th>
+              <th><input className="column-filter" type="text" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} placeholder="Filter" /></th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
@@ -284,26 +293,33 @@ function JobPosting() {
                     <button onClick={() => setExpandedJob(expandedJob === job.job_code ? null : job.job_code)}>Match</button>
                   </td>
                 </tr>
-                {expandedJob === job.job_code && (
+                {(matches[job.job_code] || expandedJob === job.job_code) && (
                   <tr className="match-table-row">
                     <td colSpan="6">
-                      <button
-                        disabled={(selectedRows[job.job_code]?.length || 0) === 0}
-                        onClick={() => bulkAssign(job)}
-                      >
-                        Assign Selected ({selectedRows[job.job_code]?.length || 0})
-                      </button>
-                      {matches[job.job_code] && (
-                        <table className="matches-table">
-                          <thead>
-                            <tr>
-                              <th></th>
-                              <th>Name</th>
-                              <th>Email</th>
-                              <th>Score</th>
-                              <th>Action</th>
-                            </tr>
-                          </thead>
+                      {expandedJob === job.job_code && (
+                        <button
+                          disabled={(selectedRows[job.job_code]?.length || 0) === 0}
+                          onClick={() => bulkAssign(job)}
+                        >
+                          Assign Selected ({selectedRows[job.job_code]?.length || 0})
+                        </button>
+                      )}
+                      <table className="matches-table">
+                        <thead>
+                          <tr>
+                            <th
+                              className="expand-toggle"
+                              onClick={() => setExpandedJob(expandedJob === job.job_code ? null : job.job_code)}
+                            >
+                              {expandedJob === job.job_code ? '–' : '+'}
+                            </th>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>Score</th>
+                            <th>Action</th>
+                          </tr>
+                        </thead>
+                        {expandedJob === job.job_code && matches[job.job_code] && (
                           <tbody>
                             {matches[job.job_code].map((row, idx) => {
                               const selectedCount = selectedRows[job.job_code]?.length || 0;
@@ -341,8 +357,8 @@ function JobPosting() {
                               );
                             })}
                           </tbody>
-                        </table>
-                      )}
+                        )}
+                      </table>
                     </td>
                   </tr>
                 )}
