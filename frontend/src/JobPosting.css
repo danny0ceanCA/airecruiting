@@ -195,6 +195,11 @@
   border: 1px solid #ccc;
   box-sizing: border-box;
 }
+.expand-icon {
+  margin-right: 6px;
+  font-weight: bold;
+  cursor: pointer;
+}
 .filter-row th {
   background-color: #001f3f;
 }
