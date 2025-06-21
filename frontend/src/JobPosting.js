@@ -229,6 +229,106 @@ function JobPosting() {
     navigate('/login');
   };
 
+  const renderMatches = (job) => {
+    return (
+      <>
+        {loadingMatches[job.job_code] && (
+          <div className="loader-bar">Loading matches...</div>
+        )}
+        <button
+          disabled={(selectedRows[job.job_code]?.length || 0) === 0}
+          onClick={() => bulkAssign(job)}
+        >
+          Assign Selected ({selectedRows[job.job_code]?.length || 0})
+        </button>
+        <table className="matches-table">
+          <thead>
+            <tr>
+              <th></th>
+              <th>Name</th>
+              <th>Email</th>
+              <th>Score</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {matches[job.job_code] === undefined ? (
+              <tr>
+                <td colSpan="100%" className="match-prompt">
+                  Press <strong>Match</strong> to find your candidates.
+                </td>
+              </tr>
+            ) : (
+              matches[job.job_code].map((row, idx) => {
+                const selectedCount = selectedRows[job.job_code]?.length || 0;
+                const checked = selectedRows[job.job_code]?.includes(row.email);
+                const disableCheckbox =
+                  row.status !== null || (selectedCount >= 3 && !checked);
+                return (
+                  <tr key={idx}>
+                    <td>
+                      <input
+                        type="checkbox"
+                        disabled={disableCheckbox}
+                        checked={checked || false}
+                        onChange={handleSelect(job.job_code, row.email)}
+                      />
+                    </td>
+                    <td>
+                      {row.first_name || row.name?.split(' ')[0]}{' '}
+                      {row.last_name || row.name?.split(' ')[1]}
+                    </td>
+                    <td>{row.email}</td>
+                    <td>{row.score.toFixed(2)}</td>
+                    <td>
+                      {row.status === 'placed' ? (
+                        <span className="badge placed inline">Placed</span>
+                      ) : row.status === 'assigned' ? (
+                        <>
+                          <span className="badge assigned inline">Assigned</span>
+                          <button onClick={() => handlePlace(job, row)}>Place</button>
+                        </>
+                      ) : (
+                        <>
+                          <button onClick={() => handleAssign(job, row)}>Assign</button>
+                          <button onClick={() => handlePlace(job, row)}>Place</button>
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </>
+    );
+  };
+
+  const renderPlaced = (job) => {
+    const placed = matches[job.job_code]?.filter((s) => s.status === 'placed') || [];
+    return (
+      <table className="matches-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Score</th>
+          </tr>
+        </thead>
+        <tbody>
+          {placed.map((row, i) => (
+            <tr key={i}>
+              <td>{row.name}</td>
+              <td>{row.email}</td>
+              <td>{row.score?.toFixed(2)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    );
+  };
+
   const matchFilter = (j) => {
     const codeMatch = j.job_code?.toLowerCase().includes(codeFilter.toLowerCase());
     const titleMatch = j.job_title?.toLowerCase().includes(titleFilter.toLowerCase());
@@ -345,7 +445,8 @@ function JobPosting() {
               <th>Title</th>
               <th>Source</th>
               <th>Rate</th>
-              <th>Status</th>
+              <th>Assigned</th>
+              <th>Placed</th>
               <th>Action</th>
             </tr>
             <tr className="filter-row">
@@ -353,7 +454,7 @@ function JobPosting() {
               <th><input className="column-filter" type="text" value={codeFilter} onChange={(e) => setCodeFilter(e.target.value)} placeholder="Filter" /></th>
               <th><input className="column-filter" type="text" value={titleFilter} onChange={(e) => setTitleFilter(e.target.value)} placeholder="Filter" /></th>
               <th><input className="column-filter" type="text" value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)} placeholder="Filter" /></th>
-              <th colSpan="3"></th>
+              <th colSpan="4"></th>
             </tr>
           </thead>
           <tbody>
@@ -395,27 +496,33 @@ function JobPosting() {
                   </td>
                   <td>{job.source}</td>
                   <td>{job.rate_of_pay_range}</td>
-                  <td
-                    className={`status-cell${
-                      expandedJob === job.job_code ? " highlight-cell" : ""
-                    }`}
-                  >
-                    {job.placed_students?.length > 0 ? (
-                      <span className="badge placed">
-                        Placed ({job.placed_students.length})
-                      </span>
-                    ) : job.assigned_students?.length > 0 ? (
+                  <td className="status-cell">
+                    {job.assigned_students?.length > 0 && (
                       <span
                         className="badge assigned"
                         onClick={(e) => {
                           e.stopPropagation();
-                          setExpandedJob(job.job_code); // make sure it’s expanded
-                          setActiveSubtab((prev) => ({ ...prev, [job.job_code]: 'matches' }));
+                          setExpandedJob(job.job_code);
+                          setActiveSubtab((prev) => ({ ...prev, [job.job_code]: "matches" }));
                         }}
                       >
-                        Assigned ({job.assigned_students.length})
+                        {job.assigned_students.length}
                       </span>
-                    ) : null}
+                    )}
+                  </td>
+                  <td className="status-cell">
+                    {job.placed_students?.length > 0 && (
+                      <span
+                        className="badge placed"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setExpandedJob(job.job_code);
+                          setActiveSubtab((prev) => ({ ...prev, [job.job_code]: "placed" }));
+                        }}
+                      >
+                        {job.placed_students.length}
+                      </span>
+                    )}
                   </td>
                   <td>
                     {(() => {
@@ -447,7 +554,7 @@ function JobPosting() {
                 {expandedJob === job.job_code && (
                   activeSubtab[job.job_code] === 'details' ? (
                     <tr className="job-details-row">
-                      <td colSpan="7">
+                      <td colSpan="8">
                         <div className="job-description-panel">
                           <h3>{job.job_title}</h3>
                           {editMode[job.job_code] ? (
@@ -550,72 +657,9 @@ function JobPosting() {
                     </tr>
                   ) : (
                     <tr className="match-table-row">
-                      <td colSpan="7">
-                        {loadingMatches[job.job_code] && (
-                          <div className="loader-bar">Loading matches...</div>
-                        )}
-                        <button
-                          disabled={(selectedRows[job.job_code]?.length || 0) === 0}
-                          onClick={() => bulkAssign(job)}
-                        >
-                          Assign Selected ({selectedRows[job.job_code]?.length || 0})
-                        </button>
-                        <table className="matches-table">
-                          <thead>
-                            <tr>
-                              <th></th>
-                              <th>Name</th>
-                              <th>Email</th>
-                              <th>Score</th>
-                              <th>Action</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {matches[job.job_code] === undefined ? (
-                              <tr>
-                                <td colSpan="100%" className="match-prompt">
-                                  Press <strong>Match</strong> to find your candidates.
-                                </td>
-                              </tr>
-                            ) : (
-                              matches[job.job_code].map((row, idx) => {
-                                const selectedCount = selectedRows[job.job_code]?.length || 0;
-                                const checked = selectedRows[job.job_code]?.includes(row.email);
-                                const disableCheckbox = row.status !== null || (selectedCount >= 3 && !checked);
-                                return (
-                                  <tr key={idx}>
-                                    <td>
-                                      <input
-                                        type="checkbox"
-                                        disabled={disableCheckbox}
-                                        checked={checked || false}
-                                        onChange={handleSelect(job.job_code, row.email)}
-                                      />
-                                    </td>
-                                    <td>{row.first_name || row.name?.split(' ')[0]} {row.last_name || row.name?.split(' ')[1]}</td>
-                                    <td>{row.email}</td>
-                                    <td>{row.score.toFixed(2)}</td>
-                                    <td>
-                                      {row.status === 'placed' ? (
-                                        <span className="badge placed inline">Placed</span>
-                                      ) : row.status === 'assigned' ? (
-                                        <>
-                                          <span className="badge assigned inline">Assigned</span>
-                                          <button onClick={() => handlePlace(job, row)}>Place</button>
-                                        </>
-                                      ) : (
-                                        <>
-                                          <button onClick={() => handleAssign(job, row)}>Assign</button>
-                                          <button onClick={() => handlePlace(job, row)}>Place</button>
-                                        </>
-                                      )}
-                                    </td>
-                                  </tr>
-                                );
-                              })
-                            )}
-                          </tbody>
-                        </table>
+                      <td colSpan="8">
+                        {activeSubtab[job.job_code] === "matches" && renderMatches(job)}
+                        {activeSubtab[job.job_code] === "placed" && renderPlaced(job)}
                       </td>
                     </tr>
                   )
