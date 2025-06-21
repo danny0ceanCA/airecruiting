@@ -289,7 +289,13 @@ function JobPosting() {
                     </span>
                   </td>
                   <td>{job.job_code}</td>
-                  <td>
+                  <td
+                    className={
+                      expandedJobDetails === job.job_code && expandedJob === job.job_code
+                        ? "highlight-cell"
+                        : ""
+                    }
+                  >
                     <span
                       className="job-title-clickable"
                       onClick={() => {
@@ -305,7 +311,7 @@ function JobPosting() {
                   </td>
                   <td>{job.source}</td>
                   <td>{job.rate_of_pay_range}</td>
-                  <td>
+                  <td className={expandedJob === job.job_code ? "highlight-cell" : ""}>
                     {job.placed_students?.length > 0 ? (
                       <span className="badge placed">Placed</span>
                     ) : job.assigned_students?.length > 0 ? (
