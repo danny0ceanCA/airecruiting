@@ -3,6 +3,7 @@ os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 os.environ.setdefault("OPENAI_API_KEY", "test")
 
 from fastapi.testclient import TestClient
+import json
 import app.main as main_app
 
 
@@ -138,3 +139,33 @@ def test_create_job_and_match(monkeypatch):
     data = match_resp.json()["matches"]
     assert len(data) == 2
     assert data[0]["email"] == "john@example.com"
+
+
+def test_get_match_results_status(monkeypatch):
+    token = login_admin()
+
+    store = {}
+
+    def fake_get(key):
+        return store.get(key)
+
+    def fake_set(key, value):
+        store[key] = value
+
+    monkeypatch.setattr(main_app.redis_client, "get", fake_get)
+    monkeypatch.setattr(main_app.redis_client, "set", fake_set)
+
+    job_code = "XYZ"
+    store[f"match_results:{job_code}"] = json.dumps([
+        {"email": "a@example.com", "score": 1.0}
+    ])
+    store[f"job:{job_code}"] = json.dumps({
+        "job_code": job_code,
+        "assigned_students": ["a@example.com"],
+        "placed_students": []
+    })
+
+    resp = client.get(f"/match/{job_code}", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200
+    data = resp.json()["matches"][0]
+    assert data["status"] == "assigned"

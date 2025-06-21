@@ -379,7 +379,9 @@ function JobPosting() {
                   <td>{job.rate_of_pay_range}</td>
                   <td className={expandedJob === job.job_code ? "highlight-cell" : ""}>
                     {job.placed_students?.length > 0 ? (
-                      <span className="badge placed">Placed</span>
+                      <span className="badge placed">
+                        Placed ({job.placed_students.length})
+                      </span>
                     ) : job.assigned_students?.length > 0 ? (
                       <span
                         className="badge assigned"
@@ -389,7 +391,7 @@ function JobPosting() {
                           setActiveSubtab((prev) => ({ ...prev, [job.job_code]: 'matches' }));
                         }}
                       >
-                        Assigned
+                        Assigned ({job.assigned_students.length})
                       </span>
                     ) : null}
                   </td>
