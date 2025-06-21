@@ -280,117 +280,121 @@ function JobPosting() {
               <th></th>
             </tr>
           </thead>
-          {filteredJobs.map((job) => {
-            const isMatched = !!matches[job.job_code];
-            return (
-              <React.Fragment key={job.job_code}>
-                <tbody>
-                  <tr onClick={() => handleRowClick(job)}>
-                  <td>{job.job_code}</td>
-                  <td>{job.job_title}</td>
-                  <td>{job.source}</td>
-                  <td>{job.rate_of_pay_range}</td>
-                  <td>
-                    {job.placed_students?.length > 0 ? (
-                      <span className="badge placed">Placed</span>
-                    ) : job.assigned_students?.length > 0 ? (
-                      <span className="badge assigned">Assigned</span>
-                    ) : null}
-                  </td>
-                  <td>
-                    <button
-                      disabled={isMatched}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (!isMatched) {
-                          setExpandedJob(job.job_code);
-                        }
-                      }}
-                    >
-                      {isMatched ? 'Matched' : 'Match'}
-                    </button>
+        {filteredJobs.map((job) => {
+          const isMatched = !!matches[job.job_code];
+          const statusText = job.placed_students?.length > 0
+            ? 'Placed'
+            : job.assigned_students?.length > 0
+            ? 'Assigned'
+            : '';
+          return (
+            <tbody key={job.job_code}>
+              <tr onClick={() => handleRowClick(job)}>
+                <td>{job.job_code}</td>
+                <td>{job.job_title}</td>
+                <td>{job.source}</td>
+                <td>{job.rate_of_pay_range}</td>
+                <td>
+                  {statusText && (
+                    <span className={`badge ${statusText.toLowerCase()}`}>{statusText}</span>
+                  )}
+                </td>
+                <td>
+                  <button
+                    disabled={isMatched}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (!isMatched) {
+                        setExpandedJob(job.job_code);
+                      }
+                    }}
+                  >
+                    {isMatched ? 'Matched' : 'Match'}
+                  </button>
+                </td>
+              </tr>
+              {expandedJob === job.job_code && (
+                <tr className="match-table-row">
+                  <td colSpan="6">
+                    {expandedJob === job.job_code && (
+                      <button
+                        disabled={(selectedRows[job.job_code]?.length || 0) === 0}
+                        onClick={() => bulkAssign(job)}
+                      >
+                        Assign Selected ({selectedRows[job.job_code]?.length || 0})
+                      </button>
+                    )}
+                    <table className="matches-table">
+                      <thead>
+                        <tr>
+                          <th
+                            className="expand-toggle"
+                            onClick={() =>
+                              setExpandedJob(
+                                expandedJob === job.job_code ? null : job.job_code
+                              )
+                            }
+                          >
+                            {expandedJob === job.job_code
+                              ? '–'
+                              : matches[job.job_code]?.length
+                              ? '+'
+                              : ''}
+                          </th>
+                          <th>Name</th>
+                          <th>Email</th>
+                          <th>Score</th>
+                          <th>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {matches[job.job_code]?.map((row, idx) => {
+                          const selectedCount = selectedRows[job.job_code]?.length || 0;
+                          const checked = selectedRows[job.job_code]?.includes(row.email);
+                          const disableCheckbox =
+                            row.status !== null || (selectedCount >= 3 && !checked);
+                          return (
+                            <tr key={idx}>
+                              <td>
+                                <input
+                                  type="checkbox"
+                                  disabled={disableCheckbox}
+                                  checked={checked || false}
+                                  onChange={handleSelect(job.job_code, row.email)}
+                                />
+                              </td>
+                              <td>
+                                {row.first_name || row.name?.split(' ')[0]}{' '}
+                                {row.last_name || row.name?.split(' ')[1]}
+                              </td>
+                              <td>{row.email}</td>
+                              <td>{row.score.toFixed(2)}</td>
+                              <td>
+                                {row.status === 'placed' ? (
+                                  <span className="badge placed">Placed</span>
+                                ) : row.status === 'assigned' ? (
+                                  <>
+                                    <span className="badge assigned">Assigned</span>
+                                    <button onClick={() => handlePlace(job, row)}>Place</button>
+                                  </>
+                                ) : (
+                                  <>
+                                    <button onClick={() => handleAssign(job, row)}>Assign</button>
+                                    <button onClick={() => handlePlace(job, row)}>Place</button>
+                                  </>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </td>
                 </tr>
-                {(matches[job.job_code] || expandedJob === job.job_code) && (
-                  <tr className="match-table-row">
-                    <td colSpan="6">
-                      {expandedJob === job.job_code && (
-                        <button
-                          disabled={(selectedRows[job.job_code]?.length || 0) === 0}
-                          onClick={() => bulkAssign(job)}
-                        >
-                          Assign Selected ({selectedRows[job.job_code]?.length || 0})
-                        </button>
-                      )}
-                      <table className="matches-table">
-                        <thead>
-                          <tr>
-                            <th
-                              className="expand-toggle"
-                              onClick={() =>
-                                setExpandedJob(
-                                  expandedJob === job.job_code ? null : job.job_code
-                                )
-                              }
-                            >
-                              {expandedJob === job.job_code
-                                ? '–'
-                                : matches[job.job_code]?.length
-                                ? '+'
-                                : ''}
-                            </th>
-                            <th>Name</th>
-                            <th>Email</th>
-                            <th>Score</th>
-                            <th>Action</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {expandedJob === job.job_code && matches[job.job_code]
-                            ? matches[job.job_code].map((row, idx) => {
-                              const selectedCount = selectedRows[job.job_code]?.length || 0;
-                              const checked = selectedRows[job.job_code]?.includes(row.email);
-                              const disableCheckbox = row.status !== null || (selectedCount >= 3 && !checked);
-                              return (
-                                <tr key={idx}>
-                                  <td>
-                                    <input
-                                      type="checkbox"
-                                      disabled={disableCheckbox}
-                                      checked={checked || false}
-                                      onChange={handleSelect(job.job_code, row.email)}
-                                    />
-                                  </td>
-                                  <td>{row.first_name || row.name?.split(' ')[0]} {row.last_name || row.name?.split(' ')[1]}</td>
-                                  <td>{row.email}</td>
-                                  <td>{row.score.toFixed(2)}</td>
-                                  <td>
-                                    {row.status === 'placed' ? (
-                                      <span className="badge placed">Placed</span>
-                                    ) : row.status === 'assigned' ? (
-                                      <>
-                                        <span className="badge assigned">Assigned</span>
-                                        <button onClick={() => handlePlace(job, row)}>Place</button>
-                                      </>
-                                    ) : (
-                                      <>
-                                        <button onClick={() => handleAssign(job, row)}>Assign</button>
-                                        <button onClick={() => handlePlace(job, row)}>Place</button>
-                                      </>
-                                    )}
-                                  </td>
-                                </tr>
-                              );
-                              })
-                            : null}
-                        </tbody>
-                      </table>
-                    </td>
-                  </tr>
-                )}
-                </tbody>
-              </React.Fragment>
-            ))}
+              )}
+            </tbody>
+          );
+        })}
         </table>
       </div>
       </div>
