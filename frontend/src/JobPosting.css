@@ -13,19 +13,20 @@
 
 .job-matching-layout {
   display: flex;
-  flex-direction: row;
-  align-items: flex-start;
   gap: 2rem;
+  align-items: flex-start;
+  padding: 1.5rem;
 }
 
 .post-job-panel {
-  background-color: #003366;
-  padding: 1rem 2rem;
-  border-radius: 10px;
+  flex: 0 0 30%;
+  max-width: 400px;
+  background-color: #04345e;
+  padding: 1.5rem;
+  border-radius: 8px;
+  color: white;
   display: flex;
   flex-direction: column;
-  max-width: 45%;
-  flex: 0 0 45%;
   margin-bottom: 0;
   align-self: flex-start;
 }
@@ -81,12 +82,8 @@
 }
 
 .posted-jobs-panel {
-  margin-top: 0;
-  padding-top: 0;
-  flex: 1 1 55%;
-  max-width: 55%;
+  flex: 1;
   overflow-x: auto;
-  align-self: flex-start;
 }
 
 .search-input {
