@@ -247,6 +247,14 @@
   line-height: 1.4;
 }
 
+/* For subtable (match row) next to Place button */
+.badge.inline {
+  padding: 4px 8px;
+  font-size: 0.7rem;
+  min-width: auto;
+  border-radius: 12px;
+}
+
 .badge.assigned {
   background-color: #f0ad4e;
   color: white;
