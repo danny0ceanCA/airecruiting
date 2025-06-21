@@ -332,22 +332,19 @@ function JobPosting() {
                     ) : null}
                   </td>
                   <td>
-                    {matches[job.job_code] ? (
-                      <button disabled className="matched-button">Matched</button>
-                    ) : loadingMatches[job.job_code] ? (
-                      <div className="loader-bar">Loading...</div>
-                    ) : (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
+                    <button
+                      disabled={!!matches[job.job_code]}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (!matches[job.job_code]) {
                           handleMatch(job.job_code);
                           setExpandedJob(job.job_code);
                           setActiveSubtab((prev) => ({ ...prev, [job.job_code]: 'matches' }));
-                        }}
-                      >
-                        Match
-                      </button>
-                    )}
+                        }
+                      }}
+                    >
+                      {matches[job.job_code] ? 'Matched' : 'Match'}
+                    </button>
                   </td>
                 </tr>
                 {expandedJob === job.job_code && (
@@ -371,6 +368,9 @@ function JobPosting() {
                   ) : (
                     <tr className="match-table-row">
                       <td colSpan="7">
+                        {loadingMatches[job.job_code] && (
+                          <div className="loader-bar">Loading matches...</div>
+                        )}
                         <button
                           disabled={(selectedRows[job.job_code]?.length || 0) === 0}
                           onClick={() => bulkAssign(job)}
