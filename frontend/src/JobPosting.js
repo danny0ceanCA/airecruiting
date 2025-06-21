@@ -20,6 +20,7 @@ function JobPosting() {
   const [expandedJob, setExpandedJob] = useState(null);
   const [selectedRows, setSelectedRows] = useState({});
   const [matches, setMatches] = useState({});
+  const [expandedJobDetails, setExpandedJobDetails] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const navigate = useNavigate();
 
@@ -283,7 +284,18 @@ function JobPosting() {
                     </span>
                   </td>
                   <td>{job.job_code}</td>
-                  <td>{job.job_title}</td>
+                  <td>
+                    <span
+                      className="job-title-clickable"
+                      onClick={() =>
+                        setExpandedJobDetails(
+                          expandedJobDetails === job.job_code ? null : job.job_code
+                        )
+                      }
+                    >
+                      {job.job_title}
+                    </span>
+                  </td>
                   <td>{job.source}</td>
                   <td>{job.rate_of_pay_range}</td>
                   <td>
@@ -297,6 +309,22 @@ function JobPosting() {
                     <button onClick={() => setExpandedJob(expandedJob === job.job_code ? null : job.job_code)}>Match</button>
                   </td>
                 </tr>
+                {expandedJobDetails === job.job_code && (
+                  <tr className="job-details-row">
+                    <td colSpan="7">
+                      <strong>{job.job_title}</strong>
+                      <p>{job.job_description}</p>
+                      {job.desired_skills && (
+                        <p>
+                          Skills: {Array.isArray(job.desired_skills) ? job.desired_skills.join(', ') : job.desired_skills}
+                        </p>
+                      )}
+                      <p>Source: {job.source}</p>
+                      <p>Rate of Pay: {job.rate_of_pay_range}</p>
+                      <button>Edit</button>
+                    </td>
+                  </tr>
+                )}
                 {expandedJob === job.job_code && (
                   <tr className="match-table-row">
                     <td colSpan="7">

@@ -203,6 +203,17 @@
   padding-right: 4px;
   text-align: center;
 }
+.job-details-row {
+  background-color: #f8f8f8;
+  padding: 1rem;
+  font-size: 0.9rem;
+  color: #333;
+}
+.job-title-clickable {
+  cursor: pointer;
+  color: #007bff;
+  text-decoration: underline;
+}
 .filter-row th {
   background-color: #001f3f;
 }
