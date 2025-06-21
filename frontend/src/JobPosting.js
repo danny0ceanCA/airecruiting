@@ -327,19 +327,29 @@ function JobPosting() {
                     ) : null}
                   </td>
                   <td>
-                    <button
-                      disabled={!!matches[job.job_code]}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (!matches[job.job_code]) {
-                          handleMatch(job.job_code);
-                          setExpandedJob(job.job_code);
-                          setActiveSubtab((prev) => ({ ...prev, [job.job_code]: 'matches' }));
-                        }
-                      }}
-                    >
-                      {matches[job.job_code] ? 'Matched' : 'Match'}
-                    </button>
+                    {(() => {
+                      const hasMatchData = !!matches[job.job_code];
+                      const hasAssigned = job.assigned_students?.length > 0;
+                      if (hasAssigned) {
+                        return (
+                          <button disabled className="matched-button">Matched</button>
+                        );
+                      }
+                      return (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!hasMatchData) {
+                              handleMatch(job.job_code);
+                            }
+                            setExpandedJob(job.job_code);
+                            setActiveSubtab((prev) => ({ ...prev, [job.job_code]: 'matches' }));
+                          }}
+                        >
+                          {hasMatchData ? 'View Matches' : 'Match'}
+                        </button>
+                      );
+                    })()}
                   </td>
                 </tr>
                 {expandedJob === job.job_code && (
