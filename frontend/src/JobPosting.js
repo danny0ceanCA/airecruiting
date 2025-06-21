@@ -277,7 +277,12 @@ function JobPosting() {
                       className="expand-toggle"
                       onClick={(e) => {
                         e.stopPropagation();
-                        setExpandedJob(expandedJob === job.job_code ? null : job.job_code);
+                        if (expandedJob === job.job_code) {
+                          setExpandedJob(null);
+                          setExpandedJobDetails(null);
+                        } else {
+                          setExpandedJob(job.job_code);
+                        }
                       }}
                     >
                       {expandedJob === job.job_code ? '–' : '+'}
@@ -312,16 +317,18 @@ function JobPosting() {
                 {expandedJobDetails === job.job_code && (
                   <tr className="job-details-row">
                     <td colSpan="7">
-                      <strong>{job.job_title}</strong>
-                      <p>{job.job_description}</p>
-                      {job.desired_skills && (
-                        <p>
-                          Skills: {Array.isArray(job.desired_skills) ? job.desired_skills.join(', ') : job.desired_skills}
-                        </p>
-                      )}
-                      <p>Source: {job.source}</p>
-                      <p>Rate of Pay: {job.rate_of_pay_range}</p>
-                      <button>Edit</button>
+                      <div className="job-description-panel">
+                        <h3>{job.job_title}</h3>
+                        <p>{job.job_description}</p>
+                        {job.desired_skills && (
+                          <p>
+                            Skills: {Array.isArray(job.desired_skills) ? job.desired_skills.join(', ') : job.desired_skills}
+                          </p>
+                        )}
+                        <p>Source: {job.source}</p>
+                        <p>Rate of Pay: {job.rate_of_pay_range}</p>
+                        <button>Edit</button>
+                      </div>
                     </td>
                   </tr>
                 )}
