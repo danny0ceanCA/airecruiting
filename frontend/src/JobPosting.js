@@ -17,6 +17,7 @@ function JobPosting() {
   const [codeFilter, setCodeFilter] = useState('');
   const [titleFilter, setTitleFilter] = useState('');
   const [sourceFilter, setSourceFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
   const [expandedJob, setExpandedJob] = useState(null);
   const [selectedRows, setSelectedRows] = useState({});
   const [matches, setMatches] = useState({});
@@ -25,7 +26,7 @@ function JobPosting() {
 
   const token = localStorage.getItem('token');
   const { role } = token ? jwtDecode(token) : {};
-  if (role !== 'admin') return <Navigate to="/dashboard" />;
+  if (!['admin', 'recruiter'].includes(role)) return <Navigate to="/dashboard" />;
 
   const fetchJobs = async () => {
     try {
@@ -137,6 +138,12 @@ function JobPosting() {
     }
   };
 
+  const handleRowClick = (job) => {
+    if (matches[job.job_code]) {
+      setExpandedJob(expandedJob === job.job_code ? null : job.job_code);
+    }
+  };
+
   const bulkAssign = async (job) => {
     const emails = selectedRows[job.job_code] || [];
     for (const email of emails) {
@@ -169,7 +176,13 @@ function JobPosting() {
     const codeMatch = j.job_code?.toLowerCase().includes(codeFilter.toLowerCase());
     const titleMatch = j.job_title?.toLowerCase().includes(titleFilter.toLowerCase());
     const sourceMatch = j.source?.toLowerCase().includes(sourceFilter.toLowerCase());
-    return codeMatch && titleMatch && sourceMatch;
+    const status = j.placed_students?.length > 0
+      ? 'Placed'
+      : j.assigned_students?.length > 0
+      ? 'Assigned'
+      : '';
+    const statusMatch = status.toLowerCase().includes(statusFilter.toLowerCase());
+    return codeMatch && titleMatch && sourceMatch && statusMatch;
   };
   const filteredJobs = jobs.filter(matchFilter);
 
@@ -262,93 +275,141 @@ function JobPosting() {
               <th><input className="column-filter" type="text" value={codeFilter} onChange={(e) => setCodeFilter(e.target.value)} placeholder="Filter" /></th>
               <th><input className="column-filter" type="text" value={titleFilter} onChange={(e) => setTitleFilter(e.target.value)} placeholder="Filter" /></th>
               <th><input className="column-filter" type="text" value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)} placeholder="Filter" /></th>
-              <th colSpan="3"></th>
+              <th></th>
+              <th><input className="column-filter" type="text" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} placeholder="Filter" /></th>
+              <th></th>
             </tr>
           </thead>
-          <tbody>
-            {filteredJobs.map((job) => (
-              <React.Fragment key={job.job_code}>
-                <tr>
-                  <td>{job.job_code}</td>
-                  <td>{job.job_title}</td>
-                  <td>{job.source}</td>
-                  <td>{job.rate_of_pay_range}</td>
-                  <td>
-                    {job.placed_students?.length > 0 ? (
-                      <span className="badge placed">Placed</span>
-                    ) : job.assigned_students?.length > 0 ? (
-                      <span className="badge assigned">Assigned</span>
-                    ) : null}
-                  </td>
-                  <td>
-                    <button onClick={() => setExpandedJob(expandedJob === job.job_code ? null : job.job_code)}>Match</button>
-                  </td>
-                </tr>
-                {expandedJob === job.job_code && (
-                  <tr className="match-table-row">
-                    <td colSpan="6">
+        {filteredJobs.map((job) => {
+          const isMatched = !!matches[job.job_code];
+          const statusText = job.placed_students?.length > 0
+            ? 'Placed'
+            : job.assigned_students?.length > 0
+            ? 'Assigned'
+            : '';
+          return (
+            <tbody key={job.job_code}>
+              <tr onClick={() => handleRowClick(job)}>
+                <td>
+                  <span
+                    className="expand-toggle"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setExpandedJob(
+                        expandedJob === job.job_code ? null : job.job_code
+                      );
+                    }}
+                  >
+                    {expandedJob === job.job_code ? '–' : '+'}
+                  </span>{' '}
+                  {job.job_code}
+                </td>
+                <td>{job.job_title}</td>
+                <td>{job.source}</td>
+                <td>{job.rate_of_pay_range}</td>
+                <td>
+                  {statusText && (
+                    <span className={`badge ${statusText.toLowerCase()}`}>{statusText}</span>
+                  )}
+                </td>
+                <td>
+                  <button
+                    disabled={isMatched}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (!isMatched) {
+                        setExpandedJob(job.job_code);
+                      }
+                    }}
+                  >
+                    {isMatched ? 'Matched' : 'Match'}
+                  </button>
+                </td>
+              </tr>
+              {expandedJob === job.job_code && (
+                <tr className="match-table-row">
+                  <td colSpan="6">
+                    {expandedJob === job.job_code && (
                       <button
                         disabled={(selectedRows[job.job_code]?.length || 0) === 0}
                         onClick={() => bulkAssign(job)}
                       >
                         Assign Selected ({selectedRows[job.job_code]?.length || 0})
                       </button>
-                      {matches[job.job_code] && (
-                        <table className="matches-table">
-                          <thead>
-                            <tr>
-                              <th></th>
-                              <th>Name</th>
-                              <th>Email</th>
-                              <th>Score</th>
-                              <th>Action</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {matches[job.job_code].map((row, idx) => {
-                              const selectedCount = selectedRows[job.job_code]?.length || 0;
-                              const checked = selectedRows[job.job_code]?.includes(row.email);
-                              const disableCheckbox = row.status !== null || (selectedCount >= 3 && !checked);
-                              return (
-                                <tr key={idx}>
-                                  <td>
-                                    <input
-                                      type="checkbox"
-                                      disabled={disableCheckbox}
-                                      checked={checked || false}
-                                      onChange={handleSelect(job.job_code, row.email)}
-                                    />
-                                  </td>
-                                  <td>{row.first_name || row.name?.split(' ')[0]} {row.last_name || row.name?.split(' ')[1]}</td>
-                                  <td>{row.email}</td>
-                                  <td>{row.score.toFixed(2)}</td>
-                                  <td>
-                                    {row.status === 'placed' ? (
-                                      <span className="badge placed">Placed</span>
-                                    ) : row.status === 'assigned' ? (
-                                      <>
-                                        <span className="badge assigned">Assigned</span>
-                                        <button onClick={() => handlePlace(job, row)}>Place</button>
-                                      </>
-                                    ) : (
-                                      <>
-                                        <button onClick={() => handleAssign(job, row)}>Assign</button>
-                                        <button onClick={() => handlePlace(job, row)}>Place</button>
-                                      </>
-                                    )}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      )}
-                    </td>
-                  </tr>
-                )}
-              </React.Fragment>
-            ))}
-          </tbody>
+                    )}
+                    <table className="matches-table">
+                      <thead>
+                        <tr>
+                          <th
+                            className="expand-toggle"
+                            onClick={() =>
+                              setExpandedJob(
+                                expandedJob === job.job_code ? null : job.job_code
+                              )
+                            }
+                          >
+                            {expandedJob === job.job_code ? '–' : '+'}
+                          </th>
+                          <th>Name</th>
+                          <th>Email</th>
+                          <th>Score</th>
+                          <th>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {matches[job.job_code] ? (
+                          matches[job.job_code].map((row, idx) => {
+                            const selectedCount = selectedRows[job.job_code]?.length || 0;
+                            const checked = selectedRows[job.job_code]?.includes(row.email);
+                            const disableCheckbox =
+                              row.status !== null || (selectedCount >= 3 && !checked);
+                            return (
+                              <tr key={idx}>
+                                <td>
+                                  <input
+                                    type="checkbox"
+                                    disabled={disableCheckbox}
+                                    checked={checked || false}
+                                    onChange={handleSelect(job.job_code, row.email)}
+                                  />
+                                </td>
+                                <td>
+                                  {row.first_name || row.name?.split(' ')[0]}{' '}
+                                  {row.last_name || row.name?.split(' ')[1]}
+                                </td>
+                                <td>{row.email}</td>
+                                <td>{row.score.toFixed(2)}</td>
+                                <td>
+                                  {row.status === 'placed' ? (
+                                    <span className="badge placed">Placed</span>
+                                  ) : row.status === 'assigned' ? (
+                                    <>
+                                      <span className="badge assigned">Assigned</span>
+                                      <button onClick={() => handlePlace(job, row)}>Place</button>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <button onClick={() => handleAssign(job, row)}>Assign</button>
+                                      <button onClick={() => handlePlace(job, row)}>Place</button>
+                                    </>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })
+                        ) : (
+                          <tr>
+                            <td colSpan="6">Click 'Match' to generate results for this job.</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          );
+        })}
         </table>
       </div>
       </div>

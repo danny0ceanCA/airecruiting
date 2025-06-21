@@ -43,7 +43,7 @@ function App() {
             }
           />
           <Route
-            path="/admin/jobs"
+            path="/jobs"
             element={
               <ProtectedRoute>
                 <JobPosting />

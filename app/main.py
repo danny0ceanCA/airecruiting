@@ -100,6 +100,7 @@ class LoginRequest(BaseModel):
 
 class ApproveRequest(BaseModel):
     email: EmailStr
+    role: str
 
 class RejectRequest(BaseModel):
     email: EmailStr
@@ -196,12 +197,17 @@ def login(req: LoginRequest):
 def approve(req: ApproveRequest, current_user: dict = Depends(get_current_user)):
     if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin privileges required")
+
+    if req.role not in {"admin", "career", "recruiter"}:
+        raise HTTPException(status_code=400, detail="Invalid role")
+
     key = f"user:{req.email}"
     raw = redis_client.get(key)
     if not raw:
         raise HTTPException(status_code=404, detail="User not found")
     user = json.loads(raw)
     user["approved"] = True
+    user["role"] = req.role
     redis_client.set(key, json.dumps(user))
     return {"message": f"{req.email} approved"}
 
@@ -377,14 +383,31 @@ def match_job(req: JobCodeRequest, current_user: dict = Depends(get_current_user
 @app.get("/jobs")
 def list_jobs(current_user: dict = Depends(get_current_user)):
     jobs = []
+    role = str(current_user.get("role", "")).lower()
+    current_email = str(current_user.get("sub", "")).lower()
+
     for key in redis_client.scan_iter("job:*"):
         job_data = redis_client.get(key)
-        if job_data:
-            job = json.loads(job_data)
-            job.setdefault("assigned_students", [])
-            job.setdefault("placed_students", [])
+        if not job_data:
+            continue
+        job = json.loads(job_data)
+        job.setdefault("assigned_students", [])
+        job.setdefault("placed_students", [])
+
+        if role == "admin":
             jobs.append(job)
-    print(f"Returning {len(jobs)} jobs from Redis")
+            continue
+
+        if role == "recruiter":
+            posted_by = job.get("posted_by")
+            if posted_by and posted_by.lower() == current_email:
+                jobs.append(job)
+            continue
+
+        # Other roles - keep previous behavior (return all jobs)
+        jobs.append(job)
+
+    print(f"Returning {len(jobs)} jobs from Redis for role {role}")
     return {"jobs": jobs}
 
 
