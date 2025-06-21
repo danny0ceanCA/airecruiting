@@ -292,11 +292,13 @@ function JobPosting() {
                   <td>
                     <span
                       className="job-title-clickable"
-                      onClick={() =>
-                        setExpandedJobDetails(
-                          expandedJobDetails === job.job_code ? null : job.job_code
-                        )
-                      }
+                      onClick={() => {
+                        if (expandedJob === job.job_code) {
+                          setExpandedJobDetails(
+                            expandedJobDetails === job.job_code ? null : job.job_code
+                          );
+                        }
+                      }}
                     >
                       {job.job_title}
                     </span>
@@ -314,7 +316,7 @@ function JobPosting() {
                     <button onClick={() => setExpandedJob(expandedJob === job.job_code ? null : job.job_code)}>Match</button>
                   </td>
                 </tr>
-                {expandedJobDetails === job.job_code && (
+                {expandedJobDetails === job.job_code && expandedJob === job.job_code && (
                   <tr className="job-details-row">
                     <td colSpan="7">
                       <div className="job-description-panel">
