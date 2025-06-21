@@ -387,3 +387,27 @@ def test_metrics_endpoint():
     assert data["license_breakdown"] == {"A": 1, "B": 2}
     assert data["rematch_rate"] == 0.5
 
+
+def test_admin_reset_jobs():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    # Seed some job and match data
+    main_app.redis_client.set("job:one", json.dumps({"job_code": "one"}))
+    main_app.redis_client.set("match_results:one", json.dumps([]))
+
+    login_resp = client.post(
+        "/login", json={"email": "admin@example.com", "password": "admin123"}
+    )
+    token = login_resp.json()["token"]
+
+    resp = client.delete(
+        "/admin/reset-jobs", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert resp.status_code == 200
+    assert "Deleted" in resp.json()["message"]
+
+    # verify cleanup
+    assert list(main_app.redis_client.scan_iter("job:*")) == []
+    assert list(main_app.redis_client.scan_iter("match_results:*")) == []
+

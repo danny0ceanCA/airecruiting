@@ -212,6 +212,31 @@ function JobPosting() {
             <Link to="/dashboard">Dashboard</Link>
             <Link to="/admin/pending">Pending Approvals</Link>
             <Link to="/students">Student Profiles</Link>
+            {role === "admin" && (
+              <button
+                className="admin-reset-button"
+                onClick={async () => {
+                  if (
+                    window.confirm(
+                      "Are you sure you want to delete ALL jobs and match data?"
+                    )
+                  ) {
+                    try {
+                      const resp = await api.delete("/admin/reset-jobs", {
+                        headers: { Authorization: `Bearer ${token}` },
+                      });
+                      alert(resp.data.message);
+                      fetchJobs();
+                    } catch (err) {
+                      console.error("Reset failed:", err);
+                      alert("Failed to reset jobs.");
+                    }
+                  }
+                }}
+              >
+                🧨 Reset All Jobs
+              </button>
+            )}
             <button onClick={handleLogout}>Logout</button>
           </div>
         )}
