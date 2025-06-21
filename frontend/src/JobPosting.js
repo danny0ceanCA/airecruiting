@@ -92,6 +92,21 @@ function JobPosting() {
     }
   };
 
+  const loadMatchResults = async (code) => {
+    try {
+      const resp = await api.get(`/match/${code}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const matchResults = resp.data.matches.map((m) => ({
+        ...m,
+        status: m.status || null
+      }));
+      setMatches((prev) => ({ ...prev, [code]: matchResults }));
+    } catch (err) {
+      console.error(`Error loading stored matches for ${code}:`, err);
+    }
+  };
+
   const handleSelect = (jobCode, email) => (e) => {
     setSelectedRows((prev) => {
       const current = prev[jobCode] || [];
@@ -284,6 +299,9 @@ function JobPosting() {
                           setExpandedJob(null);
                         } else {
                           setExpandedJob(job.job_code);
+                          if (!matches[job.job_code]) {
+                            loadMatchResults(job.job_code);
+                          }
                         }
                       }}
                     >
