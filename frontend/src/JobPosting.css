@@ -234,6 +234,7 @@
   padding: 3px 8px;
   border-radius: 12px;
   font-size: 0.75rem;
+  cursor: pointer;
 }
 .badge.placed {
   background: #32CD32;

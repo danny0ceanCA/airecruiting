@@ -316,7 +316,17 @@ function JobPosting() {
                     {job.placed_students?.length > 0 ? (
                       <span className="badge placed">Placed</span>
                     ) : job.assigned_students?.length > 0 ? (
-                      <span className="badge assigned">Assigned</span>
+                      <span
+                        className="badge assigned"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setExpandedJob(
+                            expandedJob === job.job_code ? null : job.job_code
+                          );
+                        }}
+                      >
+                        Assigned
+                      </span>
                     ) : null}
                   </td>
                   <td>
