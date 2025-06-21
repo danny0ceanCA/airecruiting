@@ -21,6 +21,7 @@ function JobPosting() {
   const [activeSubtab, setActiveSubtab] = useState({}); // keyed by job_code
   const [selectedRows, setSelectedRows] = useState({});
   const [matches, setMatches] = useState({});
+  const [loadingMatches, setLoadingMatches] = useState({});
   const [menuOpen, setMenuOpen] = useState(false);
   const navigate = useNavigate();
 
@@ -79,13 +80,20 @@ function JobPosting() {
 
   const handleMatch = async (code) => {
     try {
-      const resp = await api.post('/match', { job_code: code }, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      const matchResults = resp.data.matches;
+      setLoadingMatches((prev) => ({ ...prev, [code]: true }));
+      const resp = await api.post(
+        '/match',
+        { job_code: code },
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      const matchResults = resp.data.matches.map((m) => ({ ...m, status: null }));
       setMatches((prev) => ({ ...prev, [code]: matchResults }));
     } catch (err) {
       console.error('Error matching job:', err);
+    } finally {
+      setLoadingMatches((prev) => ({ ...prev, [code]: false }));
     }
   };
 
@@ -324,19 +332,22 @@ function JobPosting() {
                     ) : null}
                   </td>
                   <td>
-                    <button
-                      disabled={!!matches[job.job_code]}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (!matches[job.job_code]) {
+                    {matches[job.job_code] ? (
+                      <button disabled className="matched-button">Matched</button>
+                    ) : loadingMatches[job.job_code] ? (
+                      <div className="loader-bar">Loading...</div>
+                    ) : (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
                           handleMatch(job.job_code);
                           setExpandedJob(job.job_code);
                           setActiveSubtab((prev) => ({ ...prev, [job.job_code]: 'matches' }));
-                        }
-                      }}
-                    >
-                      {matches[job.job_code] ? 'Matched' : 'Match'}
-                    </button>
+                        }}
+                      >
+                        Match
+                      </button>
+                    )}
                   </td>
                 </tr>
                 {expandedJob === job.job_code && (
