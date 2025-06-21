@@ -180,6 +180,20 @@ function JobPosting() {
           m.email === row.email ? { ...m, status: 'placed' } : m
         )
       }));
+
+      setJobs((prevJobs) =>
+        prevJobs.map((j) =>
+          j.job_code === job.job_code
+            ? {
+                ...j,
+                placed_students: [...(j.placed_students || []), row.email],
+                assigned_students: (j.assigned_students || []).filter(
+                  (email) => email !== row.email
+                )
+              }
+            : j
+        )
+      );
     } catch (err) {
       console.error('Place failed', err);
     }
@@ -466,10 +480,13 @@ function JobPosting() {
                       className="expand-toggle"
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (expandedJob === job.job_code) {
-                          setExpandedJob(null);
-                        } else {
-                          setExpandedJob(job.job_code);
+                        const isExpanded = expandedJob === job.job_code;
+                        setExpandedJob(isExpanded ? null : job.job_code);
+                        if (!isExpanded) {
+                          setActiveSubtab((prev) => ({
+                            ...prev,
+                            [job.job_code]: 'matches',
+                          }));
                         }
                       }}
                     >
