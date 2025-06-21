@@ -280,12 +280,12 @@ function JobPosting() {
               <th></th>
             </tr>
           </thead>
-          <tbody>
-            {filteredJobs.map((job) => {
-              const isMatched = !!matches[job.job_code];
-              return (
+          {filteredJobs.map((job) => {
+            const isMatched = !!matches[job.job_code];
+            return (
               <React.Fragment key={job.job_code}>
-                <tr onClick={() => handleRowClick(job)}>
+                <tbody>
+                  <tr onClick={() => handleRowClick(job)}>
                   <td>{job.job_code}</td>
                   <td>{job.job_title}</td>
                   <td>{job.source}</td>
@@ -327,9 +327,17 @@ function JobPosting() {
                           <tr>
                             <th
                               className="expand-toggle"
-                              onClick={() => setExpandedJob(expandedJob === job.job_code ? null : job.job_code)}
+                              onClick={() =>
+                                setExpandedJob(
+                                  expandedJob === job.job_code ? null : job.job_code
+                                )
+                              }
                             >
-                              {expandedJob === job.job_code ? '–' : '+'}
+                              {expandedJob === job.job_code
+                                ? '–'
+                                : matches[job.job_code]?.length
+                                ? '+'
+                                : ''}
                             </th>
                             <th>Name</th>
                             <th>Email</th>
@@ -337,9 +345,9 @@ function JobPosting() {
                             <th>Action</th>
                           </tr>
                         </thead>
-                        {expandedJob === job.job_code && matches[job.job_code] && (
-                          <tbody>
-                            {matches[job.job_code].map((row, idx) => {
+                        <tbody>
+                          {expandedJob === job.job_code && matches[job.job_code]
+                            ? matches[job.job_code].map((row, idx) => {
                               const selectedCount = selectedRows[job.job_code]?.length || 0;
                               const checked = selectedRows[job.job_code]?.includes(row.email);
                               const disableCheckbox = row.status !== null || (selectedCount >= 3 && !checked);
@@ -373,16 +381,16 @@ function JobPosting() {
                                   </td>
                                 </tr>
                               );
-                            })}
-                          </tbody>
-                        )}
+                              })
+                            : null}
+                        </tbody>
                       </table>
                     </td>
                   </tr>
                 )}
+                </tbody>
               </React.Fragment>
             ))}
-          </tbody>
         </table>
       </div>
       </div>
