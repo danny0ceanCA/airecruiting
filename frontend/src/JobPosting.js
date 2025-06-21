@@ -81,7 +81,7 @@ function JobPosting() {
       const resp = await api.post('/match', { job_code: code }, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      const matchResults = resp.data.matches.map(m => ({ ...m, status: null }));
+      const matchResults = resp.data.matches;
       setMatches((prev) => ({ ...prev, [code]: matchResults }));
     } catch (err) {
       console.error('Error matching job:', err);
