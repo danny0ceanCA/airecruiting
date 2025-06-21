@@ -45,6 +45,15 @@ function JobPosting() {
     if (token) fetchJobs();
   }, []);
 
+  useEffect(() => {
+    if (
+      expandedJob &&
+      !matches[expandedJob]
+    ) {
+      loadMatchResults(expandedJob);
+    }
+  }, [expandedJob]);
+
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -299,9 +308,6 @@ function JobPosting() {
                           setExpandedJob(null);
                         } else {
                           setExpandedJob(job.job_code);
-                          if (!matches[job.job_code]) {
-                            loadMatchResults(job.job_code);
-                          }
                         }
                       }}
                     >
