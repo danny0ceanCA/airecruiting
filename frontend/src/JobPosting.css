@@ -6,6 +6,11 @@
   position: relative;
 }
 
+.highlight-cell {
+  background-color: #e9f2ff;
+  transition: background-color 0.2s ease-in-out;
+}
+
 .job-matching-layout {
   display: flex;
   flex-direction: row;
