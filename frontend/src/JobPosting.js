@@ -22,6 +22,7 @@ function JobPosting() {
   const [selectedRows, setSelectedRows] = useState({});
   const [matches, setMatches] = useState({});
   const [loadingMatches, setLoadingMatches] = useState({});
+  const [matchLoaded, setMatchLoaded] = useState({});
   const [menuOpen, setMenuOpen] = useState(false);
   const navigate = useNavigate();
 
@@ -34,7 +35,23 @@ function JobPosting() {
       const resp = await api.get('/jobs', {
         headers: { Authorization: `Bearer ${token}` }
       });
-      setJobs(resp.data.jobs || []);
+      const loadedJobs = resp.data.jobs || [];
+      setJobs(loadedJobs);
+
+      const checkMatchFlags = async () => {
+        const updated = {};
+        for (const job of loadedJobs) {
+          try {
+            const resp = await api.get(`/has-match/${job.job_code}`);
+            updated[job.job_code] = resp.data.has_match;
+          } catch (err) {
+            updated[job.job_code] = false;
+          }
+        }
+        setMatchLoaded(updated);
+      };
+
+      await checkMatchFlags();
     } catch (err) {
       console.error('Error fetching jobs:', err);
       setJobs([]);
@@ -111,6 +128,7 @@ function JobPosting() {
         status: m.status || null
       }));
       setMatches((prev) => ({ ...prev, [code]: matchResults }));
+      setMatchLoaded((prev) => ({ ...prev, [code]: true }));
     } catch (err) {
       console.error(`Error loading stored matches for ${code}:`, err);
     }
@@ -378,7 +396,7 @@ function JobPosting() {
                   <td>
                     {(() => {
                       const matchList = matches[job.job_code];
-                      const hasMatchData = Array.isArray(matchList) && matchList.length > 0;
+                      const hasMatchData = matchLoaded[job.job_code] || (matchList?.length > 0);
                       const hasAssigned = job.assigned_students?.length > 0;
                       if (hasAssigned) {
                         return (
