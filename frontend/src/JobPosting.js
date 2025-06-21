@@ -23,11 +23,13 @@ function JobPosting() {
   const [matches, setMatches] = useState({});
   const [loadingMatches, setLoadingMatches] = useState({});
   const [matchLoaded, setMatchLoaded] = useState({});
+  const [editMode, setEditMode] = useState({});
+  const [editedJobs, setEditedJobs] = useState({});
   const [menuOpen, setMenuOpen] = useState(false);
   const navigate = useNavigate();
 
   const token = localStorage.getItem('token');
-  const { role } = token ? jwtDecode(token) : {};
+  const { role, sub: email } = token ? jwtDecode(token) : {};
   if (role !== 'admin') return <Navigate to="/dashboard" />;
 
   const fetchJobs = async () => {
@@ -432,15 +434,110 @@ function JobPosting() {
                       <td colSpan="7">
                         <div className="job-description-panel">
                           <h3>{job.job_title}</h3>
-                          <p>{job.job_description}</p>
-                          {job.desired_skills && (
-                            <p>
-                              Skills: {Array.isArray(job.desired_skills) ? job.desired_skills.join(', ') : job.desired_skills}
-                            </p>
+                          {editMode[job.job_code] ? (
+                            <textarea
+                              value={editedJobs[job.job_code]?.job_description || job.job_description}
+                              onChange={(e) =>
+                                setEditedJobs((prev) => ({
+                                  ...prev,
+                                  [job.job_code]: {
+                                    ...prev[job.job_code],
+                                    job_description: e.target.value,
+                                  },
+                                }))
+                              }
+                            />
+                          ) : (
+                            <p>{job.job_description}</p>
                           )}
-                          <p>Source: {job.source}</p>
-                          <p>Rate of Pay: {job.rate_of_pay_range}</p>
-                          <button>Edit</button>
+                          {editMode[job.job_code] ? (
+                            <input
+                              type="text"
+                              value={editedJobs[job.job_code]?.desired_skills || (Array.isArray(job.desired_skills) ? job.desired_skills.join(', ') : job.desired_skills)}
+                              onChange={(e) =>
+                                setEditedJobs((prev) => ({
+                                  ...prev,
+                                  [job.job_code]: {
+                                    ...prev[job.job_code],
+                                    desired_skills: e.target.value,
+                                  },
+                                }))
+                              }
+                            />
+                          ) : (
+                            job.desired_skills && (
+                              <p>
+                                Skills: {Array.isArray(job.desired_skills) ? job.desired_skills.join(', ') : job.desired_skills}
+                              </p>
+                            )
+                          )}
+                          {editMode[job.job_code] ? (
+                            <input
+                              type="text"
+                              value={editedJobs[job.job_code]?.source || job.source}
+                              onChange={(e) =>
+                                setEditedJobs((prev) => ({
+                                  ...prev,
+                                  [job.job_code]: {
+                                    ...prev[job.job_code],
+                                    source: e.target.value,
+                                  },
+                                }))
+                              }
+                            />
+                          ) : (
+                            <p>Source: {job.source}</p>
+                          )}
+                          {editMode[job.job_code] ? (
+                            <input
+                              type="text"
+                              value={editedJobs[job.job_code]?.rate_of_pay_range || job.rate_of_pay_range}
+                              onChange={(e) =>
+                                setEditedJobs((prev) => ({
+                                  ...prev,
+                                  [job.job_code]: {
+                                    ...prev[job.job_code],
+                                    rate_of_pay_range: e.target.value,
+                                  },
+                                }))
+                              }
+                            />
+                          ) : (
+                            <p>Rate of Pay: {job.rate_of_pay_range}</p>
+                          )}
+                          {(role === 'admin' || job.posted_by === email) && (
+                            <button
+                              onClick={() =>
+                                setEditMode((prev) => ({
+                                  ...prev,
+                                  [job.job_code]: !prev[job.job_code],
+                                }))
+                              }
+                            >
+                              {editMode[job.job_code] ? 'Cancel' : 'Edit'}
+                            </button>
+                          )}
+                          {editMode[job.job_code] && (role === 'admin' || job.posted_by === email) && (
+                            <button
+                              onClick={async () => {
+                                try {
+                                  await api.put(
+                                    `/jobs/${job.job_code}`,
+                                    editedJobs[job.job_code],
+                                    { headers: { Authorization: `Bearer ${token}` } }
+                                  );
+                                  alert('Job updated!');
+                                  fetchJobs();
+                                  setEditMode((prev) => ({ ...prev, [job.job_code]: false }));
+                                } catch (err) {
+                                  console.error('Update failed', err);
+                                  alert('Failed to update job.');
+                                }
+                              }}
+                            >
+                              Save
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
