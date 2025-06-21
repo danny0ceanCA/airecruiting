@@ -377,7 +377,8 @@ function JobPosting() {
                   </td>
                   <td>
                     {(() => {
-                      const hasMatchData = !!matches[job.job_code];
+                      const matchList = matches[job.job_code];
+                      const hasMatchData = Array.isArray(matchList) && matchList.length > 0;
                       const hasAssigned = job.assigned_students?.length > 0;
                       if (hasAssigned) {
                         return (
