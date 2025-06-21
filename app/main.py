@@ -357,6 +357,16 @@ def match_job(req: JobCodeRequest, current_user: dict = Depends(get_current_user
     matches.sort(key=lambda x: x["score"], reverse=True)
     top_matches = matches[:5]
 
+    assigned = set(job.get("assigned_students", []))
+    placed = set(job.get("placed_students", []))
+    for m in top_matches:
+        if m["email"] in placed:
+            m["status"] = "placed"
+        elif m["email"] in assigned:
+            m["status"] = "assigned"
+        else:
+            m["status"] = None
+
     # Metrics tracking
     try:
         avg_score = (
