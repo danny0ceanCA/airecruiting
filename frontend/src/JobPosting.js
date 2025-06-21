@@ -269,7 +269,18 @@ function JobPosting() {
             {filteredJobs.map((job) => (
               <React.Fragment key={job.job_code}>
                 <tr>
-                  <td>{job.job_code}</td>
+                  <td>
+                    <span
+                      className="expand-icon"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setExpandedJob(expandedJob === job.job_code ? null : job.job_code);
+                      }}
+                    >
+                      {expandedJob === job.job_code ? '–' : '+'}
+                    </span>{' '}
+                    {job.job_code}
+                  </td>
                   <td>{job.job_title}</td>
                   <td>{job.source}</td>
                   <td>{job.rate_of_pay_range}</td>
