@@ -231,6 +231,20 @@
   border-radius: 12px;
   font-size: 0.75rem;
 }
+
+.job-description-panel {
+  text-align: left;
+  padding: 1rem 2rem;
+  max-width: 800px;
+  margin: 0 auto;
+  background-color: #fff;
+  border-radius: 6px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.job-description-panel h3 {
+  margin-top: 0;
+}
 @media (max-width: 768px) {
   .job-matching-layout {
     flex-direction: column;
