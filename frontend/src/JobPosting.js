@@ -45,11 +45,6 @@ function JobPosting() {
     if (token) fetchJobs();
   }, []);
 
-  useEffect(() => {
-    if (expandedJob && !matches[expandedJob]) {
-      handleMatch(expandedJob);
-    }
-  }, [expandedJob]);
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -377,19 +372,25 @@ function JobPosting() {
                         >
                           Assign Selected ({selectedRows[job.job_code]?.length || 0})
                         </button>
-                        {matches[job.job_code] && (
-                          <table className="matches-table">
-                            <thead>
+                        <table className="matches-table">
+                          <thead>
+                            <tr>
+                              <th></th>
+                              <th>Name</th>
+                              <th>Email</th>
+                              <th>Score</th>
+                              <th>Action</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {matches[job.job_code] === undefined ? (
                               <tr>
-                                <th></th>
-                                <th>Name</th>
-                                <th>Email</th>
-                                <th>Score</th>
-                                <th>Action</th>
+                                <td colSpan="100%" className="match-prompt">
+                                  Press <strong>Match</strong> to find your candidates.
+                                </td>
                               </tr>
-                            </thead>
-                            <tbody>
-                              {matches[job.job_code].map((row, idx) => {
+                            ) : (
+                              matches[job.job_code].map((row, idx) => {
                                 const selectedCount = selectedRows[job.job_code]?.length || 0;
                                 const checked = selectedRows[job.job_code]?.includes(row.email);
                                 const disableCheckbox = row.status !== null || (selectedCount >= 3 && !checked);
@@ -423,10 +424,10 @@ function JobPosting() {
                                     </td>
                                   </tr>
                                 );
-                              })}
-                            </tbody>
-                          </table>
-                        )}
+                              })
+                            )}
+                          </tbody>
+                        </table>
                       </td>
                     </tr>
                   )

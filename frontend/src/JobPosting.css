@@ -272,6 +272,15 @@
   padding: 6px 12px;
   border-radius: 4px;
 }
+
+.match-prompt {
+  text-align: center;
+  color: #666;
+  font-size: 0.9rem;
+  padding: 1rem;
+  background-color: #f9f9f9;
+  font-style: italic;
+}
 @media (max-width: 768px) {
   .job-matching-layout {
     flex-direction: column;
