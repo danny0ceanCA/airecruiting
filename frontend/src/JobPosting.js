@@ -377,7 +377,11 @@ function JobPosting() {
                   </td>
                   <td>{job.source}</td>
                   <td>{job.rate_of_pay_range}</td>
-                  <td className={expandedJob === job.job_code ? "highlight-cell" : ""}>
+                  <td
+                    className={`status-cell${
+                      expandedJob === job.job_code ? " highlight-cell" : ""
+                    }`}
+                  >
                     {job.placed_students?.length > 0 ? (
                       <span className="badge placed">
                         Placed ({job.placed_students.length})
