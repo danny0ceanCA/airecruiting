@@ -693,3 +693,19 @@ def get_placements(
     raw = redis_client.get(key)
     student = json.loads(raw) if raw else {}
     return student.get("placement_history", [])
+
+
+@app.delete("/admin/reset-jobs")
+def reset_jobs(current_user: dict = Depends(get_current_user)):
+    """Delete all job postings and their stored match results."""
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+
+    deleted = 0
+    for key in list(redis_client.scan_iter("job:*")):
+        redis_client.delete(key)
+        deleted += 1
+    for key in list(redis_client.scan_iter("match_results:*")):
+        redis_client.delete(key)
+
+    return {"message": f"Deleted {deleted} jobs and match data"}
