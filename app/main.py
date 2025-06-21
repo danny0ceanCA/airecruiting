@@ -320,6 +320,25 @@ def create_job(job: JobRequest, current_user: dict = Depends(get_current_user)):
     print(f"Stored job at {key}: {data}")
     return {"message": "Job stored", "job_code": generated_code}
 
+
+@app.put("/jobs/{job_code}")
+def update_job(job_code: str, updated: dict, token_data: dict = Depends(get_current_user)):
+    key = f"job:{job_code}"
+    raw = redis_client.get(key)
+
+    if not raw:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    job = json.loads(raw)
+
+    if token_data.get("role") != "admin" and token_data.get("sub") != job.get("posted_by"):
+        raise HTTPException(status_code=403, detail="Not authorized to edit this job")
+
+    job.update(updated)
+    redis_client.set(key, json.dumps(job))
+    print(f"✏️ Updated job {job_code}")
+    return {"message": "Job updated"}
+
 @app.post("/match")
 def match_job(req: JobCodeRequest, current_user: dict = Depends(get_current_user)):
     key = f"job:{req.job_code}"
