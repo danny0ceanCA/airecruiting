@@ -219,6 +219,12 @@
   color: #007bff;
   text-decoration: underline;
 }
+
+.job-title-clickable:hover,
+.job-title-clickable:active {
+  color: #0056b3;
+  text-decoration: none;
+}
 .filter-row th {
   background-color: #001f3f;
 }
