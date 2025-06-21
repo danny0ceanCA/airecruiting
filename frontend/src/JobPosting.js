@@ -493,10 +493,10 @@ function JobPosting() {
                                     <td>{row.score.toFixed(2)}</td>
                                     <td>
                                       {row.status === 'placed' ? (
-                                        <span className="badge placed">Placed</span>
+                                        <span className="badge placed inline">Placed</span>
                                       ) : row.status === 'assigned' ? (
                                         <>
-                                          <span className="badge assigned">Assigned</span>
+                                          <span className="badge assigned inline">Assigned</span>
                                           <button onClick={() => handlePlace(job, row)}>Place</button>
                                         </>
                                       ) : (
