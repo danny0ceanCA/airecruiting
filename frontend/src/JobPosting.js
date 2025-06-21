@@ -251,6 +251,7 @@ function JobPosting() {
         <table className="job-table">
           <thead>
             <tr>
+              <th></th>
               <th>Job Code</th>
               <th>Title</th>
               <th>Source</th>
@@ -259,6 +260,7 @@ function JobPosting() {
               <th>Action</th>
             </tr>
             <tr className="filter-row">
+              <th></th>
               <th><input className="column-filter" type="text" value={codeFilter} onChange={(e) => setCodeFilter(e.target.value)} placeholder="Filter" /></th>
               <th><input className="column-filter" type="text" value={titleFilter} onChange={(e) => setTitleFilter(e.target.value)} placeholder="Filter" /></th>
               <th><input className="column-filter" type="text" value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)} placeholder="Filter" /></th>
@@ -271,16 +273,16 @@ function JobPosting() {
                 <tr>
                   <td>
                     <span
-                      className="expand-icon"
+                      className="expand-toggle"
                       onClick={(e) => {
                         e.stopPropagation();
                         setExpandedJob(expandedJob === job.job_code ? null : job.job_code);
                       }}
                     >
                       {expandedJob === job.job_code ? '–' : '+'}
-                    </span>{' '}
-                    {job.job_code}
+                    </span>
                   </td>
+                  <td>{job.job_code}</td>
                   <td>{job.job_title}</td>
                   <td>{job.source}</td>
                   <td>{job.rate_of_pay_range}</td>
@@ -297,7 +299,7 @@ function JobPosting() {
                 </tr>
                 {expandedJob === job.job_code && (
                   <tr className="match-table-row">
-                    <td colSpan="6">
+                    <td colSpan="7">
                       <button
                         disabled={(selectedRows[job.job_code]?.length || 0) === 0}
                         onClick={() => bulkAssign(job)}
