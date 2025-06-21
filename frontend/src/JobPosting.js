@@ -298,7 +298,8 @@ function JobPosting() {
                   >
                     <span
                       className="job-title-clickable"
-                      onClick={() => {
+                      onClick={(e) => {
+                        e.stopPropagation();
                         if (expandedJob === job.job_code) {
                           setExpandedJobDetails(
                             expandedJobDetails === job.job_code ? null : job.job_code
