@@ -85,6 +85,8 @@ def on_startup():
         print(f"Redis connection failed: {e}")
         raise
     init_default_admin()
+    keys = redis_client.keys("match_results:*")
+    print(f"🔎 Found {len(keys)} saved match sets at startup.")
 
 # -------- Models -------- #
 class RegisterRequest(BaseModel):
@@ -367,6 +369,13 @@ def match_job(req: JobCodeRequest, current_user: dict = Depends(get_current_user
         else:
             m["status"] = None
 
+    redis_client.set(
+        f"match_results:{req.job_code}", json.dumps(top_matches)
+    )
+    print(
+        f"✅ Stored {len(top_matches)} matches for job {req.job_code}"
+    )
+
     # Metrics tracking
     try:
         avg_score = (
@@ -383,6 +392,24 @@ def match_job(req: JobCodeRequest, current_user: dict = Depends(get_current_user
         pass
 
     return {"matches": top_matches}
+
+
+@app.get("/match/{job_code}")
+def get_match_results(job_code: str, current_user: dict = Depends(get_current_user)):
+    key = f"match_results:{job_code}"
+    results_json = redis_client.get(key)
+
+    if results_json is None:
+        print(f"⚠️ No match results found for job {job_code}")
+        return {"matches": []}
+
+    try:
+        matches = json.loads(results_json)
+        print(f"📦 Returning {len(matches)} stored matches for job {job_code}")
+        return {"matches": matches}
+    except Exception as e:
+        print(f"❌ Failed to load match results for {job_code}: {e}")
+        return {"matches": []}
 
 @app.get("/jobs")
 def list_jobs(current_user: dict = Depends(get_current_user)):
