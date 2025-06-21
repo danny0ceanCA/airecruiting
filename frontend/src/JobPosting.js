@@ -244,6 +244,8 @@ function JobPosting() {
   };
 
   const renderMatches = (job) => {
+    const assignedOnly =
+      matches[job.job_code]?.filter((s) => s.status === "assigned") || [];
     return (
       <>
         {loadingMatches[job.job_code] && (
@@ -273,7 +275,7 @@ function JobPosting() {
                 </td>
               </tr>
             ) : (
-              matches[job.job_code].map((row, idx) => {
+              assignedOnly.map((row, idx) => {
                 const selectedCount = selectedRows[job.job_code]?.length || 0;
                 const checked = selectedRows[job.job_code]?.includes(row.email);
                 const disableCheckbox =
