@@ -600,6 +600,56 @@ async def assign_student(payload: dict, current_user: dict = Depends(get_current
     if not redis_client.exists(job_key):
         raise HTTPException(status_code=404, detail="Job not found")
 
+    match_key = f"match_results:{job_code}"
+    if not redis_client.exists(match_key):
+        print(f"⚠️ No match data for job {job_code}, generating now...")
+        job = json.loads(redis_client.get(f"job:{job_code}"))
+        combined = job.get("job_description", "") + " " + ", ".join(
+            job.get("desired_skills", [])
+        )
+        try:
+            resp = client.embeddings.create(
+                input=combined, model="text-embedding-3-small"
+            )
+            job_emb = resp.data[0].embedding
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Embedding failed during auto-match: {str(e)}",
+            )
+
+        matches = []
+        for key in redis_client.scan_iter("*"):
+            if str(key).startswith("job:") or str(key).startswith("user:"):
+                continue
+            student_raw = redis_client.get(key)
+            if not student_raw:
+                continue
+            try:
+                student = json.loads(student_raw)
+                emb = student.get("embedding")
+                if not emb:
+                    continue
+                score = sum(a * b for a, b in zip(job_emb, emb))
+                matches.append(
+                    {
+                        "name": f"{student.get('first_name', '')} {student.get('last_name', '')}",
+                        "email": student.get("email"),
+                        "score": score,
+                        "status": "assigned"
+                        if student.get("email") == student_email
+                        else None,
+                    }
+                )
+            except Exception:
+                continue
+
+        matches.sort(key=lambda x: x["score"], reverse=True)
+        top_matches = matches[:5]
+
+        redis_client.set(match_key, json.dumps(top_matches))
+        print(f"✅ Auto-saved {len(top_matches)} match results for job {job_code}")
+
     student_data = json.loads(redis_client.get(student_key))
     student_data.setdefault("assignment_history", [])
     student_data.setdefault("placement_count", 0)
