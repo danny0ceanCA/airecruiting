@@ -411,6 +411,12 @@ def get_match_results(job_code: str, current_user: dict = Depends(get_current_us
         print(f"❌ Failed to load match results for {job_code}: {e}")
         return {"matches": []}
 
+
+@app.get("/has-match/{job_code}")
+def has_match_data(job_code: str):
+    exists = redis_client.exists(f"match_results:{job_code}")
+    return {"has_match": bool(exists)}
+
 @app.get("/jobs")
 def list_jobs(current_user: dict = Depends(get_current_user)):
     jobs = []
