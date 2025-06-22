@@ -245,6 +245,9 @@ function JobPosting() {
 
   const renderMatches = (job) => {
     const matchList = matches[job.job_code] || [];
+    const unassignedMatches = matchList.filter(
+      (m) => m.status !== 'assigned' && m.status !== 'placed'
+    );
     return (
       <>
         {loadingMatches[job.job_code] && (
@@ -274,7 +277,7 @@ function JobPosting() {
                 </td>
               </tr>
             ) : (
-              matchList.map((row, idx) => {
+              unassignedMatches.map((row, idx) => {
                 const selectedCount = selectedRows[job.job_code]?.length || 0;
                 const checked = selectedRows[job.job_code]?.includes(row.email);
                 const disableCheckbox =
@@ -317,11 +320,42 @@ function JobPosting() {
           </tbody>
         </table>
       </>
+      );
+  };
+
+  const renderAssigned = (job) => {
+    const matchList = matches[job.job_code] || [];
+    const assignedMatches = matchList.filter((m) => m.status === 'assigned');
+    return (
+      <table className="matches-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Score</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {assignedMatches.map((row, i) => (
+            <tr key={i}>
+              <td>{row.first_name || row.name?.split(' ')[0]} {row.last_name || row.name?.split(' ')[1]}</td>
+              <td>{row.email}</td>
+              <td>{row.score?.toFixed(2)}</td>
+              <td>
+                <span className="badge assigned inline">Assigned</span>
+                <button onClick={() => handlePlace(job, row)}>Place</button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     );
   };
 
   const renderPlaced = (job) => {
-    const placed = matches[job.job_code]?.filter((s) => s.status === 'placed') || [];
+    const matchList = matches[job.job_code] || [];
+    const placedMatches = matchList.filter((m) => m.status === 'placed');
     return (
       <table className="matches-table">
         <thead>
@@ -332,7 +366,7 @@ function JobPosting() {
           </tr>
         </thead>
         <tbody>
-          {placed.map((row, i) => (
+          {placedMatches.map((row, i) => (
             <tr key={i}>
               <td>{row.name}</td>
               <td>{row.email}</td>
@@ -521,7 +555,7 @@ function JobPosting() {
                         onClick={(e) => {
                           e.stopPropagation();
                           setExpandedJob(job.job_code);
-                          setActiveSubtab((prev) => ({ ...prev, [job.job_code]: "matches" }));
+                          setActiveSubtab((prev) => ({ ...prev, [job.job_code]: 'assigned' }));
                         }}
                       >
                         {job.assigned_students.length}
@@ -545,14 +579,15 @@ function JobPosting() {
                   <td>
                     {(() => {
                       const matchList = matches[job.job_code];
-                      const hasMatchData = matchLoaded[job.job_code] || (matchList?.length > 0);
+                      const matchCount = Array.isArray(matchList) ? matchList.length : 0;
                       const hasAssigned = job.assigned_students?.length > 0;
-                      if (hasAssigned) {
-                        return (
-                          <button disabled className="matched-button">Matched</button>
-                        );
-                      }
-                      return (
+                      const hasPlaced = job.placed_students?.length > 0;
+                      const hasMatchData = matchCount > 0;
+                      const showViewMatches = hasMatchData && !hasAssigned && !hasPlaced;
+
+                      return hasAssigned || hasPlaced ? (
+                        <button disabled className="matched-button">Matched</button>
+                      ) : (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -563,7 +598,7 @@ function JobPosting() {
                             setActiveSubtab((prev) => ({ ...prev, [job.job_code]: 'matches' }));
                           }}
                         >
-                          {hasMatchData ? 'View Matches' : 'Match'}
+                          {showViewMatches ? 'View Matches' : 'Match'}
                         </button>
                       );
                     })()}
@@ -676,8 +711,9 @@ function JobPosting() {
                   ) : (
                     <tr className="match-table-row">
                       <td colSpan="8">
-                        {activeSubtab[job.job_code] === "matches" && renderMatches(job)}
-                        {activeSubtab[job.job_code] === "placed" && renderPlaced(job)}
+                        {activeSubtab[job.job_code] === 'matches' && renderMatches(job)}
+                        {activeSubtab[job.job_code] === 'assigned' && renderAssigned(job)}
+                        {activeSubtab[job.job_code] === 'placed' && renderPlaced(job)}
                       </td>
                     </tr>
                   )
