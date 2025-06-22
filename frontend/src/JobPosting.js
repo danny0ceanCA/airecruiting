@@ -580,25 +580,38 @@ function JobPosting() {
                     {(() => {
                       const matchList = matches[job.job_code];
                       const matchCount = Array.isArray(matchList) ? matchList.length : 0;
+
                       const hasAssigned = job.assigned_students?.length > 0;
                       const hasPlaced = job.placed_students?.length > 0;
-                      const hasMatchData = matchCount > 0;
-                      const showViewMatches = hasMatchData && !hasAssigned && !hasPlaced;
 
-                      return hasAssigned || hasPlaced ? (
-                        <button disabled className="matched-button">Matched</button>
+                      const hasMatchData = matchCount > 0;
+
+                      return hasMatchData ? (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setExpandedJob(job.job_code);
+                            setActiveSubtab((prev) => ({
+                              ...prev,
+                              [job.job_code]: 'matches',
+                            }));
+                          }}
+                        >
+                          View Matches
+                        </button>
                       ) : (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (!hasMatchData) {
-                              handleMatch(job.job_code);
-                            }
+                            handleMatch(job.job_code);
                             setExpandedJob(job.job_code);
-                            setActiveSubtab((prev) => ({ ...prev, [job.job_code]: 'matches' }));
+                            setActiveSubtab((prev) => ({
+                              ...prev,
+                              [job.job_code]: 'matches',
+                            }));
                           }}
                         >
-                          {showViewMatches ? 'View Matches' : 'Match'}
+                          Match
                         </button>
                       );
                     })()}
