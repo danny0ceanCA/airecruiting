@@ -26,6 +26,8 @@ function JobPosting() {
   const [matchPresence, setMatchPresence] = useState({});
   const [editMode, setEditMode] = useState({});
   const [editedJobs, setEditedJobs] = useState({});
+  const [generatingResumes, setGeneratingResumes] = useState({});
+  const [generatedResumes, setGeneratedResumes] = useState({});
   const [menuOpen, setMenuOpen] = useState(false);
   const navigate = useNavigate();
 
@@ -264,6 +266,35 @@ function JobPosting() {
     }
   };
 
+  const generateResume = async (email, jobCode) => {
+    const key = `${jobCode}:${email}`;
+    if (generatedResumes[key]) return;
+
+    setGeneratingResumes((prev) => ({ ...prev, [key]: true }));
+
+    try {
+      const resp = await api.post(
+        '/generate-resume',
+        {
+          student_email: email,
+          job_code: jobCode,
+        },
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      if (resp.data.status === 'success' || resp.data.status === 'exists') {
+        console.log('Resume generation complete:', resp.data.message);
+        setGeneratedResumes((prev) => ({ ...prev, [key]: true }));
+      }
+    } catch (err) {
+      console.error('Resume generation error:', err);
+    } finally {
+      setGeneratingResumes((prev) => ({ ...prev, [key]: false }));
+    }
+  };
+
   const handleLogout = () => {
     localStorage.removeItem('token');
     navigate('/login');
@@ -370,6 +401,15 @@ function JobPosting() {
               <td>{row.score?.toFixed(2)}</td>
               <td>
                 <span className="badge assigned inline">Assigned</span>
+                {generatingResumes[`${job.job_code}:${row.email}`] ? (
+                  <span className="spinner">⏳</span>
+                ) : generatedResumes[`${job.job_code}:${row.email}`] ? (
+                  <span className="resume-ready">Resume Ready</span>
+                ) : (
+                  <button onClick={() => generateResume(row.email, job.job_code)}>
+                    Generate Resume
+                  </button>
+                )}
                 <button onClick={() => handlePlace(job, row)}>Place</button>
               </td>
             </tr>
