@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import axios from "axios";
+import api from "./api";
 import { Link, useNavigate } from 'react-router-dom';
 import './LoginForm.css';
 
@@ -15,10 +15,9 @@ function LoginForm() {
     console.log('Submitting login...');
 
     try {
-      const resp = await axios.post('http://localhost:8000/login', {
-        email,
-        password,
-      });
+      const resp = await api.post('/login',
+        { email, password }
+      );
 
       console.log('Response data:', resp.data);
 

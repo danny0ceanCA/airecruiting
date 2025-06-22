@@ -28,3 +28,11 @@ Tests use `pytest`. Run them with:
 ```bash
 pytest
 ```
+
+## Students Endpoint
+
+Authenticated users can submit student information using `POST /students`.
+The request fields are `first_name`, `last_name`, `email`, `phone`,
+`education_level`, `skills` (list of strings), `experience_summary`, and
+`interests`. The endpoint combines these details, generates an OpenAI embedding
+and stores the result in Redis keyed by the email address.
