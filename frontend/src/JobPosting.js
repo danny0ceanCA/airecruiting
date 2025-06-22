@@ -604,10 +604,9 @@ function JobPosting() {
                   </td>
                   <td>
                     {(() => {
-                      const matchList = matches[job.job_code];
-                      const hasMatchData = Array.isArray(matchList) && matchList.length > 0;
+                      const isMatched = matchPresence[job.job_code];
 
-                      return hasMatchData ? (
+                      return isMatched ? (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();

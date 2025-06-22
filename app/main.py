@@ -571,153 +571,45 @@ class PlacementRequest(BaseModel):
 
 
 @app.post("/place")
-def place_student(
-    req: PlacementRequest, current_user: dict = Depends(get_current_user)
-):
-    if current_user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Admin privileges required")
-
-    student_key = f"student:{req.student_email}"
-    job_key = f"job:{req.job_code}"
-
-    if not redis_client.exists(student_key):
-        raise HTTPException(status_code=404, detail="Student not found")
-    if not redis_client.exists(job_key):
+def place_student(data: dict, token_data: dict = Depends(get_current_user)):
+    job_code = data["job_code"]
+    student_email = data["student_email"]
+    key = f"job:{job_code}"
+    raw = redis_client.get(key)
+    if not raw:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    student_raw = redis_client.get(student_key)
-    student = json.loads(student_raw) if student_raw else {}
+    job = json.loads(raw)
+    job.setdefault("placed_students", [])
+    job.setdefault("assigned_students", [])
 
-    student["placed"] = True
+    if student_email not in job["placed_students"]:
+        job["placed_students"].append(student_email)
+    if student_email in job["assigned_students"]:
+        job["assigned_students"].remove(student_email)
 
-    history = student.get("placement_history", [])
-    entry = {"job_code": req.job_code, "placed_at": datetime.now().isoformat()}
-    history.append(entry)
-    student["placement_history"] = history
-
-    placement_count = int(student.get("placement_count", 0)) + 1
-    student["placement_count"] = placement_count
-
-    redis_client.set(student_key, json.dumps(student))
-
-    redis_client.incr("metrics:total_placements")
-    if placement_count > 1:
-        redis_client.incr("metrics:total_rematches")
-
-    created_at = student.get("created_at")
-    if created_at:
-        try:
-            created_dt = datetime.fromisoformat(created_at)
-            days = (datetime.now() - created_dt).total_seconds() / 86400
-            redis_client.incrbyfloat("metrics:sum_time_to_place", days)
-        except Exception:
-            pass
-
-    license_type = student.get("license_type")
-    if license_type:
-        redis_client.incr(f"metrics:licensed:{license_type}")
-
-    return {"message": "Placement recorded", "rematch": placement_count > 1}
-
+    redis_client.set(key, json.dumps(job))
+    return {"message": f"Placed {student_email}"}
 
 @app.post("/assign")
-async def assign_student(payload: dict, current_user: dict = Depends(get_current_user)):
-    print("✅ /assign route was called")
-
-    student_email = payload.get("student_email")
-    job_code = payload.get("job_code")
-    print("Assigning student_email:", student_email)
-    print("Assigning job_code:", job_code)
-
-    # ✅ Now uses consistent Redis key prefix
-    student_key = f"student:{student_email}"
-    job_key = f"job:{job_code}"
-
-    print("Checking Redis for:")
-    print(" -", student_key, "exists?", redis_client.exists(student_key))
-    print(" -", job_key, "exists?", redis_client.exists(job_key))
-
-    if not redis_client.exists(student_key):
-        raise HTTPException(status_code=404, detail="Student not found")
-    if not redis_client.exists(job_key):
+def assign_student(data: dict, token_data: dict = Depends(get_current_user)):
+    job_code = data["job_code"]
+    student_email = data["student_email"]
+    key = f"job:{job_code}"
+    raw = redis_client.get(key)
+    if not raw:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    match_key = f"match_results:{job_code}"
-    if not redis_client.exists(match_key):
-        print(f"⚠️ No match data for job {job_code}, generating now...")
-        job = json.loads(redis_client.get(f"job:{job_code}"))
-        combined = job.get("job_description", "") + " " + ", ".join(
-            job.get("desired_skills", [])
-        )
-        try:
-            resp = client.embeddings.create(
-                input=combined, model="text-embedding-3-small"
-            )
-            job_emb = resp.data[0].embedding
-        except Exception as e:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Embedding failed during auto-match: {str(e)}",
-            )
+    job = json.loads(raw)
+    job.setdefault("assigned_students", [])
+    if student_email not in job["assigned_students"]:
+        job["assigned_students"].append(student_email)
 
-        matches = []
-        for key in redis_client.scan_iter("*"):
-            if str(key).startswith("job:") or str(key).startswith("user:"):
-                continue
-            student_raw = redis_client.get(key)
-            if not student_raw:
-                continue
-            try:
-                student = json.loads(student_raw)
-                emb = student.get("embedding")
-                if not emb:
-                    continue
-                score = sum(a * b for a, b in zip(job_emb, emb))
-                matches.append(
-                    {
-                        "name": f"{student.get('first_name', '')} {student.get('last_name', '')}",
-                        "email": student.get("email"),
-                        "score": score,
-                        "status": "assigned"
-                        if student.get("email") == student_email
-                        else None,
-                    }
-                )
-            except Exception:
-                continue
+    redis_client.set(key, json.dumps(job))
+    return {"message": f"Assigned {student_email}"}
 
-        matches.sort(key=lambda x: x["score"], reverse=True)
-        top_matches = matches[:5]
 
-        redis_client.set(match_key, json.dumps(top_matches))
-        print(f"✅ Auto-saved {len(top_matches)} match results for job {job_code}")
 
-    student_data = json.loads(redis_client.get(student_key))
-    student_data.setdefault("assignment_history", [])
-    student_data.setdefault("placement_count", 0)
-    student_data.setdefault("status_by_job", {})
-
-    if student_data["status_by_job"].get(job_code) in ("assigned", "placed"):
-        return {"success": True, "message": "Already assigned"}
-
-    student_data["assignment_history"].append({
-        "job_code": job_code,
-        "assigned_at": datetime.utcnow().isoformat()
-    })
-    student_data["status_by_job"][job_code] = "assigned"
-    redis_client.set(student_key, json.dumps(student_data))
-
-    job_data = json.loads(redis_client.get(job_key))
-    job_data.setdefault("assigned_students", [])
-    if student_email not in job_data["assigned_students"]:
-        job_data["assigned_students"].append(student_email)
-    redis_client.set(job_key, json.dumps(job_data))
-
-    redis_client.incr("metrics:total_assignments")
-
-    return {"success": True}
-
-print("✅ FastAPI has registered /assign")
 
 
 
