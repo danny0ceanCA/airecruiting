@@ -155,21 +155,38 @@ function JobPosting() {
 
   const handleAssign = async (job, row) => {
     try {
-      await api.post('/assign', {
-        student_email: row.email,
-        job_code: job.job_code
-      }, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json'
+      await api.post(
+        '/assign',
+        {
+          student_email: row.email,
+          job_code: job.job_code,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
         }
-      });
+      );
       setMatches((prev) => ({
         ...prev,
         [job.job_code]: prev[job.job_code].map((m) =>
           m.email === row.email ? { ...m, status: 'assigned' } : m
-        )
+        ),
       }));
+      setJobs((prevJobs) =>
+        prevJobs.map((j) =>
+          j.job_code === job.job_code
+            ? {
+                ...j,
+                assigned_students: [
+                  ...(j.assigned_students || []),
+                  row.email,
+                ],
+              }
+            : j
+        )
+      );
     } catch (err) {
       console.error('Assign failed', err.response?.data || err.message);
     }
@@ -587,9 +604,10 @@ function JobPosting() {
                   </td>
                   <td>
                     {(() => {
-                      const hasMatchInRedis = matchPresence[job.job_code] === true;
+                      const matchList = matches[job.job_code];
+                      const hasMatchData = Array.isArray(matchList) && matchList.length > 0;
 
-                      return hasMatchInRedis ? (
+                      return hasMatchData ? (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
