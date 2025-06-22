@@ -46,7 +46,7 @@ function JobPosting() {
     }
   };
 
-  const checkMatchesForJobs = async () => {
+  const checkMatchFlags = async () => {
     const result = {};
     for (const job of jobs) {
       try {
@@ -67,18 +67,19 @@ function JobPosting() {
 
   useEffect(() => {
     if (jobs.length > 0) {
-      checkMatchesForJobs();
+      checkMatchFlags();
     }
   }, [jobs]);
 
   useEffect(() => {
     if (
       expandedJob &&
+      matchPresence[expandedJob] === true &&
       !matches[expandedJob]
     ) {
       loadMatchResults(expandedJob);
     }
-  }, [expandedJob]);
+  }, [expandedJob, matchPresence]);
 
 
   const handleChange = (e) => {
@@ -139,7 +140,6 @@ function JobPosting() {
       }));
       setMatches((prev) => ({ ...prev, [code]: matchResults }));
       setMatchLoaded((prev) => ({ ...prev, [code]: true }));
-      setMatchPresence((prev) => ({ ...prev, [code]: true }));
     } catch (err) {
       console.error(`Error loading stored matches for ${code}:`, err);
     }
@@ -604,9 +604,9 @@ function JobPosting() {
                   </td>
                   <td>
                     {(() => {
-                      const isMatched = matchPresence[job.job_code];
+                      const hasMatchInRedis = matchPresence[job.job_code] === true;
 
-                      return isMatched ? (
+                      return hasMatchInRedis ? (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
