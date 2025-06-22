@@ -427,17 +427,20 @@ def get_match_results(job_code: str, current_user: dict = Depends(get_current_us
         print(f"📦 Returning {len(matches)} stored matches for job {job_code}")
 
         job_raw = redis_client.get(f"job:{job_code}")
-        if job_raw:
-            job = json.loads(job_raw)
-            assigned = set(job.get("assigned_students", []))
-            placed = set(job.get("placed_students", []))
-            for m in matches:
-                if m.get("email") in placed:
-                    m["status"] = "placed"
-                elif m.get("email") in assigned:
-                    m["status"] = "assigned"
-                else:
-                    m["status"] = None
+        if not job_raw:
+            raise HTTPException(status_code=404, detail="Job not found")
+
+        job = json.loads(job_raw)
+        assigned = set(job.get("assigned_students", []))
+        placed = set(job.get("placed_students", []))
+
+        for m in matches:
+            if m["email"] in placed:
+                m["status"] = "placed"
+            elif m["email"] in assigned:
+                m["status"] = "assigned"
+            else:
+                m["status"] = None
 
         return {"matches": matches}
     except Exception as e:
