@@ -640,6 +640,24 @@ def generate_resume(req: ResumeRequest, current_user: dict = Depends(get_current
     return {"status": "success", "message": "Resume stored in Redis"}
 
 
+@app.get("/resume/{job_code}/{student_email}")
+def get_resume(job_code: str, student_email: str, current_user: dict = Depends(get_current_user)):
+    key = f"resume:{job_code}:{student_email}"
+    print(f"\U0001F4E5 Download request for resume: {job_code} - {student_email}")
+    resume = redis_client.get(key)
+
+    if not resume:
+        raise HTTPException(status_code=404, detail="Resume not found")
+
+    print("\u2705 Resume found and returned as plain text")
+    return {
+        "status": "success",
+        "job_code": job_code,
+        "student_email": student_email,
+        "resume": resume if isinstance(resume, str) else resume.decode("utf-8"),
+    }
+
+
 
 
 
