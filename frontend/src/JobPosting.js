@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, Navigate } from 'react-router-dom';
 import jwtDecode from 'jwt-decode';
+import jsPDF from 'jspdf';
 import api from './api';
 import './JobPosting.css';
 
@@ -295,6 +296,36 @@ function JobPosting() {
     }
   };
 
+  const downloadResume = async (studentEmail, jobCode) => {
+    try {
+      const resp = await api.get(`/resume/${jobCode}/${studentEmail}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      const resumeText = resp.data.resume;
+      const doc = new jsPDF();
+
+      // Add header
+      doc.setFontSize(16);
+      doc.text('TalenMatch AI Resume', 15, 20);
+
+      // Add watermark footer
+      doc.setFontSize(10);
+      doc.text('Tailored by TalenMatch AI', 15, 285);
+
+      // Resume body
+      doc.setFontSize(12);
+      const lines = doc.splitTextToSize(resumeText, 180);
+      doc.text(lines, 15, 40);
+
+      // Save as PDF
+      doc.save(`resume-${studentEmail}-${jobCode}.pdf`);
+    } catch (err) {
+      console.error('Resume download failed', err);
+      alert('Unable to download resume');
+    }
+  };
+
   const handleLogout = () => {
     localStorage.removeItem('token');
     navigate('/login');
@@ -408,6 +439,11 @@ function JobPosting() {
                 ) : (
                   <button onClick={() => generateResume(row.email, job.job_code)}>
                     Generate Resume
+                  </button>
+                )}
+                {row.status === 'assigned' && generatedResumes[`${job.job_code}:${row.email}`] && (
+                  <button onClick={() => downloadResume(row.email, job.job_code)}>
+                    📥 Download Resume
                   </button>
                 )}
                 <button onClick={() => handlePlace(job, row)}>Place</button>
