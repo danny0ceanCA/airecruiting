@@ -421,6 +421,7 @@ function JobPosting() {
             <th>Name</th>
             <th>Email</th>
             <th>Score</th>
+            <th>Resume</th>
             <th>Action</th>
           </tr>
         </thead>
@@ -431,21 +432,20 @@ function JobPosting() {
               <td>{row.email}</td>
               <td>{row.score?.toFixed(2)}</td>
               <td>
-                <span className="badge assigned inline">Assigned</span>
                 {generatingResumes[`${job.job_code}:${row.email}`] ? (
                   <span className="spinner">⏳</span>
                 ) : generatedResumes[`${job.job_code}:${row.email}`] ? (
-                  <span className="resume-ready">Resume Ready</span>
+                  <button className="resume-icon-button" onClick={() => downloadResume(row.email, job.job_code)}>
+                    📥
+                  </button>
                 ) : (
                   <button onClick={() => generateResume(row.email, job.job_code)}>
                     Generate Resume
                   </button>
                 )}
-                {row.status === 'assigned' && generatedResumes[`${job.job_code}:${row.email}`] && (
-                  <button onClick={() => downloadResume(row.email, job.job_code)}>
-                    📥 Download Resume
-                  </button>
-                )}
+              </td>
+              <td>
+                <span className="badge assigned inline">Assigned</span>
                 <button onClick={() => handlePlace(job, row)}>Place</button>
               </td>
             </tr>
