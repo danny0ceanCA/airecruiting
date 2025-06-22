@@ -365,6 +365,19 @@
   background-color: #007bff;
   color: white;
 }
+
+.spinner {
+  font-size: 0.8rem;
+  padding-left: 0.5rem;
+  color: #999;
+}
+
+.resume-ready {
+  font-size: 0.8rem;
+  color: green;
+  padding-left: 0.5rem;
+  font-weight: bold;
+}
 @media (max-width: 768px) {
   .job-matching-layout {
     flex-direction: column;
