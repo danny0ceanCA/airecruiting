@@ -8,9 +8,9 @@ function RegisterForm() {
     email: '',
     firstName: '',
     lastName: '',
-    school: '',
     password: '',
   });
+  const [schoolCode, setSchoolCode] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const navigate = useNavigate();
@@ -27,8 +27,8 @@ function RegisterForm() {
         email: formData.email,
         first_name: formData.firstName,
         last_name: formData.lastName,
-        school: formData.school,
         password: formData.password,
+        school_code: schoolCode,
       });
       setMessage('Registration submitted. Awaiting admin approval.');
       setTimeout(() => navigate('/login'), 3000);
@@ -65,14 +65,16 @@ function RegisterForm() {
           value={formData.lastName}
           onChange={handleChange}
         />
-        <label htmlFor="school">School</label>
+        <label htmlFor="school_code">Enter Your School Code (e.g. 1001)</label>
         <input
-          id="school"
-          name="school"
+          id="school_code"
+          name="school_code"
           type="text"
-          value={formData.school}
-          onChange={handleChange}
+          maxLength={4}
+          value={schoolCode}
+          onChange={(e) => setSchoolCode(e.target.value)}
         />
+        {error && <p className="error">{error}</p>}
         <label htmlFor="password">Password</label>
         <input
           id="password"
@@ -84,7 +86,6 @@ function RegisterForm() {
         <button type="submit">Register</button>
         <Link to="/login" className="login-link">Back to Login</Link>
         {message && <p className="message">{message}</p>}
-        {error && <p className="error">{error}</p>}
       </form>
     </div>
   );
