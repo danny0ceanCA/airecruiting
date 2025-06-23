@@ -330,8 +330,19 @@ async def create_student(request: Request, current_user: dict = Depends(get_curr
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Embedding failed: {str(e)}")
 
+    user_key = f"user:{current_user.get('sub')}"
+    user_raw = redis_client.get(user_key)
+    school_code = None
+    if user_raw:
+        try:
+            school_code = json.loads(user_raw).get("school_code")
+        except Exception:
+            school_code = None
+
     data = student_data.model_dump()
     data["embedding"] = embedding
+    if school_code is not None:
+        data["school_code"] = school_code
     redis_client.set(f"student:{student_data.email}", json.dumps(data))
 
     if profile_json is not None:
