@@ -25,6 +25,9 @@ function StudentProfiles() {
   const [uploadResult, setUploadResult] = useState('');
   const [uploadError, setUploadError] = useState('');
 
+  // Resume upload state
+  const [resumeFile, setResumeFile] = useState(null);
+
   const [menuOpen, setMenuOpen] = useState(false);
   const navigate = useNavigate();
 
@@ -39,21 +42,33 @@ function StudentProfiles() {
     e.preventDefault();
     setFormMessage('');
     setFormError('');
+    const data = new FormData();
+    data.append('first_name', formData.firstName);
+    data.append('last_name', formData.lastName);
+    data.append('email', formData.email);
+    data.append('phone', formData.phone);
+    data.append('education_level', formData.educationLevel);
+    data.append(
+      'skills',
+      JSON.stringify(
+        formData.skills
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+      )
+    );
+    data.append('experience_summary', formData.experienceSummary);
+    data.append('interests', formData.interests);
+    if (resumeFile) {
+      data.append('resume', resumeFile);
+    }
     try {
-      await api.post(
-        '/students',
-        {
-          first_name: formData.firstName,
-          last_name: formData.lastName,
-          email: formData.email,
-          phone: formData.phone,
-          education_level: formData.educationLevel,
-          skills: formData.skills.split(',').map((s) => s.trim()).filter(Boolean),
-          experience_summary: formData.experienceSummary,
-          interests: formData.interests
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await api.post('/students', data, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+          Authorization: `Bearer ${token}`
+        }
+      });
       setFormMessage('Student profile submitted!');
       setFormData({
         firstName: '',
@@ -65,6 +80,7 @@ function StudentProfiles() {
         experienceSummary: '',
         interests: ''
       });
+      setResumeFile(null);
     } catch (err) {
       setFormError(err.response?.data?.detail || 'Submission failed');
     }
@@ -75,6 +91,10 @@ function StudentProfiles() {
     setUploadProgress(0);
     setUploadResult('');
     setUploadError('');
+  };
+
+  const handleResumeChange = (e) => {
+    setResumeFile(e.target.files[0] || null);
   };
 
   const handleUpload = async () => {
@@ -218,6 +238,15 @@ function StudentProfiles() {
             type="text"
             value={formData.interests}
             onChange={handleChange}
+          />
+
+          <label htmlFor="resume">Upload Resume (PDF or DOCX)</label>
+          <input
+            id="resume"
+            name="resume"
+            type="file"
+            accept=".pdf,.doc,.docx"
+            onChange={handleResumeChange}
           />
 
           <button type="submit">Submit</button>
