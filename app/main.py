@@ -4,7 +4,15 @@ import csv
 import os
 import uuid
 from typing import Optional
-from fastapi import FastAPI, HTTPException, Depends, Header, UploadFile, File
+from fastapi import (
+    FastAPI,
+    HTTPException,
+    Depends,
+    Header,
+    Request,
+    UploadFile,
+    File,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
 from jose import jwt, JWTError
@@ -239,14 +247,57 @@ def pending_users(current_user: dict = Depends(get_current_user)):
     return pending
 
 @app.post("/students")
-def create_student(student: StudentRequest, current_user: dict = Depends(get_current_user)):
-    if redis_client.exists(student.email):
+async def create_student(request: Request, current_user: dict = Depends(get_current_user)):
+    content_type = request.headers.get("content-type", "")
+    resume_file: UploadFile | None = None
+
+    if "multipart/form-data" in content_type:
+        form = await request.form()
+        resume_file = form.get("resume")
+        skills_field = form.get("skills", "")
+        student_data = StudentRequest(
+            first_name=form.get("first_name"),
+            last_name=form.get("last_name"),
+            email=form.get("email"),
+            phone=form.get("phone"),
+            education_level=form.get("education_level"),
+            skills=[s.strip() for s in skills_field.split(",") if s.strip()],
+            experience_summary=form.get("experience_summary"),
+            interests=form.get("interests"),
+        )
+    else:
+        body = await request.json()
+        student_data = StudentRequest(**body)
+
+    if redis_client.exists(student_data.email):
         raise HTTPException(status_code=400, detail="Student already exists")
 
+    resume_text = ""
+    if resume_file is not None:
+        ext = os.path.splitext(resume_file.filename or "")[1].lower()
+        try:
+            if ext == ".pdf":
+                import pdfplumber
+
+                with pdfplumber.open(resume_file.file) as pdf:
+                    pages = [page.extract_text() or "" for page in pdf.pages]
+                resume_text = "\n".join(pages)
+            elif ext in {".docx", ".doc"}:
+                from docx import Document
+
+                document = Document(resume_file.file)
+                resume_text = "\n".join(p.text for p in document.paragraphs)
+            elif ext:
+                raise HTTPException(status_code=400, detail="Unsupported resume type")
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Failed to parse resume: {e}")
+
     combined = " ".join([
-        ", ".join(student.skills),
-        student.experience_summary,
-        student.interests
+        ", ".join(student_data.skills),
+        student_data.experience_summary,
+        student_data.interests,
     ])
     try:
         resp = client.embeddings.create(input=combined, model="text-embedding-3-small")
@@ -254,10 +305,12 @@ def create_student(student: StudentRequest, current_user: dict = Depends(get_cur
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Embedding failed: {str(e)}")
 
-    data = student.model_dump()
+    data = student_data.model_dump()
     data["embedding"] = embedding
-    redis_client.set(f"student:{student.email}", json.dumps(data))
-    return {"message": "Student stored"}
+    redis_client.set(f"student:{student_data.email}", json.dumps(data))
+
+    message = "Student stored" if resume_file is not None else "Student profile submitted without resume."
+    return {"message": message, "resume_text": resume_text}
 
 @app.post("/students/upload")
 def upload_students(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
