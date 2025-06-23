@@ -44,30 +44,25 @@ function StudentProfiles() {
     e.preventDefault();
     setFormMessage('');
     setFormError('');
-    const data = new FormData();
-    data.append('first_name', formData.firstName);
-    data.append('last_name', formData.lastName);
-    data.append('email', formData.email);
-    data.append('phone', formData.phone);
-    data.append('education_level', formData.educationLevel);
-    data.append(
-      'skills',
-      JSON.stringify(
-        formData.skills
-          .split(',')
-          .map((s) => s.trim())
-          .filter(Boolean)
-      )
-    );
-    data.append('experience_summary', formData.experienceSummary);
-    data.append('interests', formData.interests);
-    if (resumeFile) {
-      data.append('resume', resumeFile);
-    }
+    const payload = {
+      first_name: formData.firstName,
+      last_name: formData.lastName,
+      email: formData.email,
+      phone: formData.phone,
+      education_level: formData.educationLevel,
+      skills: formData.skills
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
+      experience_summary: formData.experienceSummary,
+      interests: formData.interests
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+    };
     try {
-      await api.post('/students', data, {
+      await api.post('/students', payload, {
         headers: {
-          'Content-Type': 'multipart/form-data',
           Authorization: `Bearer ${token}`
         }
       });
