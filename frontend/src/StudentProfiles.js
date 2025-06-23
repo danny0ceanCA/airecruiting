@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import api from './api';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import jwtDecode from 'jwt-decode';
 import './StudentProfiles.css';
 
 function StudentProfiles() {
@@ -24,7 +25,11 @@ function StudentProfiles() {
   const [uploadResult, setUploadResult] = useState('');
   const [uploadError, setUploadError] = useState('');
 
+  const [menuOpen, setMenuOpen] = useState(false);
+  const navigate = useNavigate();
+
   const token = localStorage.getItem('token');
+  const { role } = token ? jwtDecode(token) : {};
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -97,9 +102,50 @@ function StudentProfiles() {
     }
   };
 
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    navigate('/login');
+  };
+
   return (
     <div className="profiles-container">
-      <Link to="/dashboard" className="back-button">Back to Dashboard</Link>
+      <div className="admin-menu">
+        <button className="menu-button" onClick={() => setMenuOpen((o) => !o)}>
+          Admin Menu
+        </button>
+        {menuOpen && (
+          <div className="dropdown-menu">
+            <Link to="/dashboard">Dashboard</Link>
+            <Link to="/admin/pending">Pending Approvals</Link>
+            <Link to="/students">Student Profiles</Link>
+            {role === 'admin' && (
+              <button
+                className="admin-reset-button"
+                onClick={async () => {
+                  if (
+                    window.confirm(
+                      'Are you sure you want to delete ALL jobs and match data?'
+                    )
+                  ) {
+                    try {
+                      const resp = await api.delete('/admin/reset-jobs', {
+                        headers: { Authorization: `Bearer ${token}` },
+                      });
+                      alert(resp.data.message);
+                    } catch (err) {
+                      console.error('Reset failed:', err);
+                      alert('Failed to reset jobs.');
+                    }
+                  }
+                }}
+              >
+                🧨 Reset All Jobs
+              </button>
+            )}
+            <button onClick={handleLogout}>Logout</button>
+          </div>
+        )}
+      </div>
       <div className="form-section">
         <h2>New Student Profile</h2>
         <form className="profile-form" onSubmit={handleSubmit}>
