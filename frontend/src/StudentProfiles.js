@@ -18,6 +18,8 @@ function StudentProfiles() {
   });
   const [formMessage, setFormMessage] = useState('');
   const [formError, setFormError] = useState('');
+  const [parseMessage, setParseMessage] = useState('');
+  const [parseError, setParseError] = useState('');
 
   // CSV upload state
   const [csvFile, setCsvFile] = useState(null);
@@ -95,6 +97,38 @@ function StudentProfiles() {
 
   const handleResumeChange = (e) => {
     setResumeFile(e.target.files[0] || null);
+  };
+
+  const handleParseResume = async () => {
+    if (!resumeFile) return;
+    setParseMessage('');
+    setParseError('');
+    const data = new FormData();
+    data.append('resume', resumeFile);
+    try {
+      const resp = await api.post('/parse-resume', data, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const p = resp.data || {};
+      setFormData({
+        firstName: p.first_name || '',
+        lastName: p.last_name || '',
+        email: p.email || '',
+        phone: p.phone || '',
+        educationLevel: p.education_level || '',
+        skills: Array.isArray(p.skills) ? p.skills.join(', ') : p.skills || '',
+        experienceSummary: p.experience_summary || '',
+        interests: Array.isArray(p.interests)
+          ? p.interests.join(', ')
+          : p.interests || '',
+      });
+      setParseMessage('Profile filled from resume. Please review before submitting.');
+    } catch (err) {
+      setParseError(err.response?.data?.detail || 'Failed to parse resume');
+    }
   };
 
   const handleUpload = async () => {
@@ -248,6 +282,11 @@ function StudentProfiles() {
             accept=".pdf,.doc,.docx"
             onChange={handleResumeChange}
           />
+          <button type="button" onClick={handleParseResume} disabled={!resumeFile}>
+            Parse Resume with AI
+          </button>
+          {parseMessage && <p className="message">{parseMessage}</p>}
+          {parseError && <p className="error">{parseError}</p>}
 
           <button type="submit">Submit</button>
           {formMessage && <p className="message">{formMessage}</p>}
