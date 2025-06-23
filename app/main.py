@@ -12,6 +12,8 @@ from dotenv import load_dotenv
 import bcrypt
 from openai import OpenAI
 import redis
+from backend.app.schemas.resume import ResumeRequest
+from backend.app.services.resume import generate_resume_text
 
 # Load environment variables
 load_dotenv()
@@ -607,6 +609,53 @@ def assign_student(data: dict, token_data: dict = Depends(get_current_user)):
 
     redis_client.set(key, json.dumps(job))
     return {"message": f"Assigned {student_email}"}
+
+
+@app.post("/generate-resume")
+def generate_resume(req: ResumeRequest, current_user: dict = Depends(get_current_user)):
+    """
+    Generates a text resume using OpenAI and stores it in Redis.
+    Does not regenerate if it already exists.
+    """
+    print(f"\U0001F4C4 Generating resume for {req.student_email} - {req.job_code}")
+    resume_key = f"resume:{req.job_code}:{req.student_email}"
+    existing = redis_client.get(resume_key)
+    if existing:
+        print(f"\U0001F4C4 Resume already exists for {req.student_email} - {req.job_code}")
+        return {"status": "exists"}
+
+    job_raw = redis_client.get(f"job:{req.job_code}")
+    student_raw = redis_client.get(f"student:{req.student_email}")
+    if not job_raw or not student_raw:
+        print("\u274C Job or student not found")
+        raise HTTPException(status_code=404, detail="Job or student not found")
+
+    job = json.loads(job_raw)
+    student = json.loads(student_raw)
+
+    generated_resume = generate_resume_text(client, student, job)
+
+    redis_client.set(resume_key, generated_resume)
+    print(f"\u2705 Resume saved for {req.student_email} - {req.job_code}")
+    return {"status": "success", "message": "Resume stored in Redis"}
+
+
+@app.get("/resume/{job_code}/{student_email}")
+def get_resume(job_code: str, student_email: str, current_user: dict = Depends(get_current_user)):
+    key = f"resume:{job_code}:{student_email}"
+    print(f"\U0001F4E5 Download request for resume: {job_code} - {student_email}")
+    resume = redis_client.get(key)
+
+    if not resume:
+        raise HTTPException(status_code=404, detail="Resume not found")
+
+    print("\u2705 Resume found and returned as plain text")
+    return {
+        "status": "success",
+        "job_code": job_code,
+        "student_email": student_email,
+        "resume": resume if isinstance(resume, str) else resume.decode("utf-8"),
+    }
 
 
 

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, Navigate } from 'react-router-dom';
 import jwtDecode from 'jwt-decode';
+import jsPDF from 'jspdf';
 import api from './api';
 import './JobPosting.css';
 
@@ -26,6 +27,8 @@ function JobPosting() {
   const [matchPresence, setMatchPresence] = useState({});
   const [editMode, setEditMode] = useState({});
   const [editedJobs, setEditedJobs] = useState({});
+  const [generatingResumes, setGeneratingResumes] = useState({});
+  const [generatedResumes, setGeneratedResumes] = useState({});
   const [menuOpen, setMenuOpen] = useState(false);
   const navigate = useNavigate();
 
@@ -264,6 +267,65 @@ function JobPosting() {
     }
   };
 
+  const generateResume = async (email, jobCode) => {
+    const key = `${jobCode}:${email}`;
+    if (generatedResumes[key]) return;
+
+    setGeneratingResumes((prev) => ({ ...prev, [key]: true }));
+
+    try {
+      const resp = await api.post(
+        '/generate-resume',
+        {
+          student_email: email,
+          job_code: jobCode,
+        },
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      if (resp.data.status === 'success' || resp.data.status === 'exists') {
+        console.log('Resume generation complete:', resp.data.message);
+        setGeneratedResumes((prev) => ({ ...prev, [key]: true }));
+      }
+    } catch (err) {
+      console.error('Resume generation error:', err);
+    } finally {
+      setGeneratingResumes((prev) => ({ ...prev, [key]: false }));
+    }
+  };
+
+  const downloadResume = async (studentEmail, jobCode) => {
+    try {
+      const resp = await api.get(`/resume/${jobCode}/${studentEmail}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      const resumeText = resp.data.resume;
+      const doc = new jsPDF();
+
+      // Add header
+      doc.setFontSize(16);
+      doc.text('TalenMatch AI Resume', 15, 20);
+
+      // Add watermark footer
+      doc.setFontSize(10);
+      doc.text('Tailored by TalenMatch AI', 15, 285);
+
+      // Resume body
+      doc.setFontSize(12);
+      const lines = doc.splitTextToSize(resumeText, 180);
+      doc.text(lines, 15, 40);
+
+      // Save as PDF
+      doc.save(`resume-${studentEmail}-${jobCode}.pdf`);
+    } catch (err) {
+      console.error('Resume download failed', err);
+      alert('Unable to download resume');
+    }
+  };
+
   const handleLogout = () => {
     localStorage.removeItem('token');
     navigate('/login');
@@ -359,6 +421,7 @@ function JobPosting() {
             <th>Name</th>
             <th>Email</th>
             <th>Score</th>
+            <th>Resume</th>
             <th>Action</th>
           </tr>
         </thead>
@@ -368,6 +431,19 @@ function JobPosting() {
               <td>{row.first_name || row.name?.split(' ')[0]} {row.last_name || row.name?.split(' ')[1]}</td>
               <td>{row.email}</td>
               <td>{row.score?.toFixed(2)}</td>
+              <td>
+                {generatingResumes[`${job.job_code}:${row.email}`] ? (
+                  <span className="spinner">⏳</span>
+                ) : generatedResumes[`${job.job_code}:${row.email}`] ? (
+                  <button className="resume-icon-button" onClick={() => downloadResume(row.email, job.job_code)}>
+                    📥
+                  </button>
+                ) : (
+                  <button onClick={() => generateResume(row.email, job.job_code)}>
+                    Generate Resume
+                  </button>
+                )}
+              </td>
               <td>
                 <span className="badge assigned inline">Assigned</span>
                 <button onClick={() => handlePlace(job, row)}>Place</button>
