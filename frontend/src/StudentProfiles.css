@@ -126,3 +126,33 @@
   background-color: #d32f2f;
 }
 
+.school-students-section {
+  background-color: #003366;
+  padding: 1rem 2rem;
+  border-radius: 10px;
+  flex: 1 1 100%;
+}
+
+.school-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1rem;
+}
+
+.school-table th,
+.school-table td {
+  border: 1px solid #ccc;
+  padding: 0.5rem;
+}
+
+.school-table th {
+  background-color: #003366;
+  color: white;
+}
+
+.school-table td {
+  background-color: white;
+  color: black;
+  text-align: center;
+}
+
