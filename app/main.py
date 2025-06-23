@@ -294,6 +294,23 @@ async def create_student(request: Request, current_user: dict = Depends(get_curr
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Failed to parse resume: {e}")
 
+    profile_json = None
+    if resume_text:
+        try:
+            instructions = (
+                "Extract a student profile from the following resume text. "
+                "Return JSON with these fields: first_name, last_name, email, phone, "
+                "education_level, skills (as a list), experience_summary, and interests (as a list)."
+            )
+            completion = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": f"{instructions}\n\n{resume_text}"}],
+                temperature=0.0,
+            )
+            profile_json = json.loads(completion.choices[0].message.content)
+        except Exception:
+            profile_json = None
+
     combined = " ".join([
         ", ".join(student_data.skills),
         student_data.experience_summary,
@@ -309,8 +326,10 @@ async def create_student(request: Request, current_user: dict = Depends(get_curr
     data["embedding"] = embedding
     redis_client.set(f"student:{student_data.email}", json.dumps(data))
 
-    message = "Student stored" if resume_file is not None else "Student profile submitted without resume."
-    return {"message": message, "resume_text": resume_text}
+    if profile_json is not None:
+        return {"message": "Resume parsed by GPT successfully.", "profile": profile_json}
+    else:
+        return {"message": "Student profile submitted without GPT parsing."}
 
 @app.post("/students/upload")
 def upload_students(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
