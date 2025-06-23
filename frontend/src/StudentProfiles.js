@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import api from './api';
 import { Link, useNavigate } from 'react-router-dom';
 import jwtDecode from 'jwt-decode';
@@ -30,11 +30,31 @@ function StudentProfiles() {
   // Resume upload state
   const [resumeFile, setResumeFile] = useState(null);
 
+  // Students from this user's school
+  const [schoolStudents, setSchoolStudents] = useState([]);
+
   const [menuOpen, setMenuOpen] = useState(false);
   const navigate = useNavigate();
 
   const token = localStorage.getItem('token');
   const { role } = token ? jwtDecode(token) : {};
+
+  useEffect(() => {
+    const fetchStudents = async () => {
+      try {
+        const resp = await api.get('/students/by-school', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        setSchoolStudents(resp.data?.students || []);
+      } catch (err) {
+        console.error('Failed to fetch students:', err);
+      }
+    };
+
+    if (token) {
+      fetchStudents();
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -296,6 +316,46 @@ function StudentProfiles() {
         {uploadProgress > 0 && <p>Progress: {uploadProgress}%</p>}
         {uploadResult && <p className="message">{uploadResult}</p>}
         {uploadError && <p className="error">{uploadError}</p>}
+      </div>
+
+      <div className="school-students-section">
+        <h2>Students from Your School</h2>
+        {schoolStudents.length > 0 ? (
+          <table className="school-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Education Level</th>
+                <th>Assigned Jobs</th>
+                <th>Placement Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {schoolStudents.map((s) => {
+                const assigned = s.assigned_jobs
+                  ? Array.isArray(s.assigned_jobs)
+                    ? s.assigned_jobs.length
+                    : s.assigned_jobs
+                  : 0;
+                const placedCount = s.placed_jobs
+                  ? Array.isArray(s.placed_jobs)
+                    ? s.placed_jobs.length
+                    : s.placed_jobs
+                  : 0;
+                return (
+                  <tr key={s.email || `${s.first_name}-${s.last_name}`}>
+                    <td>{s.first_name} {s.last_name}</td>
+                    <td>{s.education_level}</td>
+                    <td>{assigned}</td>
+                    <td>{placedCount > 0 ? '✅' : '❌'}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        ) : (
+          <p>No students found for your school.</p>
+        )}
       </div>
     </div>
   );
