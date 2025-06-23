@@ -82,7 +82,7 @@ def test_registration_flow():
         "email": "jane@example.com",
         "first_name": "Jane",
         "last_name": "Doe",
-        "school": "Test University",
+        "school_code": "1001",
         "password": "secret",
     }
 
@@ -129,7 +129,7 @@ def test_non_admin_cannot_approve():
         "email": "user1@example.com",
         "first_name": "User",
         "last_name": "One",
-        "school": "Test U",
+        "school_code": "1001",
         "password": "pass1",
     }
     client.post("/register", json=user1)
@@ -145,7 +145,7 @@ def test_non_admin_cannot_approve():
         "email": "user2@example.com",
         "first_name": "User",
         "last_name": "Two",
-        "school": "Test U",
+        "school_code": "1001",
         "password": "pass2",
     }
     client.post("/register", json=target)
@@ -172,14 +172,14 @@ def test_pending_users_endpoint():
         "email": "pend1@example.com",
         "first_name": "Pending",
         "last_name": "One",
-        "school": "PU",
+        "school_code": "1001",
         "password": "pass1",
     }
     u2 = {
         "email": "pend2@example.com",
         "first_name": "Pending",
         "last_name": "Two",
-        "school": "PU",
+        "school_code": "1001",
         "password": "pass2",
     }
     client.post("/register", json=u1)
@@ -202,7 +202,7 @@ def test_pending_users_forbidden_for_non_admin():
         "email": "regular@example.com",
         "first_name": "Reg",
         "last_name": "User",
-        "school": "RU",
+        "school_code": "1001",
         "password": "secret",
     }
     client.post("/register", json=regular)
@@ -234,7 +234,7 @@ def test_admin_can_reject_user():
         "email": "rejectme@example.com",
         "first_name": "Reject",
         "last_name": "Me",
-        "school": "RMU",
+        "school_code": "1001",
         "password": "pwd",
     }
     client.post("/register", json=target)
@@ -263,7 +263,7 @@ def test_non_admin_cannot_reject():
         "email": "reg@example.com",
         "first_name": "Reg",
         "last_name": "User",
-        "school": "RU",
+        "school_code": "1001",
         "password": "pass",
     }
     client.post("/register", json=regular)
@@ -278,7 +278,7 @@ def test_non_admin_cannot_reject():
         "email": "victim@example.com",
         "first_name": "Vic",
         "last_name": "Tim",
-        "school": "TU",
+        "school_code": "1001",
         "password": "secret",
     }
     client.post("/register", json=target)
@@ -337,7 +337,7 @@ def test_metrics_endpoint():
     u1 = {
         "first_name": "A",
         "last_name": "B",
-        "school": "X",
+        "school_code": "1001",
         "password": "p",
         "role": "user",
         "approved": True,

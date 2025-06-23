@@ -22,6 +22,7 @@ from openai import OpenAI
 import redis
 from backend.app.schemas.resume import ResumeRequest
 from backend.app.services.resume import generate_resume_text
+from backend.app.school_codes import SCHOOL_CODE_MAP
 
 # Load environment variables
 load_dotenv()
@@ -75,7 +76,7 @@ def init_default_admin():
                 {
                     "first_name": "Admin",
                     "last_name": "User",
-                    "school": "Admin School",
+                    "school_code": "Admin School",
                     "password": hashed,
                     "role": "admin",
                     "approved": True,
@@ -103,7 +104,7 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     first_name: str
     last_name: str
-    school: str
+    school_code: str
     password: str
 
 class LoginRequest(BaseModel):
@@ -159,6 +160,13 @@ def register(req: RegisterRequest):
     if redis_client.exists(key):
         raise HTTPException(status_code=400, detail="User already exists")
 
+    label = SCHOOL_CODE_MAP.get(req.school_code)
+    if not label:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid school code. Please contact your administrator.",
+        )
+
     hashed = bcrypt.hashpw(req.password.encode(), bcrypt.gensalt()).decode()
     redis_client.set(
         key,
@@ -166,7 +174,7 @@ def register(req: RegisterRequest):
             {
                 "first_name": req.first_name,
                 "last_name": req.last_name,
-                "school": req.school,
+                "school_code": label,
                 "password": hashed,
                 "role": "user",
                 "approved": False,
