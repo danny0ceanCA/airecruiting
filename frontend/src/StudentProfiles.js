@@ -70,7 +70,7 @@ function StudentProfiles() {
       education_level: formData.education_level,
       skills: formData.skills.split(',').map((s) => s.trim()),
       experience_summary: formData.experience_summary,
-      interests: formData.interests.split(',').map((i) => i.trim()),
+      interests: formData.interests.trim(),
     };
     try {
       await api.post('/students', studentData, {
