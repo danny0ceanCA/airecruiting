@@ -6,15 +6,31 @@
   display: flex;
   flex-wrap: wrap;
   gap: 2rem;
+  align-items: flex-start;
 }
 
-.form-section,
+.form-section {
+  background-color: #003366;
+  padding: 1rem 2rem;
+  border-radius: 10px;
+  flex: 1;
+  min-width: 300px;
+}
+
 .upload-section {
   background-color: #003366;
   padding: 1rem 2rem;
   border-radius: 10px;
-  flex: 1 1 300px;
-  max-width: 500px;
+  width: 100%;
+}
+
+.right-column {
+  display: flex;
+  flex-direction: column;
+  flex: 0.25;
+  max-width: 350px;
+  width: 100%;
+  gap: 1rem;
 }
 
 .profile-form {
@@ -130,7 +146,8 @@
   background-color: #003366;
   padding: 1rem 2rem;
   border-radius: 10px;
-  flex: 1 1 100%;
+  width: 100%;
+  margin-top: 1rem;
 }
 
 .school-table {
