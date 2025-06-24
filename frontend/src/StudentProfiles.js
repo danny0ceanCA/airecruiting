@@ -179,7 +179,15 @@ function StudentProfiles() {
   return (
     <div
       className="profiles-container"
-      style={{ width: '100%', paddingLeft: '2rem', paddingRight: '2rem' }}
+      style={{
+        width: '100%',
+        paddingLeft: '2rem',
+        paddingRight: '2rem',
+        display: 'flex',
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start'
+      }}
     >
       <div className="admin-menu">
         <button className="menu-button" onClick={() => setMenuOpen((o) => !o)}>
@@ -218,16 +226,7 @@ function StudentProfiles() {
           </div>
         )}
       </div>
-      <div
-        className="profiles-flex"
-        style={{
-          display: 'flex',
-          flexDirection: 'row',
-          justifyContent: 'space-between',
-          gap: '2rem',
-          width: '100%'
-        }}
-      >
+      {/* Layout columns */}
         <div
           className="form-section"
           style={{ flex: '0.6', maxWidth: '600px', overflowX: 'hidden' }}
@@ -326,31 +325,27 @@ function StudentProfiles() {
         </div>
 
         <div
-          className="right-column"
+          className="rightColumn"
           style={{
-            alignSelf: 'stretch',
             flex: '0.4',
             display: 'flex',
             flexDirection: 'column',
-            justifyContent: 'space-between'
+            gap: '1rem'
           }}
         >
-          <div style={{ marginBottom: '1rem' }}>
-            <div className="upload-section">
-              <h2>Upload CSV</h2>
-              <input type="file" accept=".csv" onChange={handleFileChange} />
-              <button onClick={handleUpload} disabled={!csvFile}>Upload</button>
-              {uploadProgress > 0 && <p>Progress: {uploadProgress}%</p>}
-              {uploadResult && <p className="message">{uploadResult}</p>}
-              {uploadError && <p className="error">{uploadError}</p>}
-            </div>
+          <div className="upload-section">
+            <h2>Upload CSV</h2>
+            <input type="file" accept=".csv" onChange={handleFileChange} />
+            <button onClick={handleUpload} disabled={!csvFile}>Upload</button>
+            {uploadProgress > 0 && <p>Progress: {uploadProgress}%</p>}
+            {uploadResult && <p className="message">{uploadResult}</p>}
+            {uploadError && <p className="error">{uploadError}</p>}
           </div>
 
-          <div style={{ marginBottom: '1rem', flex: 1 }}>
-            <div className="school-students-section" style={{ flex: 1 }}>
-              <h2>Students from Your School</h2>
-              {schoolStudents.length > 0 ? (
-                <table className="school-table">
+          <div className="school-students-section" style={{ flex: 1 }}>
+            <h2>Students from Your School</h2>
+            {schoolStudents.length > 0 ? (
+              <table className="school-table">
             <thead>
               <tr>
                 <th>Name</th>
@@ -385,10 +380,8 @@ function StudentProfiles() {
               ) : (
                 <p>No students found for your school.</p>
               )}
-            </div>
           </div>
         </div>
-      </div>
     </div>
   );
 }
