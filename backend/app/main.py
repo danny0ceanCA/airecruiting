@@ -1,6 +1,6 @@
 from app.main import *  # re-export everything from the main application
 
-from fastapi import Depends
+from fastapi import Depends, UploadFile, File
 import json
 
 
@@ -64,3 +64,45 @@ def students_by_school(current_user: dict = Depends(get_current_user)):
 
     return {"students": students}
 
+
+@app.post("/parse-resume")
+async def parse_resume(file: UploadFile = File(...)):
+    try:
+        ext = os.path.splitext(file.filename or "")[1].lower()
+        if ext == ".pdf":
+            import pdfplumber
+            with pdfplumber.open(file.file) as pdf:
+                resume_text = "\n".join(page.extract_text() or "" for page in pdf.pages)
+        elif ext == ".docx":
+            from docx import Document
+            document = Document(file.file)
+            resume_text = "\n".join(p.text for p in document.paragraphs)
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported file type")
+
+        prompt = f"""
+Extract the following structured fields from this resume:
+
+- first_name
+- last_name
+- email
+- phone
+- education_level
+- skills (as a list)
+- experience_summary (short paragraph)
+- interests (as a list)
+
+Resume text:
+{resume_text}
+"""
+
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
+        )
+        return {"profile": response.choices[0].message.content}
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Resume parsing failed")
