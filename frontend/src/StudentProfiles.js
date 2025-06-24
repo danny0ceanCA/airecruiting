@@ -7,13 +7,13 @@ import './StudentProfiles.css';
 function StudentProfiles() {
   // Manual form state
   const [formData, setFormData] = useState({
-    firstName: '',
-    lastName: '',
+    first_name: '',
+    last_name: '',
     email: '',
     phone: '',
-    educationLevel: '',
+    education_level: '',
     skills: '',
-    experienceSummary: '',
+    experience_summary: '',
     interests: ''
   });
   const [formMessage, setFormMessage] = useState('');
@@ -64,42 +64,38 @@ function StudentProfiles() {
     e.preventDefault();
     setFormMessage('');
     setFormError('');
-    const payload = {
-      first_name: formData.firstName,
-      last_name: formData.lastName,
+    const studentData = {
+      first_name: formData.first_name,
+      last_name: formData.last_name,
       email: formData.email,
       phone: formData.phone,
-      education_level: formData.educationLevel,
-      skills: formData.skills
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean),
-      experience_summary: formData.experienceSummary,
-      interests: formData.interests
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean)
+      education_level: formData.education_level,
+      skills: formData.skills.split(',').map((s) => s.trim()),
+      experience_summary: formData.experience_summary,
+      interests: formData.interests.split(',').map((i) => i.trim()),
     };
     try {
-      await api.post('/students', payload, {
+      await api.post('/students', studentData, {
         headers: {
-          Authorization: `Bearer ${token}`
-        }
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
       });
       setFormMessage('Student profile submitted!');
       setFormData({
-        firstName: '',
-        lastName: '',
+        first_name: '',
+        last_name: '',
         email: '',
         phone: '',
-        educationLevel: '',
+        education_level: '',
         skills: '',
-        experienceSummary: '',
+        experience_summary: '',
         interests: ''
       });
       setResumeFile(null);
     } catch (err) {
-      setFormError(err.response?.data?.detail || 'Submission failed');
+      console.error('Submission failed:', err);
+      setFormError('Submission failed. Please check all required fields.');
     }
   };
 
@@ -129,13 +125,13 @@ function StudentProfiles() {
       });
       const p = resp.data || {};
       setFormData({
-        firstName: p.first_name || '',
-        lastName: p.last_name || '',
+        first_name: p.first_name || '',
+        last_name: p.last_name || '',
         email: p.email || '',
         phone: p.phone || '',
-        educationLevel: p.education_level || '',
+        education_level: p.education_level || '',
         skills: Array.isArray(p.skills) ? p.skills.join(', ') : p.skills || '',
-        experienceSummary: p.experience_summary || '',
+        experience_summary: p.experience_summary || '',
         interests: Array.isArray(p.interests)
           ? p.interests.join(', ')
           : p.interests || '',
@@ -233,21 +229,21 @@ function StudentProfiles() {
         >
           <h2>New Student Profile</h2>
           <form className="profile-form" onSubmit={handleSubmit}>
-          <label htmlFor="firstName">First Name</label>
+          <label htmlFor="first_name">First Name</label>
           <input
-            id="firstName"
-            name="firstName"
+            id="first_name"
+            name="first_name"
             type="text"
-            value={formData.firstName}
+            value={formData.first_name}
             onChange={handleChange}
           />
 
-          <label htmlFor="lastName">Last Name</label>
+          <label htmlFor="last_name">Last Name</label>
           <input
-            id="lastName"
-            name="lastName"
+            id="last_name"
+            name="last_name"
             type="text"
-            value={formData.lastName}
+            value={formData.last_name}
             onChange={handleChange}
           />
 
@@ -269,12 +265,12 @@ function StudentProfiles() {
             onChange={handleChange}
           />
 
-          <label htmlFor="educationLevel">Education Level</label>
+          <label htmlFor="education_level">Education Level</label>
           <input
-            id="educationLevel"
-            name="educationLevel"
+            id="education_level"
+            name="education_level"
             type="text"
-            value={formData.educationLevel}
+            value={formData.education_level}
             onChange={handleChange}
           />
 
@@ -287,11 +283,11 @@ function StudentProfiles() {
             onChange={handleChange}
           />
 
-          <label htmlFor="experienceSummary">Experience Summary</label>
+          <label htmlFor="experience_summary">Experience Summary</label>
           <textarea
-            id="experienceSummary"
-            name="experienceSummary"
-            value={formData.experienceSummary}
+            id="experience_summary"
+            name="experience_summary"
+            value={formData.experience_summary}
             onChange={handleChange}
           ></textarea>
 
