@@ -184,10 +184,10 @@ function StudentProfiles() {
         alignItems: 'flex-start',
         flexWrap: 'wrap',
         gap: '2rem',
-        maxWidth: '1200px',
-        margin: '0 auto',
         justifyContent: 'space-between',
-        width: '100%'
+        width: '100%',
+        paddingLeft: '2rem',
+        paddingRight: '2rem'
       }}
     >
       <div className="admin-menu">
