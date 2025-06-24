@@ -179,7 +179,16 @@ function StudentProfiles() {
   return (
     <div
       className="profiles-container"
-      style={{ display: 'flex', alignItems: 'flex-start', flexWrap: 'wrap', gap: '2rem' }}
+      style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        flexWrap: 'wrap',
+        gap: '2rem',
+        maxWidth: '1200px',
+        margin: '0 auto',
+        justifyContent: 'space-between',
+        width: '100%'
+      }}
     >
       <div className="admin-menu">
         <button className="menu-button" onClick={() => setMenuOpen((o) => !o)}>
@@ -218,7 +227,10 @@ function StudentProfiles() {
           </div>
         )}
       </div>
-      <div className="form-section" style={{ flex: '0.4', maxWidth: '600px' }}>
+      <div
+        className="form-section"
+        style={{ flex: '0.5', maxWidth: '600px' }}
+      >
         <h2>New Student Profile</h2>
         <form className="profile-form" onSubmit={handleSubmit}>
           <label htmlFor="firstName">First Name</label>
@@ -312,7 +324,10 @@ function StudentProfiles() {
         </form>
       </div>
 
-      <div className="right-column" style={{ alignSelf: 'stretch' }}>
+      <div
+        className="right-column"
+        style={{ alignSelf: 'stretch', flex: '0.5', maxWidth: '500px' }}
+      >
         <div className="upload-section">
           <h2>Upload CSV</h2>
           <input type="file" accept=".csv" onChange={handleFileChange} />
