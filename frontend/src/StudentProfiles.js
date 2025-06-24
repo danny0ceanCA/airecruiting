@@ -179,16 +179,7 @@ function StudentProfiles() {
   return (
     <div
       className="profiles-container"
-      style={{
-        display: 'flex',
-        alignItems: 'flex-start',
-        flexWrap: 'wrap',
-        gap: '2rem',
-        justifyContent: 'space-between',
-        width: '100%',
-        paddingLeft: '2rem',
-        paddingRight: '2rem'
-      }}
+      style={{ width: '100%', paddingLeft: '2rem', paddingRight: '2rem' }}
     >
       <div className="admin-menu">
         <button className="menu-button" onClick={() => setMenuOpen((o) => !o)}>
@@ -228,11 +219,21 @@ function StudentProfiles() {
         )}
       </div>
       <div
-        className="form-section"
-        style={{ flex: '0.5', maxWidth: '600px' }}
+        className="profiles-flex"
+        style={{
+          display: 'flex',
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          gap: '2rem',
+          width: '100%'
+        }}
       >
-        <h2>New Student Profile</h2>
-        <form className="profile-form" onSubmit={handleSubmit}>
+        <div
+          className="form-section"
+          style={{ flex: '0.6', maxWidth: '600px', overflowX: 'hidden' }}
+        >
+          <h2>New Student Profile</h2>
+          <form className="profile-form" onSubmit={handleSubmit}>
           <label htmlFor="firstName">First Name</label>
           <input
             id="firstName"
@@ -321,26 +322,35 @@ function StudentProfiles() {
           <button type="submit">Submit</button>
           {formMessage && <p className="message">{formMessage}</p>}
           {formError && <p className="error">{formError}</p>}
-        </form>
-      </div>
-
-      <div
-        className="right-column"
-        style={{ alignSelf: 'stretch', flex: '0.5', maxWidth: '500px' }}
-      >
-        <div className="upload-section">
-          <h2>Upload CSV</h2>
-          <input type="file" accept=".csv" onChange={handleFileChange} />
-          <button onClick={handleUpload} disabled={!csvFile}>Upload</button>
-          {uploadProgress > 0 && <p>Progress: {uploadProgress}%</p>}
-          {uploadResult && <p className="message">{uploadResult}</p>}
-          {uploadError && <p className="error">{uploadError}</p>}
+          </form>
         </div>
 
-        <div className="school-students-section" style={{ flex: 1 }}>
-          <h2>Students from Your School</h2>
-          {schoolStudents.length > 0 ? (
-            <table className="school-table">
+        <div
+          className="right-column"
+          style={{
+            alignSelf: 'stretch',
+            flex: '0.4',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between'
+          }}
+        >
+          <div style={{ marginBottom: '1rem' }}>
+            <div className="upload-section">
+              <h2>Upload CSV</h2>
+              <input type="file" accept=".csv" onChange={handleFileChange} />
+              <button onClick={handleUpload} disabled={!csvFile}>Upload</button>
+              {uploadProgress > 0 && <p>Progress: {uploadProgress}%</p>}
+              {uploadResult && <p className="message">{uploadResult}</p>}
+              {uploadError && <p className="error">{uploadError}</p>}
+            </div>
+          </div>
+
+          <div style={{ marginBottom: '1rem', flex: 1 }}>
+            <div className="school-students-section" style={{ flex: 1 }}>
+              <h2>Students from Your School</h2>
+              {schoolStudents.length > 0 ? (
+                <table className="school-table">
             <thead>
               <tr>
                 <th>Name</th>
@@ -371,10 +381,12 @@ function StudentProfiles() {
                 );
               })}
             </tbody>
-          </table>
-        ) : (
-          <p>No students found for your school.</p>
-        )}
+                </table>
+              ) : (
+                <p>No students found for your school.</p>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>
