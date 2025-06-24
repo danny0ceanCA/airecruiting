@@ -16,8 +16,8 @@ The resume should be concise, modern, and use a consistent format.
 """
 
     resp = client.chat.completions.create(
-        model="gpt-4",
+        model="gpt-4o",
         messages=[{"role": "user", "content": prompt}],
-        temperature=0.7,
+        temperature=0.4,
     )
     return resp.choices[0].message.content
