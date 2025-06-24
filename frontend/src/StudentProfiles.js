@@ -223,6 +223,8 @@ function StudentProfiles() {
           justifyContent: 'space-between',
           width: '100%',
           gap: '2rem',
+          boxSizing: 'border-box',
+          height: '100%',
         }}
       >
         <div
@@ -328,7 +330,9 @@ function StudentProfiles() {
             flex: 0.4,
             display: 'flex',
             flexDirection: 'column',
-            gap: '1.5rem',
+            justifyContent: 'space-between',
+            height: '100%',
+            gap: '1rem',
           }}
         >
           <div className="upload-section">
