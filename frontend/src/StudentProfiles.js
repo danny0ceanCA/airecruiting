@@ -338,7 +338,7 @@ function StudentProfiles() {
 
           <div
             className="school-students-section"
-            style={{ flexGrow: 1, minHeight: 0 }}
+            style={{ flexGrow: 1, minHeight: 0, marginTop: '3rem' }}
           >
             <h2>Students from Your School</h2>
             {schoolStudents.length > 0 ? (
