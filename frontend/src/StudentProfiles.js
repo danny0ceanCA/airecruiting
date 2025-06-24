@@ -177,7 +177,10 @@ function StudentProfiles() {
   };
 
   return (
-    <div className="profiles-container">
+    <div
+      className="profiles-container"
+      style={{ display: 'flex', alignItems: 'flex-start', flexWrap: 'wrap', gap: '2rem' }}
+    >
       <div className="admin-menu">
         <button className="menu-button" onClick={() => setMenuOpen((o) => !o)}>
           Admin Menu
@@ -215,7 +218,7 @@ function StudentProfiles() {
           </div>
         )}
       </div>
-      <div className="form-section">
+      <div className="form-section" style={{ flex: '0.4', maxWidth: '600px' }}>
         <h2>New Student Profile</h2>
         <form className="profile-form" onSubmit={handleSubmit}>
           <label htmlFor="firstName">First Name</label>
@@ -309,7 +312,7 @@ function StudentProfiles() {
         </form>
       </div>
 
-      <div className="right-column">
+      <div className="right-column" style={{ alignSelf: 'stretch' }}>
         <div className="upload-section">
           <h2>Upload CSV</h2>
           <input type="file" accept=".csv" onChange={handleFileChange} />
@@ -319,7 +322,7 @@ function StudentProfiles() {
           {uploadError && <p className="error">{uploadError}</p>}
         </div>
 
-        <div className="school-students-section">
+        <div className="school-students-section" style={{ flex: 1 }}>
           <h2>Students from Your School</h2>
           {schoolStudents.length > 0 ? (
             <table className="school-table">
