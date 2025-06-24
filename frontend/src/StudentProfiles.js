@@ -177,18 +177,7 @@ function StudentProfiles() {
   };
 
   return (
-    <div
-      className="profiles-container"
-      style={{
-        width: '100%',
-        paddingLeft: '2rem',
-        paddingRight: '2rem',
-        display: 'flex',
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'flex-start'
-      }}
-    >
+    <div className="profiles-container">
       <div className="admin-menu">
         <button className="menu-button" onClick={() => setMenuOpen((o) => !o)}>
           Admin Menu
@@ -226,10 +215,19 @@ function StudentProfiles() {
           </div>
         )}
       </div>
-      {/* Layout columns */}
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'row',
+          alignItems: 'flex-start',
+          justifyContent: 'space-between',
+          width: '100%',
+          gap: '2rem',
+        }}
+      >
         <div
           className="form-section"
-          style={{ flex: '0.6', maxWidth: '600px', overflowX: 'hidden' }}
+          style={{ flex: 0.6, maxWidth: '700px', overflowX: 'hidden' }}
         >
           <h2>New Student Profile</h2>
           <form className="profile-form" onSubmit={handleSubmit}>
@@ -327,10 +325,10 @@ function StudentProfiles() {
         <div
           className="rightColumn"
           style={{
-            flex: '0.4',
+            flex: 0.4,
             display: 'flex',
             flexDirection: 'column',
-            gap: '1rem'
+            gap: '1.5rem',
           }}
         >
           <div className="upload-section">
@@ -382,6 +380,7 @@ function StudentProfiles() {
               )}
           </div>
         </div>
+      </div>
     </div>
   );
 }
