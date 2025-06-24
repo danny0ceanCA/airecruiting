@@ -219,7 +219,7 @@ function StudentProfiles() {
         style={{
           display: 'flex',
           flexDirection: 'row',
-          alignItems: 'stretch',
+          alignItems: 'flex-start',
           justifyContent: 'space-between',
           width: '100%',
           gap: '2rem',
@@ -331,17 +331,10 @@ function StudentProfiles() {
             flexDirection: 'column',
             flex: 0.4,
             height: '100%',
-            justifyContent: 'space-between',
+            flexGrow: 1,
           }}
         >
-          <div className="upload-section" style={{ marginBottom: '1rem' }}>
-            <h2>Upload CSV</h2>
-            <input type="file" accept=".csv" onChange={handleFileChange} />
-            <button onClick={handleUpload} disabled={!csvFile}>Upload</button>
-            {uploadProgress > 0 && <p>Progress: {uploadProgress}%</p>}
-            {uploadResult && <p className="message">{uploadResult}</p>}
-            {uploadError && <p className="error">{uploadError}</p>}
-          </div>
+
 
           <div
             className="school-students-section"
