@@ -309,19 +309,20 @@ function StudentProfiles() {
         </form>
       </div>
 
-      <div className="upload-section">
-        <h2>Upload CSV</h2>
-        <input type="file" accept=".csv" onChange={handleFileChange} />
-        <button onClick={handleUpload} disabled={!csvFile}>Upload</button>
-        {uploadProgress > 0 && <p>Progress: {uploadProgress}%</p>}
-        {uploadResult && <p className="message">{uploadResult}</p>}
-        {uploadError && <p className="error">{uploadError}</p>}
-      </div>
+      <div className="right-column">
+        <div className="upload-section">
+          <h2>Upload CSV</h2>
+          <input type="file" accept=".csv" onChange={handleFileChange} />
+          <button onClick={handleUpload} disabled={!csvFile}>Upload</button>
+          {uploadProgress > 0 && <p>Progress: {uploadProgress}%</p>}
+          {uploadResult && <p className="message">{uploadResult}</p>}
+          {uploadError && <p className="error">{uploadError}</p>}
+        </div>
 
-      <div className="school-students-section">
-        <h2>Students from Your School</h2>
-        {schoolStudents.length > 0 ? (
-          <table className="school-table">
+        <div className="school-students-section">
+          <h2>Students from Your School</h2>
+          {schoolStudents.length > 0 ? (
+            <table className="school-table">
             <thead>
               <tr>
                 <th>Name</th>
@@ -356,6 +357,7 @@ function StudentProfiles() {
         ) : (
           <p>No students found for your school.</p>
         )}
+        </div>
       </div>
     </div>
   );
