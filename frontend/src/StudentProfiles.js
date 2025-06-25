@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from './api';
 import { Link, useNavigate } from 'react-router-dom';
-import jwtDecode from 'jwt-decode';
+import jwt_decode from 'jwt-decode';
 import './StudentProfiles.css';
 
 function StudentProfiles() {
@@ -35,11 +35,13 @@ function StudentProfiles() {
   const navigate = useNavigate();
 
   const token = localStorage.getItem('token');
-  const { role } = token ? jwtDecode(token) : {};
+  const decoded = token ? jwt_decode(token) : {};
+  const userRole = decoded?.role;
 
   const fetchStudents = async () => {
     try {
-      const resp = await api.get('/students/by-school', {
+      const endpoint = userRole === 'admin' ? '/students/all' : '/students/by-school';
+      const resp = await api.get(endpoint, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setSchoolStudents(resp.data?.students || []);
@@ -151,7 +153,7 @@ function StudentProfiles() {
             <Link to="/dashboard">Dashboard</Link>
             <Link to="/admin/pending">Pending Approvals</Link>
             <Link to="/students">Student Profiles</Link>
-            {role === 'admin' && (
+            {userRole === 'admin' && (
               <button
                 className="admin-reset-button"
                 onClick={async () => {
