@@ -818,3 +818,47 @@ def reset_jobs(current_user: dict = Depends(get_current_user)):
         redis_client.delete(key)
 
     return {"message": f"Deleted {deleted} jobs and match data"}
+
+@app.get("/students/all")
+def get_all_students(current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+
+    students = []
+    for key in redis_client.scan_iter("student:*"):
+        raw = redis_client.get(key)
+        if not raw:
+            continue
+        try:
+            student = json.loads(raw)
+        except Exception:
+            continue
+
+        email = student.get("email")
+        info = {
+            "first_name": student.get("first_name"),
+            "last_name": student.get("last_name"),
+            "email": email,
+            "phone": student.get("phone"),
+            "education_level": student.get("education_level"),
+            "skills": student.get("skills"),
+            "experience_summary": student.get("experience_summary"),
+            "interests": student.get("interests"),
+            "school_code": student.get("school_code"),  # ✅ Added
+        }
+
+        # Add optional match data
+        job_count = 0
+        for job_key in redis_client.scan_iter("job:*"):
+            job_raw = redis_client.get(job_key)
+            if not job_raw:
+                continue
+            job = json.loads(job_raw)
+            if email in job.get("assigned_students", []):
+                info["assigned_jobs"] = info.get("assigned_jobs", 0) + 1
+            if email in job.get("placed_students", []):
+                info["placed_jobs"] = info.get("placed_jobs", 0) + 1
+
+        students.append(info)
+
+    return {"students": students}

@@ -5,7 +5,6 @@ import jwt_decode from 'jwt-decode';
 import './StudentProfiles.css';
 
 function StudentProfiles() {
-  // Manual form state
   const [formData, setFormData] = useState({
     first_name: '',
     last_name: '',
@@ -18,17 +17,8 @@ function StudentProfiles() {
   });
   const [formMessage, setFormMessage] = useState('');
   const [formError, setFormError] = useState('');
-
-  // CSV upload state
-  const [csvFile, setCsvFile] = useState(null);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [uploadResult, setUploadResult] = useState('');
-  const [uploadError, setUploadError] = useState('');
-
-  // Resume upload state
   const [resumeFile, setResumeFile] = useState(null);
 
-  // Students from this user's school
   const [schoolStudents, setSchoolStudents] = useState([]);
   const [isEditing, setIsEditing] = useState(false);
   const [editingEmail, setEditingEmail] = useState('');
@@ -53,13 +43,33 @@ function StudentProfiles() {
   };
 
   useEffect(() => {
-    if (token) {
-      fetchStudents();
-    }
+    if (token) fetchStudents();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  const handleEdit = (email) => {
+    const student = schoolStudents.find((s) => s.email === email);
+    if (student) {
+      setFormData({
+        first_name: student.first_name || '',
+        last_name: student.last_name || '',
+        email: student.email || '',
+        phone: student.phone || '',
+        education_level: student.education_level || '',
+        skills: Array.isArray(student.skills)
+          ? student.skills.join(', ')
+          : student.skills || '',
+        experience_summary: student.experience_summary || '',
+        interests: Array.isArray(student.interests)
+          ? student.interests.join(', ')
+          : student.interests || '',
+      });
+      setIsEditing(true);
+      setEditingEmail(student.email);
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -106,63 +116,8 @@ function StudentProfiles() {
     }
   };
 
-  const handleFileChange = (e) => {
-    setCsvFile(e.target.files[0]);
-    setUploadProgress(0);
-    setUploadResult('');
-    setUploadError('');
-  };
-
   const handleResumeChange = (e) => {
     setResumeFile(e.target.files[0] || null);
-  };
-
-const handleEdit = (email) => {
-  const student = schoolStudents.find((s) => s.email === email);
-  if (student) {
-    setFormData({
-      first_name: student.first_name || '',
-      last_name: student.last_name || '',
-      email: student.email || '',
-      phone: student.phone || '',
-      education_level: student.education_level || '',
-      skills: Array.isArray(student.skills)
-        ? student.skills.join(', ')
-        : student.skills || '',
-      experience_summary: student.experience_summary || '',
-      interests: Array.isArray(student.interests)
-        ? student.interests.join(', ')
-        : student.interests || '',
-    });
-    setIsEditing(true);
-    setEditingEmail(student.email);
-  }
-};
-
-
-  const handleUpload = async () => {
-    if (!csvFile) return;
-    setUploadProgress(0);
-    setUploadResult('');
-    setUploadError('');
-    const data = new FormData();
-    data.append('file', csvFile);
-    try {
-      const resp = await api.post('/students/upload', data, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-          Authorization: `Bearer ${token}`
-        },
-        onUploadProgress: (p) => {
-          if (p.total) {
-            setUploadProgress(Math.round((p.loaded * 100) / p.total));
-          }
-        }
-      });
-      setUploadResult(resp.data.message);
-    } catch (err) {
-      setUploadError(err.response?.data?.detail || 'Upload failed');
-    }
   };
 
   const handleLogout = () => {
@@ -185,11 +140,7 @@ const handleEdit = (email) => {
               <button
                 className="admin-reset-button"
                 onClick={async () => {
-                  if (
-                    window.confirm(
-                      'Are you sure you want to delete ALL jobs and match data?'
-                    )
-                  ) {
+                  if (window.confirm('Are you sure you want to delete ALL jobs and match data?')) {
                     try {
                       const resp = await api.delete('/admin/reset-jobs', {
                         headers: { Authorization: `Bearer ${token}` },
@@ -209,6 +160,7 @@ const handleEdit = (email) => {
           </div>
         )}
       </div>
+
       <div
         style={{
           display: 'flex',
@@ -220,98 +172,35 @@ const handleEdit = (email) => {
           gap: '2rem',
         }}
       >
-        <div
-          className="form-section"
-          style={{
-            flex: 1,
-            maxWidth: '600px',
-          }}
-        >
-          <h2>New Student Profile</h2>
+        <div style={{ flex: 1, maxWidth: '600px' }}>
+          <h2>{isEditing ? 'Edit Student Profile' : 'New Student Profile'}</h2>
           <form className="profile-form" onSubmit={handleSubmit}>
-          <label htmlFor="first_name">First Name</label>
-          <input
-            id="first_name"
-            name="first_name"
-            type="text"
-            value={formData.first_name}
-            onChange={handleChange}
-          />
-
-          <label htmlFor="last_name">Last Name</label>
-          <input
-            id="last_name"
-            name="last_name"
-            type="text"
-            value={formData.last_name}
-            onChange={handleChange}
-          />
-
-          <label htmlFor="email">Email</label>
-          <input
-            id="email"
-            name="email"
-            type="email"
-            value={formData.email}
-            onChange={handleChange}
-          />
-
-          <label htmlFor="phone">Phone</label>
-          <input
-            id="phone"
-            name="phone"
-            type="text"
-            value={formData.phone}
-            onChange={handleChange}
-          />
-
-          <label htmlFor="education_level">Education Level</label>
-          <input
-            id="education_level"
-            name="education_level"
-            type="text"
-            value={formData.education_level}
-            onChange={handleChange}
-          />
-
-          <label htmlFor="skills">Skills (comma separated)</label>
-          <input
-            id="skills"
-            name="skills"
-            type="text"
-            value={formData.skills}
-            onChange={handleChange}
-          />
-
-          <label htmlFor="experience_summary">Experience Summary</label>
-          <textarea
-            id="experience_summary"
-            name="experience_summary"
-            value={formData.experience_summary}
-            onChange={handleChange}
-          ></textarea>
-
-          <label htmlFor="interests">Interests</label>
-          <input
-            id="interests"
-            name="interests"
-            type="text"
-            value={formData.interests}
-            onChange={handleChange}
-          />
-
-          <label htmlFor="resume">Upload Resume (PDF or DOCX)</label>
-          <input
-            id="resume"
-            name="resume"
-            type="file"
-            accept=".pdf,.doc,.docx"
-            onChange={handleResumeChange}
-          />
-
-          <button type="submit">{isEditing ? 'Update' : 'Submit'}</button>
-          {formMessage && <p className="message">{formMessage}</p>}
-          {formError && <p className="error">{formError}</p>}
+            {['first_name', 'last_name', 'email', 'phone', 'education_level', 'skills', 'experience_summary', 'interests'].map((field) => (
+              <React.Fragment key={field}>
+                <label htmlFor={field}>{field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</label>
+                {field === 'experience_summary' ? (
+                  <textarea
+                    id={field}
+                    name={field}
+                    value={formData[field]}
+                    onChange={handleChange}
+                  />
+                ) : (
+                  <input
+                    id={field}
+                    name={field}
+                    type="text"
+                    value={formData[field]}
+                    onChange={handleChange}
+                  />
+                )}
+              </React.Fragment>
+            ))}
+            <label htmlFor="resume">Upload Resume (PDF or DOCX)</label>
+            <input id="resume" name="resume" type="file" onChange={handleResumeChange} />
+            <button type="submit">{isEditing ? 'Update' : 'Submit'}</button>
+            {formMessage && <p className="message">{formMessage}</p>}
+            {formError && <p className="error">{formError}</p>}
           </form>
         </div>
 
@@ -325,62 +214,45 @@ const handleEdit = (email) => {
             justifyContent: 'flex-start',
           }}
         >
-
-
-          <div
-            className="school-students-section"
-            style={{ flexGrow: 1, minHeight: 0, marginTop: '3rem' }}
-          >
+          <div style={{ flexGrow: 1, minHeight: 0, marginTop: '3rem' }}>
             <h2>Students from Your School</h2>
             {schoolStudents.length > 0 ? (
               <table className="school-table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Edit</th>
-                <th>Assigned Jobs</th>
-                <th>Placement Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {schoolStudents.map((s) => {
-                const assigned = s.assigned_jobs
-                  ? Array.isArray(s.assigned_jobs)
-                    ? s.assigned_jobs.length
-                    : s.assigned_jobs
-                  : 0;
-                const placedCount = s.placed_jobs
-                  ? Array.isArray(s.placed_jobs)
-                    ? s.placed_jobs.length
-                    : s.placed_jobs
-                  : 0;
-                return (
-                  <tr key={s.email || `${s.first_name}-${s.last_name}`}>
-                    <td>{s.first_name} {s.last_name}</td>
-                    <td>
-                      <button
-                        onClick={() => handleEdit(s.email)}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          cursor: 'pointer',
-                          fontSize: '1.2rem',
-                        }}
-                        title="Edit"
-                      >
-                        ✏️
-                      </button>
-                    </td>
-                    <td>{assigned}</td>
-                    <td>{placedCount > 0 ? '✅' : '❌'}</td>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    {userRole === 'admin' && <th>School</th>}
+                    <th>Edit</th>
+                    <th>Assigned Jobs</th>
+                    <th>Placement Status</th>
                   </tr>
-                );
-              })}
-            </tbody>
-                </table>
-              ) : (
-                <p>No students found for your school.</p>
-              )}
+                </thead>
+                <tbody>
+                  {schoolStudents.map((s) => {
+                    const assigned = Array.isArray(s.assigned_jobs) ? s.assigned_jobs.length : s.assigned_jobs || 0;
+                    const placed = Array.isArray(s.placed_jobs) ? s.placed_jobs.length : s.placed_jobs || 0;
+                    return (
+                      <tr key={s.email}>
+                        <td>{s.first_name} {s.last_name}</td>
+                        {userRole === 'admin' && <td>{s.school_code}</td>}
+                        <td>
+                          <button onClick={() => handleEdit(s.email)} style={{
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            fontSize: '1.2rem',
+                          }} title="Edit">✏️</button>
+                        </td>
+                        <td>{assigned}</td>
+                        <td>{placed > 0 ? '✅' : '❌'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            ) : (
+              <p>No students found for your school.</p>
+            )}
           </div>
         </div>
       </div>
@@ -389,4 +261,3 @@ const handleEdit = (email) => {
 }
 
 export default StudentProfiles;
-
