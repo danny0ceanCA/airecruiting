@@ -52,7 +52,11 @@ def students_by_school(current_user: dict = Depends(get_current_user)):
             "first_name": student.get("first_name"),
             "last_name": student.get("last_name"),
             "email": email,
+            "phone": student.get("phone"),
             "education_level": student.get("education_level"),
+            "skills": student.get("skills"),
+            "experience_summary": student.get("experience_summary"),
+            "interests": student.get("interests"),
         }
 
         if email in assigned_counts:
@@ -101,7 +105,11 @@ async def get_all_students(current_user: dict = Depends(get_current_user)):
             "first_name": student.get("first_name"),
             "last_name": student.get("last_name"),
             "email": email,
+            "phone": student.get("phone"),
             "education_level": student.get("education_level"),
+            "skills": student.get("skills"),
+            "experience_summary": student.get("experience_summary"),
+            "interests": student.get("interests"),
         }
 
         if email in assigned_counts:
