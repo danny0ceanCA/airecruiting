@@ -49,6 +49,7 @@ class DummyRedis:
 
 main_app.redis_client = DummyRedis()
 from app.main import app, JWT_SECRET, ALGORITHM, init_default_admin
+import backend.app.main  # register additional routes
 
 client = TestClient(app)
 
@@ -410,4 +411,47 @@ def test_admin_reset_jobs():
     # verify cleanup
     assert list(main_app.redis_client.scan_iter("job:*")) == []
     assert list(main_app.redis_client.scan_iter("match_results:*")) == []
+
+
+def test_students_all_admin_access():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    # Seed some students
+    s1 = {"first_name": "One", "last_name": "A", "email": "one@example.com", "education_level": "College"}
+    s2 = {"first_name": "Two", "last_name": "B", "email": "two@example.com", "education_level": "HS"}
+    main_app.redis_client.set("student:one@example.com", json.dumps(s1))
+    main_app.redis_client.set("student:two@example.com", json.dumps(s2))
+
+    login_resp = client.post("/login", json={"email": "admin@example.com", "password": "admin123"})
+    token = login_resp.json()["token"]
+
+    resp = client.get("/students/all", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200
+    data = resp.json()["students"]
+    emails = {s["email"] for s in data}
+    assert {"one@example.com", "two@example.com"} <= emails
+
+
+def test_students_all_forbidden_for_non_admin():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    user = {
+        "email": "user@example.com",
+        "first_name": "User",
+        "last_name": "Test",
+        "school_code": "1001",
+        "password": "pass",
+    }
+    client.post("/register", json=user)
+    key = f"user:{user['email']}"
+    data = json.loads(main_app.redis_client.get(key))
+    data["approved"] = True
+    main_app.redis_client.set(key, json.dumps(data))
+    login_resp = client.post("/login", json={"email": user["email"], "password": user["password"]})
+    token = login_resp.json()["token"]
+
+    resp = client.get("/students/all", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 403
 
