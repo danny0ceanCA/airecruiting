@@ -37,18 +37,18 @@ function StudentProfiles() {
   const token = localStorage.getItem('token');
   const { role } = token ? jwtDecode(token) : {};
 
-  useEffect(() => {
-    const fetchStudents = async () => {
-      try {
-        const resp = await api.get('/students/by-school', {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        setSchoolStudents(resp.data?.students || []);
-      } catch (err) {
-        console.error('Failed to fetch students:', err);
-      }
-    };
+  const fetchStudents = async () => {
+    try {
+      const resp = await api.get('/students/by-school', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setSchoolStudents(resp.data?.students || []);
+    } catch (err) {
+      console.error('Failed to fetch students:', err);
+    }
+  };
 
+  useEffect(() => {
     if (token) {
       fetchStudents();
     }
@@ -91,6 +91,7 @@ function StudentProfiles() {
         interests: ''
       });
       setResumeFile(null);
+      fetchStudents();
     } catch (err) {
       console.error('Submission failed:', err);
       setFormError('Submission failed. Please check all required fields.');
