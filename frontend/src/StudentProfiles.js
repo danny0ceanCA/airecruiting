@@ -30,6 +30,7 @@ function StudentProfiles() {
 
   // Students from this user's school
   const [schoolStudents, setSchoolStudents] = useState([]);
+  const [editingEmail, setEditingEmail] = useState(null);
 
   const [menuOpen, setMenuOpen] = useState(false);
   const navigate = useNavigate();
@@ -111,6 +112,27 @@ function StudentProfiles() {
     setResumeFile(e.target.files[0] || null);
   };
 
+  const handleEdit = (email) => {
+    const student = schoolStudents.find((s) => s.email === email);
+    if (student) {
+      setFormData({
+        first_name: student.first_name || '',
+        last_name: student.last_name || '',
+        email: student.email || '',
+        phone: student.phone || '',
+        education_level: student.education_level || '',
+        skills: Array.isArray(student.skills)
+          ? student.skills.join(', ')
+          : student.skills || '',
+        experience_summary: student.experience_summary || '',
+        interests: Array.isArray(student.interests)
+          ? student.interests.join(', ')
+          : student.interests || '',
+      });
+      setEditingEmail(email);
+    }
+  };
+
 
   const handleUpload = async () => {
     if (!csvFile) return;
@@ -188,14 +210,16 @@ function StudentProfiles() {
           alignItems: 'flex-start',
           justifyContent: 'space-between',
           width: '100%',
+          minHeight: '100vh',
           gap: '2rem',
-          boxSizing: 'border-box',
-          height: '100%',
         }}
       >
         <div
           className="form-section"
-          style={{ flex: 0.6, maxWidth: '700px', overflowX: 'hidden' }}
+          style={{
+            flex: 1,
+            maxWidth: '600px',
+          }}
         >
           <h2>New Student Profile</h2>
           <form className="profile-form" onSubmit={handleSubmit}>
@@ -279,7 +303,7 @@ function StudentProfiles() {
             onChange={handleResumeChange}
           />
 
-          <button type="submit">Submit</button>
+          <button type="submit">{editingEmail ? 'Update' : 'Submit'}</button>
           {formMessage && <p className="message">{formMessage}</p>}
           {formError && <p className="error">{formError}</p>}
           </form>
@@ -288,11 +312,11 @@ function StudentProfiles() {
         <div
           className="rightColumn"
           style={{
+            flex: 1,
+            minWidth: '600px',
             display: 'flex',
             flexDirection: 'column',
-            flex: 0.4,
-            height: '100%',
-            flexGrow: 1,
+            justifyContent: 'flex-start',
           }}
         >
 
@@ -307,7 +331,7 @@ function StudentProfiles() {
             <thead>
               <tr>
                 <th>Name</th>
-                <th>Education Level</th>
+                <th>Edit</th>
                 <th>Assigned Jobs</th>
                 <th>Placement Status</th>
               </tr>
@@ -327,7 +351,20 @@ function StudentProfiles() {
                 return (
                   <tr key={s.email || `${s.first_name}-${s.last_name}`}>
                     <td>{s.first_name} {s.last_name}</td>
-                    <td>{s.education_level}</td>
+                    <td>
+                      <button
+                        onClick={() => handleEdit(s.email)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          fontSize: '1.2rem',
+                        }}
+                        title="Edit"
+                      >
+                        ✏️
+                      </button>
+                    </td>
                     <td>{assigned}</td>
                     <td>{placedCount > 0 ? '✅' : '❌'}</td>
                   </tr>
