@@ -350,6 +350,41 @@ async def create_student(request: Request, current_user: dict = Depends(get_curr
     else:
         return {"message": "Student profile submitted without GPT parsing."}
 
+
+@app.put("/students/{email}")
+def update_student(
+    email: str, updated: StudentRequest, current_user: dict = Depends(get_current_user)
+):
+    key = f"student:{email}"
+    raw = redis_client.get(key)
+    if not raw:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    try:
+        existing = json.loads(raw)
+    except Exception:
+        existing = {}
+
+    combined = " ".join([
+        ", ".join(updated.skills),
+        updated.experience_summary,
+        updated.interests,
+    ])
+    try:
+        resp = client.embeddings.create(input=combined, model="text-embedding-3-small")
+        embedding = resp.data[0].embedding
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Embedding failed: {str(e)}")
+
+    data = updated.model_dump()
+    data["email"] = email
+    data["embedding"] = embedding
+    if existing.get("school_code") is not None:
+        data["school_code"] = existing.get("school_code")
+
+    redis_client.set(key, json.dumps(data))
+    return {"message": "Student updated successfully"}
+
 @app.post("/students/upload")
 def upload_students(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
     content = file.file.read().decode("utf-8").splitlines()
