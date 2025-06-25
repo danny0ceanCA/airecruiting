@@ -455,3 +455,59 @@ def test_students_all_forbidden_for_non_admin():
     resp = client.get("/students/all", headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 403
 
+
+def test_update_student(monkeypatch):
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    login_resp = client.post("/login", json={"email": "admin@example.com", "password": "admin123"})
+    token = login_resp.json()["token"]
+
+    existing = {
+        "first_name": "Old",
+        "last_name": "Name",
+        "email": "stud@example.com",
+        "phone": "000",
+        "education_level": "HS",
+        "skills": ["c"],
+        "experience_summary": "old",
+        "interests": "old",
+        "embedding": [0.0, 0.0],
+        "school_code": "SC1",
+    }
+    main_app.redis_client.set("student:stud@example.com", json.dumps(existing))
+
+    class FakeResp:
+        def __init__(self):
+            self.data = [type("obj", (), {"embedding": [1.0, 2.0]})]
+
+    def fake_create(input, model):
+        return FakeResp()
+
+    monkeypatch.setattr(main_app.client.embeddings, "create", fake_create)
+
+    updated = {
+        "first_name": "New",
+        "last_name": "Name",
+        "email": "stud@example.com",
+        "phone": "111",
+        "education_level": "College",
+        "skills": ["python"],
+        "experience_summary": "new summary",
+        "interests": "coding",
+    }
+
+    resp = client.put(
+        "/students/stud@example.com",
+        json=updated,
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["message"] == "Student updated successfully"
+
+    saved = json.loads(main_app.redis_client.get("student:stud@example.com"))
+    assert saved["first_name"] == "New"
+    assert saved["education_level"] == "College"
+    assert saved["embedding"] == [1.0, 2.0]
+    assert saved["school_code"] == "SC1"
+
