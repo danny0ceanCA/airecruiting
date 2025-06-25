@@ -30,7 +30,8 @@ function StudentProfiles() {
 
   // Students from this user's school
   const [schoolStudents, setSchoolStudents] = useState([]);
-  const [editingEmail, setEditingEmail] = useState(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editingEmail, setEditingEmail] = useState('');
 
   const [menuOpen, setMenuOpen] = useState(false);
   const navigate = useNavigate();
@@ -76,13 +77,15 @@ function StudentProfiles() {
       interests: formData.interests.trim(),
     };
     try {
-      await api.post('/students', studentData, {
+      const method = isEditing ? 'put' : 'post';
+      const url = isEditing ? `/students/${editingEmail}` : '/students';
+      await api[method](url, studentData, {
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
       });
-      setFormMessage('Student profile submitted!');
+      setFormMessage(isEditing ? 'Student profile updated!' : 'Student profile submitted!');
       setFormData({
         first_name: '',
         last_name: '',
@@ -94,6 +97,8 @@ function StudentProfiles() {
         interests: ''
       });
       setResumeFile(null);
+      setIsEditing(false);
+      setEditingEmail('');
       fetchStudents();
     } catch (err) {
       console.error('Submission failed:', err);
@@ -112,26 +117,27 @@ function StudentProfiles() {
     setResumeFile(e.target.files[0] || null);
   };
 
-  const handleEdit = (email) => {
-    const student = schoolStudents.find((s) => s.email === email);
-    if (student) {
-      setFormData({
-        first_name: student.first_name || '',
-        last_name: student.last_name || '',
-        email: student.email || '',
-        phone: student.phone || '',
-        education_level: student.education_level || '',
-        skills: Array.isArray(student.skills)
-          ? student.skills.join(', ')
-          : student.skills || '',
-        experience_summary: student.experience_summary || '',
-        interests: Array.isArray(student.interests)
-          ? student.interests.join(', ')
-          : student.interests || '',
-      });
-      setEditingEmail(email);
-    }
-  };
+const handleEdit = (email) => {
+  const student = schoolStudents.find((s) => s.email === email);
+  if (student) {
+    setFormData({
+      first_name: student.first_name || '',
+      last_name: student.last_name || '',
+      email: student.email || '',
+      phone: student.phone || '',
+      education_level: student.education_level || '',
+      skills: Array.isArray(student.skills)
+        ? student.skills.join(', ')
+        : student.skills || '',
+      experience_summary: student.experience_summary || '',
+      interests: Array.isArray(student.interests)
+        ? student.interests.join(', ')
+        : student.interests || '',
+    });
+    setIsEditing(true);
+    setEditingEmail(student.email);
+  }
+};
 
 
   const handleUpload = async () => {
@@ -303,7 +309,7 @@ function StudentProfiles() {
             onChange={handleResumeChange}
           />
 
-          <button type="submit">{editingEmail ? 'Update' : 'Submit'}</button>
+          <button type="submit">{isEditing ? 'Update' : 'Submit'}</button>
           {formMessage && <p className="message">{formMessage}</p>}
           {formError && <p className="error">{formError}</p>}
           </form>
