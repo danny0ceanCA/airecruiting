@@ -78,6 +78,24 @@ function StudentProfiles() {
     }
   };
 
+  const handleMarkPlaced = async (student) => {
+    try {
+      await api.post(
+        '/place',
+        {
+          student_email: student.email,
+          job_code: student.assigned_job_code,
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setToast('\u2705 Marked as Placed');
+      setTimeout(() => setToast(''), 3000);
+      fetchStudents();
+    } catch (err) {
+      console.error('Placement failed:', err);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setFormError('');
@@ -249,6 +267,7 @@ function StudentProfiles() {
                     <th>Edit</th>
                     <th>Assigned Jobs</th>
                     <th>Placement Status</th>
+                    <th>Placement Controls</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -269,6 +288,13 @@ function StudentProfiles() {
                         </td>
                         <td>{assigned}</td>
                         <td>{placed > 0 ? '✅' : '❌'}</td>
+                        <td>
+                          {assigned > 0 && placed === 0 && userRole !== 'admin' && (
+                            <button onClick={() => handleMarkPlaced(s)}>
+                              Mark as Placed
+                            </button>
+                          )}
+                        </td>
                       </tr>
                     );
                   })}
