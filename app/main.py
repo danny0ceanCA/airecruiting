@@ -862,3 +862,58 @@ def get_all_students(current_user: dict = Depends(get_current_user)):
         students.append(info)
 
     return {"students": students}
+
+@app.get("/students/by-school")
+def students_by_school(current_user: dict = Depends(get_current_user)):
+    """Return all student profiles belonging to the current user's school."""
+    user_key = f"user:{current_user.get('sub')}"
+    raw_user = redis_client.get(user_key)
+    if not raw_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    try:
+        user = json.loads(raw_user)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Corrupted user data")
+
+    school_code = user.get("school_code")
+    students = []
+
+    for key in redis_client.scan_iter("student:*"):
+        raw = redis_client.get(key)
+        if not raw:
+            continue
+        try:
+            student = json.loads(raw)
+        except Exception:
+            continue
+
+        if student.get("school_code") != school_code:
+            continue
+
+        email = student.get("email")
+        info = {
+            "first_name": student.get("first_name"),
+            "last_name": student.get("last_name"),
+            "email": email,
+            "phone": student.get("phone"),
+            "education_level": student.get("education_level"),
+            "skills": student.get("skills"),
+            "experience_summary": student.get("experience_summary"),
+            "interests": student.get("interests"),
+        }
+
+        # Add assigned/placed jobs info
+        for job_key in redis_client.scan_iter("job:*"):
+            job_raw = redis_client.get(job_key)
+            if not job_raw:
+                continue
+            job = json.loads(job_raw)
+            if email in job.get("assigned_students", []):
+                info["assigned_jobs"] = info.get("assigned_jobs", 0) + 1
+            if email in job.get("placed_students", []):
+                info["placed_jobs"] = info.get("placed_jobs", 0) + 1
+
+        students.append(info)
+
+    return {"students": students}
