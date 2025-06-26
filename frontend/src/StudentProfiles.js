@@ -15,9 +15,12 @@ function StudentProfiles() {
     experience_summary: '',
     interests: ''
   });
-  const [formMessage, setFormMessage] = useState('');
   const [formError, setFormError] = useState('');
   const [resumeFile, setResumeFile] = useState(null);
+  const [toast, setToast] = useState('');
+
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
 
   const [schoolStudents, setSchoolStudents] = useState([]);
   const [isEditing, setIsEditing] = useState(false);
@@ -31,6 +34,7 @@ function StudentProfiles() {
   const userRole = decoded?.role;
 
   const fetchStudents = async () => {
+    setIsLoading(true);
     try {
       const endpoint = userRole === 'admin' ? '/students/all' : '/students/by-school';
       const resp = await api.get(endpoint, {
@@ -39,6 +43,8 @@ function StudentProfiles() {
       setSchoolStudents(resp.data?.students || []);
     } catch (err) {
       console.error('Failed to fetch students:', err);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -74,8 +80,8 @@ function StudentProfiles() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setFormMessage('');
     setFormError('');
+    setIsSaving(true);
     const studentData = {
       first_name: formData.first_name,
       last_name: formData.last_name,
@@ -95,7 +101,9 @@ function StudentProfiles() {
           'Content-Type': 'application/json',
         },
       });
-      setFormMessage(isEditing ? 'Student profile updated!' : 'Student profile submitted!');
+      const msg = isEditing ? 'Student profile updated!' : 'Student profile submitted!';
+      setToast(msg);
+      setTimeout(() => setToast(''), 3000);
       setFormData({
         first_name: '',
         last_name: '',
@@ -113,6 +121,8 @@ function StudentProfiles() {
     } catch (err) {
       console.error('Submission failed:', err);
       setFormError('Submission failed. Please check all required fields.');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -161,6 +171,8 @@ function StudentProfiles() {
         )}
       </div>
 
+      {toast && <div className="toast">{toast}</div>}
+
       <div
         style={{
           display: 'flex',
@@ -198,8 +210,15 @@ function StudentProfiles() {
             ))}
             <label htmlFor="resume">Upload Resume (PDF or DOCX)</label>
             <input id="resume" name="resume" type="file" onChange={handleResumeChange} />
-            <button type="submit">{isEditing ? 'Update' : 'Submit'}</button>
-            {formMessage && <p className="message">{formMessage}</p>}
+            <button type="submit" disabled={isSaving}>
+              {isSaving ? (
+                <>
+                  <span className="spinner" /> Saving...
+                </>
+              ) : (
+                isEditing ? 'Update' : 'Submit'
+              )}
+            </button>
             {formError && <p className="error">{formError}</p>}
           </form>
         </div>
@@ -216,7 +235,12 @@ function StudentProfiles() {
         >
           <div style={{ flexGrow: 1, minHeight: 0, marginTop: '3rem' }}>
             <h2>Students from Your School</h2>
-            {schoolStudents.length > 0 ? (
+            {isLoading ? (
+              <div className="loading-container">
+                <span className="spinner" />
+                <span style={{ marginLeft: '0.5rem' }}>Loading students...</span>
+              </div>
+            ) : schoolStudents.length > 0 ? (
               <table className="school-table">
                 <thead>
                   <tr>
