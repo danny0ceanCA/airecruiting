@@ -1,18 +1,21 @@
 def generate_resume_text(client, student: dict, job: dict) -> str:
-    """Create a resume using OpenAI"""
+    """Create a tailored job summary using OpenAI"""
     prompt = f"""
-Write a professional resume for the following student, tailored to the job description below.
+Analyze the student's skills, experience and interests below, then read the job title and description.
+Write a clear and concise one page summary in plain professional language that:
+- Describes what the job entails
+- Explains why the student may be a good fit
+- Mentions any areas where the student might need growth or preparation
 
 Student Information:
 Name: {student.get('first_name', '')} {student.get('last_name', '')}
-Email: {student.get('email', '')}
 Skills: {', '.join(student.get('skills', []))}
+Interests: {student.get('interests', '')}
+Experience Summary: {student.get('experience_summary', '')}
 
 Job Title: {job.get('job_title')}
 Job Description: {job.get('job_description')}
 Required Skills: {', '.join(job.get('desired_skills', []))}
-
-The resume should be concise, modern, and use a consistent format.
 """
 
     resp = client.chat.completions.create(
