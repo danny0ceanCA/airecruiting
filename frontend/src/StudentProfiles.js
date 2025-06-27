@@ -93,6 +93,20 @@ function StudentProfiles() {
     }
   };
 
+  const handleDelete = async (email) => {
+    if (!window.confirm(`Are you sure you want to delete ${email}? This cannot be undone.`)) return;
+    try {
+      await api.delete(`/admin/delete-student/${email}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      alert(`Deleted ${email}`);
+      fetchStudents(); // Refresh table
+    } catch (err) {
+      console.error("Delete failed:", err);
+      alert("Failed to delete student.");
+    }
+  };
+
   const handleMarkPlaced = async (student) => {
     try {
       await api.post(
@@ -369,12 +383,35 @@ function StudentProfiles() {
                           <td>{s.first_name} {s.last_name}</td>
                           {userRole === 'admin' && <td>{s.school_code}</td>}
                           <td>
-                            <button onClick={() => handleEdit(s.email)} style={{
-                              background: 'none',
-                              border: 'none',
-                              cursor: 'pointer',
-                              fontSize: '1.2rem',
-                            }} title="Edit">✏️</button>
+                            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                              <button
+                                onClick={() => handleEdit(s.email)}
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                  fontSize: '1.2rem',
+                                }}
+                                title="Edit"
+                              >
+                                ✏️
+                              </button>
+                              {userRole === 'admin' && (
+                                <button
+                                  onClick={() => handleDelete(s.email)}
+                                  style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                    fontSize: '1.2rem',
+                                    color: 'red',
+                                  }}
+                                  title="Delete Student"
+                                >
+                                  🗑️
+                                </button>
+                              )}
+                            </div>
                           </td>
                           <td>{assigned}</td>
                           <td>{placed > 0 ? '✅' : '❌'}</td>
