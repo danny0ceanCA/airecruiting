@@ -597,3 +597,25 @@ def test_generate_job_description(monkeypatch):
     assert get_resp.status_code == 200
     assert get_resp.json()["description"] == "done"
 
+
+def test_job_description_html_route():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    main_app.redis_client.set(
+        "resume:codeh:stud@example.com",
+        "html desc",
+    )
+
+    login_resp = client.post(
+        "/login", json={"email": "admin@example.com", "password": "admin123"}
+    )
+    token = login_resp.json()["token"]
+
+    resp = client.get(
+        "/job-description-html/codeh/stud@example.com",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    assert "html" in resp.text.lower()
+
