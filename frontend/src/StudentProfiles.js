@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import api from './api';
 import { Link, useNavigate } from 'react-router-dom';
 import jwt_decode from 'jwt-decode';
+import jsPDF from 'jspdf';
 import './StudentProfiles.css';
 
 function StudentProfiles() {
@@ -124,6 +125,28 @@ function StudentProfiles() {
       console.error('Description generation failed:', err);
     } finally {
       setGeneratingDescriptions((prev) => ({ ...prev, [key]: false }));
+    }
+  };
+
+  const handleDownloadJobDescriptionPDF = async (jobCode, studentEmail) => {
+    try {
+      const resp = await api.get(`/resume/${jobCode}/${studentEmail}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const text = resp.data.resume;
+      const doc = new jsPDF();
+
+      doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(12);
+
+      const lines = doc.splitTextToSize(text, 180);
+      doc.text(lines, 15, 20);
+
+      doc.save(`Job_Description_${jobCode}_${studentEmail}.pdf`);
+    } catch (err) {
+      console.error('Failed to generate PDF:', err);
+      alert('Could not download job description PDF.');
     }
   };
 
@@ -358,6 +381,13 @@ function StudentProfiles() {
                                         <td>{job.job_code}</td>
                                         <td>{job.source}</td>
                                         <td>
+                                          <button
+                                            onClick={() => handleDownloadJobDescriptionPDF(job.job_code, s.email)}
+                                            style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+                                            title="Download Job Description (PDF)"
+                                          >
+                                            📄
+                                          </button>
                                           {userRole !== 'recruiter' && (
                                             generatingDescriptions[`${job.job_code}:${s.email}`] ? (
                                               <div style={{ display: 'flex', justifyContent: 'center' }}>
