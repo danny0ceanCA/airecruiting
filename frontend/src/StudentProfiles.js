@@ -145,11 +145,34 @@ function StudentProfiles() {
     }
   };
 
-  const viewJobDescription = (jobCode, studentEmail) => {
-    window.open(
-      `http://localhost:8000/job-description-html/${jobCode}/${studentEmail}`,
-      '_blank'
-    );
+  const handleViewJobDescription = async (jobCode, studentEmail) => {
+    const token = localStorage.getItem("token");
+    try {
+      const resp = await fetch(
+        `http://localhost:8000/job-description-html/${jobCode}/${studentEmail}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (!resp.ok) {
+        throw new Error(`Server responded with ${resp.status}`);
+      }
+
+      const html = await resp.text();
+      const newWindow = window.open("", "_blank");
+      if (newWindow) {
+        newWindow.document.write(html);
+        newWindow.document.close();
+      } else {
+        alert("Popup blocked. Please allow popups for this site.");
+      }
+    } catch (err) {
+      console.error("Failed to load job description:", err);
+      alert("Could not open job description.");
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -385,7 +408,7 @@ function StudentProfiles() {
                                         <td style={{ textAlign: 'center' }}>
                                           {jobDescriptionStatus[job.job_code] === 'ready' ? (
                                             <button
-                                              onClick={() => viewJobDescription(job.job_code, s.email)}
+                                              onClick={() => handleViewJobDescription(job.job_code, s.email)}
                                               style={{ marginRight: '0.5rem' }}
                                               title="View Job Description"
                                             >
