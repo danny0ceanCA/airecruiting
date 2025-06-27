@@ -27,8 +27,7 @@ function StudentProfiles() {
   const [isEditing, setIsEditing] = useState(false);
   const [editingEmail, setEditingEmail] = useState('');
 
-  const [generatingDescriptions, setGeneratingDescriptions] = useState({});
-  const [generatedDescriptions, setGeneratedDescriptions] = useState({});
+  const [jobDescriptionStatus, setJobDescriptionStatus] = useState({});
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [expandedRows, setExpandedRows] = useState({});
@@ -108,23 +107,29 @@ function StudentProfiles() {
     }
   };
 
-  const generateDescription = async (studentEmail, job) => {
-    const key = `${job.job_code}:${studentEmail}`;
-    if (generatedDescriptions[key]) return;
-    setGeneratingDescriptions((prev) => ({ ...prev, [key]: true }));
+  const handleGenerateJobDescription = async (jobCode, studentEmail) => {
     try {
+      setJobDescriptionStatus((prev) => ({ ...prev, [jobCode]: 'loading' }));
+
       const resp = await api.post(
-        '/generate-description',
-        { student_email: studentEmail, job_code: job.job_code },
-        { headers: { Authorization: `Bearer ${token}` } }
+        '/generate-resume',
+        {
+          job_code: jobCode,
+          student_email: studentEmail,
+        },
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
       );
+
       if (resp.data.status === 'success' || resp.data.status === 'exists') {
-        setGeneratedDescriptions((prev) => ({ ...prev, [key]: true }));
+        setJobDescriptionStatus((prev) => ({ ...prev, [jobCode]: 'ready' }));
+      } else {
+        setJobDescriptionStatus((prev) => ({ ...prev, [jobCode]: 'error' }));
       }
     } catch (err) {
-      console.error('Description generation failed:', err);
-    } finally {
-      setGeneratingDescriptions((prev) => ({ ...prev, [key]: false }));
+      console.error('Generation failed:', err);
+      setJobDescriptionStatus((prev) => ({ ...prev, [jobCode]: 'error' }));
     }
   };
 
@@ -386,39 +391,48 @@ function StudentProfiles() {
                                         <td>{job.job_title}</td>
                                         <td>{job.job_code}</td>
                                         <td>{job.source}</td>
-                                        <td>
-                                          {userRole === 'user' && (
-                                            <button
-                                              onClick={() =>
-                                                handleDownloadJobDescriptionPDF(
-                                                  job.job_code,
-                                                  s.email,
-                                                  `${s.first_name} ${s.last_name}`
-                                                )
-                                              }
-                                              style={{ background: 'none', border: 'none', cursor: 'pointer' }}
-                                              title="Generate Job Description PDF"
-                                            >
-                                              📄
-                                            </button>
-                                          )}
-                                          {userRole === 'user' && (
-                                            generatingDescriptions[`${job.job_code}:${s.email}`] ? (
-                                              <div style={{ display: 'flex', justifyContent: 'center' }}>
-                                                <span className="spinner" />
-                                              </div>
-                                            ) : generatedDescriptions[`${job.job_code}:${s.email}`] ? (
-                                              <span title="Done">✅</span>
-                                            ) : (
+                                        <td style={{ textAlign: 'center' }}>
+                                          {jobDescriptionStatus[job.job_code]
+                                            ? (
+                                                jobDescriptionStatus[job.job_code] === 'loading'
+                                                  ? <span className="spinner"></span>
+                                                  : (
+                                                    <button
+                                                      onClick={() =>
+                                                        handleDownloadJobDescriptionPDF(
+                                                          job.job_code,
+                                                          s.email,
+                                                          `${s.first_name} ${s.last_name}`
+                                                        )
+                                                      }
+                                                      title="Download Job Description"
+                                                      style={{
+                                                        background: 'none',
+                                                        border: 'none',
+                                                        cursor: 'pointer',
+                                                        fontSize: '1rem'
+                                                      }}
+                                                    >
+                                                      📄 Download
+                                                    </button>
+                                                  )
+                                              )
+                                            : (
                                               <button
-                                                className="desc-icon-button"
-                                                title="Generate Job Description"
-                                                onClick={() => generateDescription(s.email, job)}
+                                                onClick={() =>
+                                                  handleGenerateJobDescription(job.job_code, s.email)
+                                                }
+                                                title="Generate Position Description"
+                                                style={{
+                                                  background: 'none',
+                                                  border: 'none',
+                                                  cursor: 'pointer',
+                                                  fontSize: '1rem'
+                                                }}
                                               >
-                                                📝
+                                                🧾 Position Description
                                               </button>
-                                            )
-                                          )}
+                                            )}
                                         </td>
                                       </tr>
                                     ))
