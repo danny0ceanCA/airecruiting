@@ -820,12 +820,12 @@ You are generating a job description document for internal career services staff
 
 Use the student profile and job information below to:
 
-- Write a **professional summary** of the student's fit for the role
-- Describe **key responsibilities** they might undertake
-- List **areas of strength** and potential **areas for growth**
+- Write a **professional summary** of the student's fit for the role with extensive and relevant details
+- Describe **key responsibilities** they might undertake as noted in the job description
+- List **areas of strength** with plenty of details to reinforce existing experience and how it connects with the job description and potential **areas for growth** with plenty of insightful and targeted recommendations for training that will improve the probability of success
 - Mention **school affiliation** and any relevant compliance or readiness info
 
-Format this as a printable HTML document titled "TalentMatch AI – Generated Job Description", styled professionally but without producing binary output.
+Format this as a printable HTML document titled "TalentMatch AI", styled professionally but without producing binary output.
 
 Student Info:
 Name: {student.get('first_name')} {student.get('last_name')}
