@@ -21,7 +21,9 @@ import bcrypt
 from openai import OpenAI
 import redis
 from backend.app.schemas.resume import ResumeRequest
+from backend.app.schemas.description import DescriptionRequest
 from backend.app.services.resume import generate_resume_text
+from backend.app.services.description import generate_description_text
 from backend.app.school_codes import SCHOOL_CODE_MAP
 
 # Load environment variables
@@ -766,6 +768,30 @@ def generate_resume(req: ResumeRequest, current_user: dict = Depends(get_current
     return {"status": "success", "message": "Resume stored in Redis"}
 
 
+@app.post("/generate-description")
+def generate_description(req: DescriptionRequest, current_user: dict = Depends(get_current_user)):
+    """Generate a short job description tailored to a student."""
+    print(f"\U0001F4DD Generating description for {req.student_email} - {req.job_code}")
+    desc_key = f"description:{req.job_code}:{req.student_email}"
+    existing = redis_client.get(desc_key)
+    if existing:
+        print("\U0001F4DD Description already exists")
+        return {"status": "exists", "description": existing}
+
+    job_raw = redis_client.get(f"job:{req.job_code}")
+    student_raw = redis_client.get(f"student:{req.student_email}")
+    if not job_raw or not student_raw:
+        raise HTTPException(status_code=404, detail="Job or student not found")
+
+    job = json.loads(job_raw)
+    student = json.loads(student_raw)
+
+    generated_desc = generate_description_text(client, student, job)
+    redis_client.set(desc_key, generated_desc)
+    print("\u2705 Description stored")
+    return {"status": "success", "description": generated_desc}
+
+
 @app.get("/resume/{job_code}/{student_email}")
 def get_resume(job_code: str, student_email: str, current_user: dict = Depends(get_current_user)):
     key = f"resume:{job_code}:{student_email}"
@@ -868,6 +894,7 @@ def get_all_students(current_user: dict = Depends(get_current_user)):
                 "job_code": job.get("job_code"),
                 "job_title": job.get("job_title"),
                 "source": job.get("posted_by"),
+                "job_description": job.get("job_description"),
             }
             for job in all_jobs
             if email in job.get("assigned_students", [])
@@ -944,6 +971,7 @@ def students_by_school(current_user: dict = Depends(get_current_user)):
                 "job_code": job.get("job_code"),
                 "job_title": job.get("job_title"),
                 "source": job.get("posted_by"),
+                "job_description": job.get("job_description"),
             }
             for job in all_jobs
             if email in job.get("assigned_students", [])
