@@ -1,10 +1,16 @@
 import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import jwtDecode from 'jwt-decode';
 import './Dashboard.css';
 
 function Dashboard() {
   const [role, setRole] = useState('');
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    navigate('/login');
+  };
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -27,6 +33,23 @@ function Dashboard() {
 
   return (
     <div className="dashboard-container">
+      <div style={{ position: 'absolute', top: '20px', right: '30px' }}>
+        <button
+          style={{
+            padding: '6px 14px',
+            border: 'none',
+            borderRadius: '6px',
+            backgroundColor: '#fff',
+            color: '#002244',
+            fontWeight: 'bold',
+            cursor: 'pointer',
+            boxShadow: '0 2px 6px rgba(0,0,0,0.2)'
+          }}
+          onClick={handleLogout}
+        >
+          Logout
+        </button>
+      </div>
       <div className="tile-grid">
         {tiles
           .filter(tile => !tile.admin || role === 'admin')

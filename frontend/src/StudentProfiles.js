@@ -93,6 +93,20 @@ function StudentProfiles() {
     }
   };
 
+  const handleDelete = async (email) => {
+    if (!window.confirm(`Are you sure you want to delete ${email}? This cannot be undone.`)) return;
+    try {
+      await api.delete(`/admin/delete-student/${email}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      alert(`Deleted ${email}`);
+      fetchStudents(); // Refresh table
+    } catch (err) {
+      console.error("Delete failed:", err);
+      alert("Failed to delete student.");
+    }
+  };
+
   const handleMarkPlaced = async (student) => {
     try {
       await api.post(
@@ -130,50 +144,25 @@ function StudentProfiles() {
   };
 
   const generateJobDescription = async (jobCode, studentEmail) => {
-    setLoadingJobDescriptions(prev => ({ ...prev, [jobCode]: true }));
+    setLoadingJobDescriptions((prev) => ({ ...prev, [jobCode]: true }));
     try {
       await api.post(
         '/generate-job-description',
         { job_code: jobCode, student_email: studentEmail },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      setJobDescriptionStatus(prev => ({ ...prev, [jobCode]: 'ready' }));
+      setJobDescriptionStatus((prev) => ({ ...prev, [jobCode]: 'ready' }));
     } catch (err) {
       console.error('Generation failed', err);
     } finally {
-      setLoadingJobDescriptions(prev => ({ ...prev, [jobCode]: false }));
+      setLoadingJobDescriptions((prev) => ({ ...prev, [jobCode]: false }));
     }
   };
 
-  const handleViewJobDescription = async (jobCode, studentEmail) => {
-    const token = localStorage.getItem("token");
-    try {
-      const resp = await fetch(
-        `http://localhost:8000/job-description-html/${jobCode}/${studentEmail}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      if (!resp.ok) {
-        throw new Error(`Server responded with ${resp.status}`);
-      }
-
-      const html = await resp.text();
-      const newWindow = window.open("", "_blank");
-      if (newWindow) {
-        newWindow.document.write(html);
-        newWindow.document.close();
-      } else {
-        alert("Popup blocked. Please allow popups for this site.");
-      }
-    } catch (err) {
-      console.error("Failed to load job description:", err);
-      alert("Could not open job description.");
-    }
+  const handleGenerateJobDescription = (jobCode, studentEmail) => {
+    generateJobDescription(jobCode, studentEmail);
   };
+
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -242,7 +231,7 @@ function StudentProfiles() {
           <div className="dropdown-menu">
             <Link to="/dashboard">Dashboard</Link>
             <Link to="/admin/pending">Pending Approvals</Link>
-            <Link to="/students">Student Profiles</Link>
+            <button onClick={() => navigate('/admin/jobs')}>Job Matching</button>
             {userRole === 'admin' && (
               <button
                 className="admin-reset-button"
@@ -369,12 +358,35 @@ function StudentProfiles() {
                           <td>{s.first_name} {s.last_name}</td>
                           {userRole === 'admin' && <td>{s.school_code}</td>}
                           <td>
-                            <button onClick={() => handleEdit(s.email)} style={{
-                              background: 'none',
-                              border: 'none',
-                              cursor: 'pointer',
-                              fontSize: '1.2rem',
-                            }} title="Edit">✏️</button>
+                            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                              <button
+                                onClick={() => handleEdit(s.email)}
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                  fontSize: '1.2rem',
+                                }}
+                                title="Edit"
+                              >
+                                ✏️
+                              </button>
+                              {userRole === 'admin' && (
+                                <button
+                                  onClick={() => handleDelete(s.email)}
+                                  style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                    fontSize: '1.2rem',
+                                    color: 'red',
+                                  }}
+                                  title="Delete Student"
+                                >
+                                  🗑️
+                                </button>
+                              )}
+                            </div>
                           </td>
                           <td>{assigned}</td>
                           <td>{placed > 0 ? '✅' : '❌'}</td>
@@ -393,7 +405,7 @@ function StudentProfiles() {
                                 <thead>
                                   <tr>
                                     <th>Job Title</th>
-                                    <th>Job Code</th>
+                                    <th>Rate</th>
                                     <th>Source</th>
                                     <th>Job Description</th>
                                   </tr>
@@ -403,25 +415,38 @@ function StudentProfiles() {
                                     s.assigned_jobs.map((job, index) => (
                                       <tr key={index}>
                                         <td>{job.job_title}</td>
-                                        <td>{job.job_code}</td>
-                                        <td>{job.source}</td>
+                                        <td>{job.rate_of_pay_range || 'N/A'}</td>
+                                        <td>{job.source || 'N/A'}</td>
                                         <td style={{ textAlign: 'center' }}>
-                                          {jobDescriptionStatus[job.job_code] === 'ready' ? (
+                                          {loadingJobDescriptions[job.job_code] ? (
+                                            <span>Generating...</span>
+                                          ) : jobDescriptionStatus[job.job_code] === 'ready' ? (
                                             <button
-                                              onClick={() => handleViewJobDescription(job.job_code, s.email)}
-                                              style={{ marginRight: '0.5rem' }}
-                                              title="View Job Description"
+                                              style={{
+                                                padding: '4px 10px',
+                                                fontSize: '14px',
+                                                border: '1px solid #ccc',
+                                                borderRadius: '4px',
+                                                backgroundColor: '#f5f5f5',
+                                                cursor: 'pointer'
+                                              }}
+                                              onClick={() => window.open(`/job-description-html/${job.job_code}/${s.email}`, '_blank')}
                                             >
-                                              📄 View
+                                              View Job Description
                                             </button>
                                           ) : (
                                             <button
-                                              onClick={() => generateJobDescription(job.job_code, s.email)}
-                                              disabled={loadingJobDescriptions[job.job_code]}
-                                              style={{ marginRight: '0.5rem' }}
-                                              title="Generate Job Description"
+                                              style={{
+                                                padding: '4px 10px',
+                                                fontSize: '14px',
+                                                border: '1px solid #ccc',
+                                                borderRadius: '4px',
+                                                backgroundColor: '#f5f5f5',
+                                                cursor: 'pointer'
+                                              }}
+                                              onClick={() => handleGenerateJobDescription(job.job_code, s.email)}
                                             >
-                                              {loadingJobDescriptions[job.job_code] ? '⏳' : '🧾'}
+                                              Load Job Description
                                             </button>
                                           )}
                                         </td>
