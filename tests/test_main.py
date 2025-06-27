@@ -511,3 +511,43 @@ def test_update_student(monkeypatch):
     assert saved["embedding"] == [1.0, 2.0]
     assert saved["school_code"] == "SC1"
 
+
+def test_generate_description(monkeypatch):
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    # Seed job and student
+    main_app.redis_client.set(
+        "student:stud@example.com",
+        json.dumps({"first_name": "Stud", "last_name": "S", "skills": ["python"]})
+    )
+    main_app.redis_client.set(
+        "job:code1",
+        json.dumps({
+            "job_code": "code1",
+            "job_title": "Dev",
+            "job_description": "desc",
+            "desired_skills": ["python"],
+        })
+    )
+
+    class FakeResp:
+        def __init__(self):
+            self.choices = [type("obj", (), {"message": type("obj", (), {"content": "done"})})]
+
+    def fake_create(model, messages, temperature):
+        return FakeResp()
+
+    monkeypatch.setattr(main_app.client.chat.completions, "create", fake_create)
+
+    login_resp = client.post("/login", json={"email": "admin@example.com", "password": "admin123"})
+    token = login_resp.json()["token"]
+
+    resp = client.post(
+        "/generate-description",
+        json={"student_email": "stud@example.com", "job_code": "code1"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "success"
+

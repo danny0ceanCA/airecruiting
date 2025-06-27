@@ -26,6 +26,9 @@ function StudentProfiles() {
   const [isEditing, setIsEditing] = useState(false);
   const [editingEmail, setEditingEmail] = useState('');
 
+  const [generatingDescriptions, setGeneratingDescriptions] = useState({});
+  const [generatedDescriptions, setGeneratedDescriptions] = useState({});
+
   const [menuOpen, setMenuOpen] = useState(false);
   const [expandedRows, setExpandedRows] = useState({});
   const navigate = useNavigate();
@@ -101,6 +104,26 @@ function StudentProfiles() {
       fetchStudents();
     } catch (err) {
       console.error('Placement failed:', err);
+    }
+  };
+
+  const generateDescription = async (studentEmail, job) => {
+    const key = `${job.job_code}:${studentEmail}`;
+    if (generatedDescriptions[key]) return;
+    setGeneratingDescriptions((prev) => ({ ...prev, [key]: true }));
+    try {
+      const resp = await api.post(
+        '/generate-description',
+        { student_email: studentEmail, job_code: job.job_code },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (resp.data.status === 'success' || resp.data.status === 'exists') {
+        setGeneratedDescriptions((prev) => ({ ...prev, [key]: true }));
+      }
+    } catch (err) {
+      console.error('Description generation failed:', err);
+    } finally {
+      setGeneratingDescriptions((prev) => ({ ...prev, [key]: false }));
     }
   };
 
@@ -324,6 +347,7 @@ function StudentProfiles() {
                                     <th>Job Title</th>
                                     <th>Job Code</th>
                                     <th>Source</th>
+                                    <th>Job Description</th>
                                   </tr>
                                 </thead>
                                 <tbody>
@@ -333,11 +357,30 @@ function StudentProfiles() {
                                         <td>{job.job_title}</td>
                                         <td>{job.job_code}</td>
                                         <td>{job.source}</td>
+                                        <td>
+                                          {userRole !== 'recruiter' && (
+                                            generatingDescriptions[`${job.job_code}:${s.email}`] ? (
+                                              <div style={{ display: 'flex', justifyContent: 'center' }}>
+                                                <span className="spinner" />
+                                              </div>
+                                            ) : generatedDescriptions[`${job.job_code}:${s.email}`] ? (
+                                              <span title="Done">✅</span>
+                                            ) : (
+                                              <button
+                                                className="desc-icon-button"
+                                                title="Generate Job Description"
+                                                onClick={() => generateDescription(s.email, job)}
+                                              >
+                                                📝
+                                              </button>
+                                            )
+                                          )}
+                                        </td>
                                       </tr>
                                     ))
                                   ) : (
                                     <tr className="no-jobs-row">
-                                      <td colSpan="3">No jobs assigned by recruiters.</td>
+                                      <td colSpan="4">No jobs assigned by recruiters.</td>
                                     </tr>
                                   )}
                                 </tbody>
