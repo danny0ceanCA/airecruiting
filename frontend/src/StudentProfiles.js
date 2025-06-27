@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import api from './api';
 import { Link, useNavigate } from 'react-router-dom';
 import jwt_decode from 'jwt-decode';
-import { jsPDF } from 'jspdf';
 import './StudentProfiles.css';
 
 function StudentProfiles() {
@@ -112,7 +111,7 @@ function StudentProfiles() {
     }
   };
 
-  const [loadingStatus, setLoadingStatus] = useState({});
+  const [loadingJobDescriptions, setLoadingJobDescriptions] = useState({});
 
   const fetchJobDescriptionStatus = async (studentEmail, jobCode) => {
     try {
@@ -131,8 +130,7 @@ function StudentProfiles() {
   };
 
   const generateJobDescription = async (jobCode, studentEmail) => {
-    const key = `${jobCode}_${studentEmail}`;
-    setLoadingStatus(prev => ({ ...prev, [key]: true }));
+    setLoadingJobDescriptions(prev => ({ ...prev, [jobCode]: true }));
     try {
       await api.post(
         '/generate-job-description',
@@ -143,43 +141,7 @@ function StudentProfiles() {
     } catch (err) {
       console.error('Generation failed', err);
     } finally {
-      setLoadingStatus(prev => ({ ...prev, [key]: false }));
-    }
-  };
-
-  const downloadJobDescription = async (jobCode, studentEmail) => {
-    try {
-      const resp = await api.get(`/job-description/${jobCode}/${studentEmail}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (resp.data.status === 'success') {
-        const doc = new jsPDF();
-
-        // Header
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(16);
-        doc.setTextColor(33, 37, 41);
-        doc.text('TalentMatch AI – Job Description', 20, 20);
-
-        // Subheading
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(11);
-        doc.setTextColor(90, 90, 90);
-        doc.text(`Generated for: ${studentEmail}`, 20, 28);
-
-        // Body
-        doc.setTextColor(20, 20, 20);
-        doc.setFontSize(12);
-        const lines = doc.splitTextToSize(resp.data.description || resp.data.resume, 170);
-        doc.text(lines, 20, 40);
-
-        // Save
-        doc.save(`Job_Description_${studentEmail}_${jobCode}.pdf`);
-      }
-    } catch (err) {
-      console.error('Failed to download job description:', err);
-      alert('Unable to download job description.');
+      setLoadingJobDescriptions(prev => ({ ...prev, [jobCode]: false }));
     }
   };
 
@@ -414,37 +376,25 @@ function StudentProfiles() {
                                         <td>{job.job_code}</td>
                                         <td>{job.source}</td>
                                         <td style={{ textAlign: 'center' }}>
-                                          {jobDescriptionStatus[job.job_code] === 'ready' && (
-                                            <button
-                                              onClick={() => downloadJobDescription(job.job_code, s.email)}
-                                              title="Download Job Description"
-                                              style={{
-                                                background: 'none',
-                                                border: 'none',
-                                                cursor: 'pointer',
-                                                fontSize: '1rem'
-                                              }}
+                                          {jobDescriptionStatus[job.job_code] === 'ready' ? (
+                                            <a
+                                              href={`http://localhost:8000/job-description-html/${job.job_code}/${s.email}`}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              title="View Job Description"
+                                              style={{ marginRight: '0.5rem' }}
                                             >
-                                              📄 Download Job Description
+                                              📄 Download
+                                            </a>
+                                          ) : (
+                                            <button
+                                              onClick={() => generateJobDescription(job.job_code, s.email)}
+                                              disabled={loadingJobDescriptions[job.job_code]}
+                                              style={{ marginRight: '0.5rem' }}
+                                              title="Generate Job Description"
+                                            >
+                                              {loadingJobDescriptions[job.job_code] ? '⏳' : '🧾'}
                                             </button>
-                                          )}
-                                          {jobDescriptionStatus[job.job_code] !== 'ready' && (
-                                            loadingStatus[`${job.job_code}_${s.email}`] ? (
-                                              <span className="spinner"></span>
-                                            ) : (
-                                              <button
-                                                onClick={() => generateJobDescription(job.job_code, s.email)}
-                                                title="Generate Position Description"
-                                                style={{
-                                                  background: 'none',
-                                                  border: 'none',
-                                                  cursor: 'pointer',
-                                                  fontSize: '1rem'
-                                                }}
-                                              >
-                                                🧾
-                                              </button>
-                                            )
                                           )}
                                         </td>
                                       </tr>

@@ -13,6 +13,7 @@ from fastapi import (
     UploadFile,
     File,
 )
+from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
 from jose import jwt, JWTError
@@ -844,6 +845,58 @@ def get_job_description(job_code: str, student_email: str, current_user: dict = 
     if not description:
         raise HTTPException(status_code=404, detail="Not found")
     return {"status": "success", "description": description}
+
+
+@app.get("/job-description-html/{job_code}/{student_email}", response_class=HTMLResponse)
+def get_job_description_html(job_code: str, student_email: str, current_user: dict = Depends(get_current_user)):
+    key = f"resume:{job_code}:{student_email}"
+    resume = redis_client.get(key)
+
+    if not resume:
+        raise HTTPException(status_code=404, detail="Job description not found")
+
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset=\"utf-8\" />
+      <title>Job Description</title>
+      <style>
+        body {{
+          font-family: Arial, sans-serif;
+          padding: 2rem;
+          max-width: 800px;
+          margin: auto;
+          background-color: #fff;
+          color: #333;
+        }}
+        h1 {{
+          text-align: center;
+          color: #003366;
+        }}
+        .section {{
+          margin-bottom: 2rem;
+        }}
+        pre {{
+          white-space: pre-wrap;
+          word-wrap: break-word;
+          background: #f5f5f5;
+          padding: 1rem;
+          border-radius: 5px;
+        }}
+      </style>
+    </head>
+    <body>
+      <h1>TalentMatch AI</h1>
+      <div class=\"section\">
+        <h2>Generated Job Description</h2>
+        <pre>{resume}</pre>
+      </div>
+      <p style=\"text-align:center;\"><em>This job description was automatically generated based on job requirements and candidate qualifications.</em></p>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content)
 
 
 @app.get("/resume/{job_code}/{student_email}")
