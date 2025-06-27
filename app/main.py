@@ -962,6 +962,66 @@ def reset_jobs(current_user: dict = Depends(get_current_user)):
 
     return {"message": f"Deleted {deleted} jobs and match data"}
 
+
+@app.delete("/admin/delete-student/{email}")
+def delete_student(email: str, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+
+    student_key = f"student:{email}"
+    if not redis_client.exists(student_key):
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    # Delete student profile
+    redis_client.delete(student_key)
+
+    # Clean up from job assignments/placements
+    for job_key in redis_client.scan_iter("job:*"):
+        raw = redis_client.get(job_key)
+        if not raw:
+            continue
+        try:
+            job = json.loads(raw)
+        except Exception:
+            continue
+
+        assigned = job.get("assigned_students", [])
+        placed = job.get("placed_students", [])
+
+        updated = False
+        if email in assigned:
+            job["assigned_students"] = [e for e in assigned if e != email]
+            updated = True
+        if email in placed:
+            job["placed_students"] = [e for e in placed if e != email]
+            updated = True
+
+        if updated:
+            redis_client.set(job_key, json.dumps(job))
+
+    # Remove resume if it exists
+    for key in redis_client.scan_iter(f"resume:*:{email}"):
+        redis_client.delete(key)
+
+    # Remove job descriptions if any
+    for key in redis_client.scan_iter(f"job_description:*:{email}"):
+        redis_client.delete(key)
+
+    # (Optional) Clean match results if student appears
+    for match_key in redis_client.scan_iter("match_results:*"):
+        raw = redis_client.get(match_key)
+        if not raw:
+            continue
+        try:
+            matches = json.loads(raw)
+            new_matches = [m for m in matches if m.get("email") != email]
+            if len(new_matches) != len(matches):
+                redis_client.set(match_key, json.dumps(new_matches))
+        except Exception:
+            continue
+
+    return {"message": f"Student {email} and related data deleted successfully"}
+
 @app.get("/students/all")
 def get_all_students(current_user: dict = Depends(get_current_user)):
     if current_user.get("role") != "admin":

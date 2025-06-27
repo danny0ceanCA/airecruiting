@@ -621,3 +621,76 @@ def test_job_description_html_route():
     assert resp.status_code == 200
     assert "html" in resp.text.lower()
 
+
+def test_admin_delete_student_cleans_up():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    main_app.redis_client.set("student:del@example.com", json.dumps({"email": "del@example.com"}))
+    main_app.redis_client.set(
+        "job:j1",
+        json.dumps({"job_code": "j1", "assigned_students": ["del@example.com"], "placed_students": ["del@example.com"]}),
+    )
+    main_app.redis_client.set("resume:j1:del@example.com", "resume")
+    main_app.redis_client.set("job_description:j1:del@example.com", "desc")
+    main_app.redis_client.set("match_results:j1", json.dumps([{"email": "del@example.com"}]))
+
+    login_resp = client.post("/login", json={"email": "admin@example.com", "password": "admin123"})
+    token = login_resp.json()["token"]
+
+    resp = client.delete(
+        "/admin/delete-student/del@example.com",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+
+    assert not main_app.redis_client.exists("student:del@example.com")
+    job = json.loads(main_app.redis_client.get("job:j1"))
+    assert "del@example.com" not in job.get("assigned_students", [])
+    assert "del@example.com" not in job.get("placed_students", [])
+    assert main_app.redis_client.get("resume:j1:del@example.com") is None
+    assert main_app.redis_client.get("job_description:j1:del@example.com") is None
+    assert main_app.redis_client.get("match_results:j1") == "[]"
+
+
+def test_delete_student_not_found():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    login_resp = client.post("/login", json={"email": "admin@example.com", "password": "admin123"})
+    token = login_resp.json()["token"]
+
+    resp = client.delete(
+        "/admin/delete-student/missing@example.com",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 404
+
+
+def test_delete_student_forbidden_non_admin():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    user = {
+        "email": "user@example.com",
+        "first_name": "User",
+        "last_name": "Test",
+        "school_code": "1001",
+        "password": "pass",
+    }
+    client.post("/register", json=user)
+    key = f"user:{user['email']}"
+    data = json.loads(main_app.redis_client.get(key))
+    data["approved"] = True
+    main_app.redis_client.set(key, json.dumps(data))
+    login_resp = client.post("/login", json={"email": user["email"], "password": user["password"]})
+    token = login_resp.json()["token"]
+
+    main_app.redis_client.set("student:del@example.com", json.dumps({"email": "del@example.com"}))
+
+    resp = client.delete(
+        "/admin/delete-student/del@example.com",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 403
+
