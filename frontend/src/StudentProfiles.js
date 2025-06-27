@@ -145,6 +145,21 @@ function StudentProfiles() {
     }
   };
 
+  const viewJobDescription = async (jobCode, studentEmail) => {
+    try {
+      const resp = await api.get(`/job-description-html/${jobCode}/${studentEmail}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const html = resp.data;
+
+      const newWindow = window.open('', '_blank');
+      newWindow.document.write(html);
+      newWindow.document.close();
+    } catch (err) {
+      alert('Failed to load job description.');
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setFormError('');
@@ -377,15 +392,13 @@ function StudentProfiles() {
                                         <td>{job.source}</td>
                                         <td style={{ textAlign: 'center' }}>
                                           {jobDescriptionStatus[job.job_code] === 'ready' ? (
-                                            <a
-                                              href={`http://localhost:8000/job-description-html/${job.job_code}/${s.email}`}
-                                              target="_blank"
-                                              rel="noopener noreferrer"
-                                              title="View Job Description"
+                                            <button
+                                              onClick={() => viewJobDescription(job.job_code, s.email)}
                                               style={{ marginRight: '0.5rem' }}
+                                              title="View Job Description"
                                             >
-                                              📄 Download
-                                            </a>
+                                              📄 View
+                                            </button>
                                           ) : (
                                             <button
                                               onClick={() => generateJobDescription(job.job_code, s.email)}
