@@ -430,7 +430,7 @@ function StudentProfiles() {
                                 <thead>
                                   <tr>
                                     <th>Job Title</th>
-                                    <th>Job Code</th>
+                                    <th>Rate</th>
                                     <th>Source</th>
                                     <th>Job Description</th>
                                   </tr>
@@ -440,8 +440,8 @@ function StudentProfiles() {
                                     s.assigned_jobs.map((job, index) => (
                                       <tr key={index}>
                                         <td>{job.job_title}</td>
-                                        <td>{job.job_code}</td>
-                                        <td>{job.source}</td>
+                                        <td>{job.rate_of_pay_range || 'N/A'}</td>
+                                        <td>{job.source || 'N/A'}</td>
                                         <td style={{ textAlign: 'center' }}>
                                           {jobDescriptionStatus[job.job_code] === 'ready' ? (
                                             <button

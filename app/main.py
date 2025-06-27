@@ -1070,7 +1070,8 @@ def get_all_students(current_user: dict = Depends(get_current_user)):
             {
                 "job_code": job.get("job_code"),
                 "job_title": job.get("job_title"),
-                "source": job.get("posted_by"),
+                "source": job.get("source"),
+                "rate_of_pay_range": job.get("rate_of_pay_range"),
                 "job_description": job.get("job_description"),
             }
             for job in all_jobs
@@ -1147,7 +1148,8 @@ def students_by_school(current_user: dict = Depends(get_current_user)):
             {
                 "job_code": job.get("job_code"),
                 "job_title": job.get("job_title"),
-                "source": job.get("posted_by"),
+                "source": job.get("source"),
+                "rate_of_pay_range": job.get("rate_of_pay_range"),
                 "job_description": job.get("job_description"),
             }
             for job in all_jobs
