@@ -595,7 +595,9 @@ def test_generate_job_description(monkeypatch):
         headers={"Authorization": f"Bearer {token}"},
     )
     assert get_resp.status_code == 200
-    assert get_resp.json()["description"] == "done"
+    html_content = get_resp.json()["description"]
+    assert html_content.lstrip().startswith("<!DOCTYPE html>")
+    assert "done" in html_content
 
 
 def test_job_description_html_route():
