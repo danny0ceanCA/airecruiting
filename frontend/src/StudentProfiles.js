@@ -27,6 +27,7 @@ function StudentProfiles() {
   const [editingEmail, setEditingEmail] = useState('');
 
   const [menuOpen, setMenuOpen] = useState(false);
+  const [expandedRows, setExpandedRows] = useState({});
   const navigate = useNavigate();
 
   const token = localStorage.getItem('token');
@@ -54,6 +55,13 @@ function StudentProfiles() {
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  const toggleRow = (email) => {
+    setExpandedRows((prev) => ({
+      ...prev,
+      [email]: !prev[email],
+    }));
   };
 
   const handleEdit = (email) => {
@@ -275,27 +283,66 @@ function StudentProfiles() {
                     const assigned = Array.isArray(s.assigned_jobs) ? s.assigned_jobs.length : s.assigned_jobs || 0;
                     const placed = Array.isArray(s.placed_jobs) ? s.placed_jobs.length : s.placed_jobs || 0;
                     return (
-                      <tr key={s.email}>
-                        <td>{s.first_name} {s.last_name}</td>
-                        {userRole === 'admin' && <td>{s.school_code}</td>}
-                        <td>
-                          <button onClick={() => handleEdit(s.email)} style={{
-                            background: 'none',
-                            border: 'none',
-                            cursor: 'pointer',
-                            fontSize: '1.2rem',
-                          }} title="Edit">✏️</button>
-                        </td>
-                        <td>{assigned}</td>
-                        <td>{placed > 0 ? '✅' : '❌'}</td>
-                        <td>
-                          {assigned > 0 && placed === 0 && userRole !== 'admin' && (
-                            <button onClick={() => handleMarkPlaced(s)}>
-                              Mark as Placed
+                      <React.Fragment key={s.email}>
+                        <tr>
+                          <td>{s.first_name} {s.last_name}</td>
+                          {userRole === 'admin' && <td>{s.school_code}</td>}
+                          <td>
+                            <button
+                              onClick={() => toggleRow(s.email)}
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                cursor: 'pointer',
+                                fontSize: '1.2rem',
+                                marginRight: '0.5rem',
+                              }}
+                              title={expandedRows[s.email] ? 'Collapse' : 'Expand'}
+                            >
+                              {expandedRows[s.email] ? '🔼' : '🔽'}
                             </button>
-                          )}
-                        </td>
-                      </tr>
+                            <button onClick={() => handleEdit(s.email)} style={{
+                              background: 'none',
+                              border: 'none',
+                              cursor: 'pointer',
+                              fontSize: '1.2rem',
+                            }} title="Edit">✏️</button>
+                          </td>
+                          <td>{assigned}</td>
+                          <td>{placed > 0 ? '✅' : '❌'}</td>
+                          <td>
+                            {assigned > 0 && placed === 0 && userRole !== 'admin' && (
+                              <button onClick={() => handleMarkPlaced(s)}>
+                                Mark as Placed
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                        {expandedRows[s.email] && (
+                          <tr className="job-subrow" key={`${s.email}-jobs`}>
+                            <td colSpan="100%">
+                              <table className="job-subtable">
+                                <thead>
+                                  <tr>
+                                    <th>Job Title</th>
+                                    <th>Job Code</th>
+                                    <th>Source</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {(s.assigned_jobs || []).map((job, index) => (
+                                    <tr key={index}>
+                                      <td>{job.job_title}</td>
+                                      <td>{job.job_code}</td>
+                                      <td>{job.source}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
                     );
                   })}
                 </tbody>
