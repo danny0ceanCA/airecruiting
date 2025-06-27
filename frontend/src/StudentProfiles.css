@@ -240,3 +240,9 @@
   text-align: center;
 }
 
+.no-jobs-row td {
+  background-color: #f0f0f0;
+  font-style: italic;
+  text-align: center;
+}
+
