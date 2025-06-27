@@ -327,13 +327,19 @@ function StudentProfiles() {
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {(s.assigned_jobs || []).map((job, index) => (
-                                    <tr key={index}>
-                                      <td>{job.job_title}</td>
-                                      <td>{job.job_code}</td>
-                                      <td>{job.source}</td>
+                                  {s.assigned_jobs && s.assigned_jobs.length > 0 ? (
+                                    s.assigned_jobs.map((job, index) => (
+                                      <tr key={index}>
+                                        <td>{job.job_title}</td>
+                                        <td>{job.job_code}</td>
+                                        <td>{job.source}</td>
+                                      </tr>
+                                    ))
+                                  ) : (
+                                    <tr className="no-jobs-row">
+                                      <td colSpan="3">No jobs assigned by recruiters.</td>
                                     </tr>
-                                  ))}
+                                  )}
                                 </tbody>
                               </table>
                             </td>
