@@ -105,7 +105,7 @@ def test_registration_flow():
     # Approve user using admin token
     approve_resp = client.post(
         "/approve",
-        json={"email": user_data["email"]},
+        json={"email": user_data["email"], "role": "career"},
         headers={"Authorization": f"Bearer {admin_token}"},
     )
     assert approve_resp.status_code == 200
@@ -119,7 +119,7 @@ def test_registration_flow():
     assert token
     payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM])
     assert payload["sub"] == user_data["email"]
-    assert payload["role"] == "user"
+    assert payload["role"] == "career"
 
 
 def test_non_admin_cannot_approve():
@@ -153,7 +153,7 @@ def test_non_admin_cannot_approve():
 
     resp = client.post(
         "/approve",
-        json={"email": target["email"]},
+        json={"email": target["email"], "role": "career"},
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 403
