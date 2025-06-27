@@ -551,3 +551,49 @@ def test_generate_description(monkeypatch):
     assert resp.status_code == 200
     assert resp.json()["status"] == "success"
 
+
+def test_generate_job_description(monkeypatch):
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    main_app.redis_client.set(
+        "student:stud@example.com",
+        json.dumps({"first_name": "Stud", "last_name": "S", "skills": ["python"]})
+    )
+    main_app.redis_client.set(
+        "job:code2",
+        json.dumps({
+            "job_code": "code2",
+            "job_title": "Dev",
+            "job_description": "desc",
+            "desired_skills": ["python"],
+        })
+    )
+
+    class FakeResp:
+        def __init__(self):
+            self.choices = [type("obj", (), {"message": type("obj", (), {"content": "done"})})]
+
+    def fake_create(model, messages, temperature):
+        return FakeResp()
+
+    monkeypatch.setattr(main_app.client.chat.completions, "create", fake_create)
+
+    login_resp = client.post("/login", json={"email": "admin@example.com", "password": "admin123"})
+    token = login_resp.json()["token"]
+
+    resp = client.post(
+        "/generate-job-description",
+        json={"student_email": "stud@example.com", "job_code": "code2"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "success"
+
+    get_resp = client.get(
+        "/job-description/code2/stud@example.com",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert get_resp.status_code == 200
+    assert get_resp.json()["description"] == "done"
+

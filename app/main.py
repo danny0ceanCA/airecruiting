@@ -18,6 +18,9 @@ from pydantic import BaseModel, EmailStr
 from jose import jwt, JWTError
 from dotenv import load_dotenv
 import bcrypt
+for _p in ["http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY"]:
+    os.environ.pop(_p, None)
+import httpx
 from openai import OpenAI
 import redis
 from backend.app.schemas.resume import ResumeRequest
@@ -28,7 +31,7 @@ from backend.app.school_codes import SCHOOL_CODE_MAP
 
 # Load environment variables
 load_dotenv()
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"), http_client=httpx.Client())
 redis_url = os.getenv("REDIS_URL")
 
 if not redis_url:
@@ -790,6 +793,57 @@ def generate_description(req: DescriptionRequest, current_user: dict = Depends(g
     redis_client.set(desc_key, generated_desc)
     print("\u2705 Description stored")
     return {"status": "success", "description": generated_desc}
+
+
+@app.post("/generate-job-description")
+def generate_job_description(req: ResumeRequest, current_user: dict = Depends(get_current_user)):
+    job_code = req.job_code
+    student_email = req.student_email
+    key = f"job_description:{job_code}:{student_email}"
+    existing = redis_client.get(key)
+    if existing:
+        return {"status": "exists"}
+
+    job_raw = redis_client.get(f"job:{job_code}")
+    student_raw = redis_client.get(f"student:{student_email}")
+    if not job_raw or not student_raw:
+        raise HTTPException(status_code=404, detail="Job or student not found")
+
+    job = json.loads(job_raw)
+    student = json.loads(student_raw)
+
+    prompt = f"""Write a professional job description based on the following information.
+
+Job Title: {job.get('job_title')}
+Job Description: {job.get('job_description')}
+Required Skills: {', '.join(job.get('desired_skills', []))}
+
+Student:
+Name: {student.get('first_name')} {student.get('last_name')}
+Education: {student.get('education_level')}
+Skills: {', '.join(student.get('skills', []))}
+Experience Summary: {student.get('experience_summary')}
+Interests: {student.get('interests')}
+
+Include what the student will likely perform, what they are currently capable of, and areas for growth.
+"""
+
+    resp = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.5,
+    )
+    redis_client.set(key, resp.choices[0].message.content)
+    return {"status": "success"}
+
+
+@app.get("/job-description/{job_code}/{student_email}")
+def get_job_description(job_code: str, student_email: str, current_user: dict = Depends(get_current_user)):
+    key = f"job_description:{job_code}:{student_email}"
+    description = redis_client.get(key)
+    if not description:
+        raise HTTPException(status_code=404, detail="Not found")
+    return {"status": "success", "description": description}
 
 
 @app.get("/resume/{job_code}/{student_email}")
