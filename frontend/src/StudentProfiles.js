@@ -128,9 +128,9 @@ function StudentProfiles() {
     }
   };
 
-  const handleDownloadJobDescriptionPDF = async (jobCode, studentEmail) => {
+  const handleDownloadJobDescriptionPDF = async (student, job) => {
     try {
-      const resp = await api.get(`/resume/${jobCode}/${studentEmail}`, {
+      const resp = await api.get(`/resume/${job.job_code}/${student.email}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
@@ -138,12 +138,24 @@ function StudentProfiles() {
       const doc = new jsPDF();
 
       doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(16);
+      doc.text('Job Description Summary', 15, 20);
+
       doc.setFontSize(12);
+      let y = 30;
+      doc.text(`Student: ${student.first_name} ${student.last_name}`, 15, y);
+      y += 10;
+      doc.text(`Job Title: ${job.job_title}`, 15, y);
+      if (student.school_code) {
+        y += 10;
+        doc.text(`School: ${student.school_code}`, 15, y);
+      }
+      y += 10;
 
       const lines = doc.splitTextToSize(text, 180);
-      doc.text(lines, 15, 20);
-
-      doc.save(`Job_Description_${jobCode}_${studentEmail}.pdf`);
+      doc.text(lines, 15, y);
+      const fileName = `Job Description - ${student.first_name} ${student.last_name} - ${job.job_title}.pdf`;
+      doc.save(fileName);
     } catch (err) {
       console.error('Failed to generate PDF:', err);
       alert('Could not download job description PDF.');
@@ -381,14 +393,16 @@ function StudentProfiles() {
                                         <td>{job.job_code}</td>
                                         <td>{job.source}</td>
                                         <td>
-                                          <button
-                                            onClick={() => handleDownloadJobDescriptionPDF(job.job_code, s.email)}
-                                            style={{ background: 'none', border: 'none', cursor: 'pointer' }}
-                                            title="Download Job Description (PDF)"
-                                          >
-                                            📄
-                                          </button>
-                                          {userRole !== 'recruiter' && (
+                                          {userRole === 'user' && (
+                                            <button
+                                              onClick={() => handleDownloadJobDescriptionPDF(s, job)}
+                                              style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+                                              title="Generate Job Description PDF"
+                                            >
+                                              📄
+                                            </button>
+                                          )}
+                                          {userRole === 'user' && (
                                             generatingDescriptions[`${job.job_code}:${s.email}`] ? (
                                               <div style={{ display: 'flex', justifyContent: 'center' }}>
                                                 <span className="spinner" />
