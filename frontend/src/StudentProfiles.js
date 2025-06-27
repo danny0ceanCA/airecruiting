@@ -270,6 +270,7 @@ function StudentProfiles() {
               <table className="school-table">
                 <thead>
                   <tr>
+                    <th></th>
                     <th>Name</th>
                     {userRole === 'admin' && <th>School</th>}
                     <th>Edit</th>
@@ -285,22 +286,18 @@ function StudentProfiles() {
                     return (
                       <React.Fragment key={s.email}>
                         <tr>
+                          <td>
+                            <span
+                              className="expand-toggle"
+                              onClick={() => toggleRow(s.email)}
+                              title={expandedRows[s.email] ? 'Collapse' : 'Expand'}
+                            >
+                              {expandedRows[s.email] ? '–' : '+'}
+                            </span>
+                          </td>
                           <td>{s.first_name} {s.last_name}</td>
                           {userRole === 'admin' && <td>{s.school_code}</td>}
                           <td>
-                            <button
-                              onClick={() => toggleRow(s.email)}
-                              style={{
-                                background: 'none',
-                                border: 'none',
-                                cursor: 'pointer',
-                                fontSize: '1.2rem',
-                                marginRight: '0.5rem',
-                              }}
-                              title={expandedRows[s.email] ? 'Collapse' : 'Expand'}
-                            >
-                              {expandedRows[s.email] ? '🔼' : '🔽'}
-                            </button>
                             <button onClick={() => handleEdit(s.email)} style={{
                               background: 'none',
                               border: 'none',
