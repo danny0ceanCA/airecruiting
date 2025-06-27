@@ -208,3 +208,26 @@
   border-radius: 5px;
 }
 
+.job-subtable {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 0.5rem;
+}
+
+.job-subtable th,
+.job-subtable td {
+  border: 1px solid #ccc;
+  padding: 0.25rem 0.5rem;
+}
+
+.job-subtable th {
+  background-color: #003366;
+  color: white;
+}
+
+.job-subtable td {
+  background-color: white;
+  color: black;
+  text-align: center;
+}
+
