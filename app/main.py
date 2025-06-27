@@ -824,6 +824,18 @@ def get_all_students(current_user: dict = Depends(get_current_user)):
     if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin privileges required")
 
+    # Gather all job data once
+    all_jobs = []
+    for job_key in redis_client.scan_iter("job:*"):
+        job_raw = redis_client.get(job_key)
+        if not job_raw:
+            continue
+        try:
+            job = json.loads(job_raw)
+        except Exception:
+            continue
+        all_jobs.append(job)
+
     students = []
     for key in redis_client.scan_iter("student:*"):
         raw = redis_client.get(key)
@@ -845,23 +857,26 @@ def get_all_students(current_user: dict = Depends(get_current_user)):
             "experience_summary": student.get("experience_summary"),
             "interests": student.get("interests"),
             "school_code": student.get("school_code"),  # ✅ Added
-            "assigned_jobs": 0,
+            "assigned_jobs": [],
             "placed_jobs": 0,
             "assigned_job_code": None,
         }
 
         # Add optional match data
-        for job_key in redis_client.scan_iter("job:*"):
-            job_raw = redis_client.get(job_key)
-            if not job_raw:
-                continue
-            job = json.loads(job_raw)
-            if email in job.get("assigned_students", []):
-                info["assigned_jobs"] += 1
-                if info["assigned_job_code"] is None:
-                    info["assigned_job_code"] = job.get("job_code")
-            if email in job.get("placed_students", []):
-                info["placed_jobs"] += 1
+        info["assigned_jobs"] = [
+            {
+                "job_code": job.get("job_code"),
+                "job_title": job.get("job_title"),
+                "source": job.get("posted_by"),
+            }
+            for job in all_jobs
+            if email in job.get("assigned_students", [])
+        ]
+        info["placed_jobs"] = sum(
+            1 for job in all_jobs if email in job.get("placed_students", [])
+        )
+        if info["assigned_jobs"]:
+            info["assigned_job_code"] = info["assigned_jobs"][0]["job_code"]
 
         students.append(info)
 
@@ -881,6 +896,19 @@ def students_by_school(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail="Corrupted user data")
 
     school_code = user.get("school_code")
+
+    # Gather all job data once
+    all_jobs = []
+    for job_key in redis_client.scan_iter("job:*"):
+        job_raw = redis_client.get(job_key)
+        if not job_raw:
+            continue
+        try:
+            job = json.loads(job_raw)
+        except Exception:
+            continue
+        all_jobs.append(job)
+
     students = []
 
     for key in redis_client.scan_iter("student:*"):
@@ -905,23 +933,26 @@ def students_by_school(current_user: dict = Depends(get_current_user)):
             "skills": student.get("skills"),
             "experience_summary": student.get("experience_summary"),
             "interests": student.get("interests"),
-            "assigned_jobs": 0,
+            "assigned_jobs": [],
             "placed_jobs": 0,
             "assigned_job_code": None,
         }
 
         # Add assigned/placed jobs info
-        for job_key in redis_client.scan_iter("job:*"):
-            job_raw = redis_client.get(job_key)
-            if not job_raw:
-                continue
-            job = json.loads(job_raw)
-            if email in job.get("assigned_students", []):
-                info["assigned_jobs"] += 1
-                if info["assigned_job_code"] is None:
-                    info["assigned_job_code"] = job.get("job_code")
-            if email in job.get("placed_students", []):
-                info["placed_jobs"] += 1
+        info["assigned_jobs"] = [
+            {
+                "job_code": job.get("job_code"),
+                "job_title": job.get("job_title"),
+                "source": job.get("posted_by"),
+            }
+            for job in all_jobs
+            if email in job.get("assigned_students", [])
+        ]
+        info["placed_jobs"] = sum(
+            1 for job in all_jobs if email in job.get("placed_students", [])
+        )
+        if info["assigned_jobs"]:
+            info["assigned_job_code"] = info["assigned_jobs"][0]["job_code"]
 
         students.append(info)
 
