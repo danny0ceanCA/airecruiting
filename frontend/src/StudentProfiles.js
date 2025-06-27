@@ -128,37 +128,31 @@ function StudentProfiles() {
     }
   };
 
-  const handleDownloadJobDescriptionPDF = async (student, job) => {
+  const handleDownloadJobDescriptionPDF = async (jobCode, studentEmail, studentName) => {
     try {
-      const resp = await api.get(`/resume/${job.job_code}/${student.email}`, {
+      const resp = await api.get(`/resume/${jobCode}/${studentEmail}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
       const text = resp.data.resume;
       const doc = new jsPDF();
 
-      doc.setFont('Helvetica', 'normal');
-      doc.setFontSize(16);
-      doc.text('Job Description Summary', 15, 20);
+      // Header: TalentMatch AI
+      doc.setFontSize(18);
+      doc.setFont('helvetica', 'bold');
+      doc.text('TalentMatch AI', 105, 20, { align: 'center' });
 
+      // Body
       doc.setFontSize(12);
-      let y = 30;
-      doc.text(`Student: ${student.first_name} ${student.last_name}`, 15, y);
-      y += 10;
-      doc.text(`Job Title: ${job.job_title}`, 15, y);
-      if (student.school_code) {
-        y += 10;
-        doc.text(`School: ${student.school_code}`, 15, y);
-      }
-      y += 10;
-
+      doc.setFont('helvetica', 'normal');
       const lines = doc.splitTextToSize(text, 180);
-      doc.text(lines, 15, y);
-      const fileName = `Job Description - ${student.first_name} ${student.last_name} - ${job.job_title}.pdf`;
+      doc.text(lines, 15, 40);
+
+      const fileName = `Job_Summary_${studentName.replace(/\s+/g, '_')}_${jobCode}.pdf`;
       doc.save(fileName);
     } catch (err) {
-      console.error('Failed to generate PDF:', err);
-      alert('Could not download job description PDF.');
+      console.error('Failed to generate job summary PDF:', err);
+      alert('Could not download job summary.');
     }
   };
 
@@ -395,7 +389,13 @@ function StudentProfiles() {
                                         <td>
                                           {userRole === 'user' && (
                                             <button
-                                              onClick={() => handleDownloadJobDescriptionPDF(s, job)}
+                                              onClick={() =>
+                                                handleDownloadJobDescriptionPDF(
+                                                  job.job_code,
+                                                  s.email,
+                                                  `${s.first_name} ${s.last_name}`
+                                                )
+                                              }
                                               style={{ background: 'none', border: 'none', cursor: 'pointer' }}
                                               title="Generate Job Description PDF"
                                             >
