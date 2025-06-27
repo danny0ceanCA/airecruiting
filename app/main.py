@@ -4,20 +4,35 @@ import csv
 import os
 import uuid
 from typing import Optional
-from fastapi import FastAPI, HTTPException, Depends, Header, UploadFile, File
+from fastapi import (
+    FastAPI,
+    HTTPException,
+    Depends,
+    Header,
+    Request,
+    UploadFile,
+    File,
+)
+from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
 from jose import jwt, JWTError
 from dotenv import load_dotenv
 import bcrypt
+for _p in ["http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY"]:
+    os.environ.pop(_p, None)
+import httpx
 from openai import OpenAI
 import redis
 from backend.app.schemas.resume import ResumeRequest
+from backend.app.schemas.description import DescriptionRequest
 from backend.app.services.resume import generate_resume_text
+from backend.app.services.description import generate_description_text
+from backend.app.school_codes import SCHOOL_CODE_MAP
 
 # Load environment variables
 load_dotenv()
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"), http_client=httpx.Client())
 redis_url = os.getenv("REDIS_URL")
 
 if not redis_url:
@@ -67,7 +82,7 @@ def init_default_admin():
                 {
                     "first_name": "Admin",
                     "last_name": "User",
-                    "school": "Admin School",
+                    "school_code": "Admin School",
                     "password": hashed,
                     "role": "admin",
                     "approved": True,
@@ -95,7 +110,7 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     first_name: str
     last_name: str
-    school: str
+    school_code: str
     password: str
 
 class LoginRequest(BaseModel):
@@ -151,6 +166,13 @@ def register(req: RegisterRequest):
     if redis_client.exists(key):
         raise HTTPException(status_code=400, detail="User already exists")
 
+    label = SCHOOL_CODE_MAP.get(req.school_code)
+    if not label:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid school code. Please contact your administrator.",
+        )
+
     hashed = bcrypt.hashpw(req.password.encode(), bcrypt.gensalt()).decode()
     redis_client.set(
         key,
@@ -158,7 +180,7 @@ def register(req: RegisterRequest):
             {
                 "first_name": req.first_name,
                 "last_name": req.last_name,
-                "school": req.school,
+                "school_code": label,
                 "password": hashed,
                 "role": "user",
                 "approved": False,
@@ -239,14 +261,74 @@ def pending_users(current_user: dict = Depends(get_current_user)):
     return pending
 
 @app.post("/students")
-def create_student(student: StudentRequest, current_user: dict = Depends(get_current_user)):
-    if redis_client.exists(student.email):
+async def create_student(request: Request, current_user: dict = Depends(get_current_user)):
+    content_type = request.headers.get("content-type", "")
+    resume_file: UploadFile | None = None
+
+    if "multipart/form-data" in content_type:
+        form = await request.form()
+        resume_file = form.get("resume")
+        skills_field = form.get("skills", "")
+        student_data = StudentRequest(
+            first_name=form.get("first_name"),
+            last_name=form.get("last_name"),
+            email=form.get("email"),
+            phone=form.get("phone"),
+            education_level=form.get("education_level"),
+            skills=[s.strip() for s in skills_field.split(",") if s.strip()],
+            experience_summary=form.get("experience_summary"),
+            interests=form.get("interests"),
+        )
+    else:
+        body = await request.json()
+        student_data = StudentRequest(**body)
+
+    if redis_client.exists(student_data.email):
         raise HTTPException(status_code=400, detail="Student already exists")
 
+    resume_text = ""
+    if resume_file is not None:
+        ext = os.path.splitext(resume_file.filename or "")[1].lower()
+        try:
+            if ext == ".pdf":
+                import pdfplumber
+
+                with pdfplumber.open(resume_file.file) as pdf:
+                    pages = [page.extract_text() or "" for page in pdf.pages]
+                resume_text = "\n".join(pages)
+            elif ext in {".docx", ".doc"}:
+                from docx import Document
+
+                document = Document(resume_file.file)
+                resume_text = "\n".join(p.text for p in document.paragraphs)
+            elif ext:
+                raise HTTPException(status_code=400, detail="Unsupported resume type")
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Failed to parse resume: {e}")
+
+    profile_json = None
+    if resume_text:
+        try:
+            instructions = (
+                "Extract a student profile from the following resume text. "
+                "Return JSON with these fields: first_name, last_name, email, phone, "
+                "education_level, skills (as a list), experience_summary, and interests (as a list)."
+            )
+            completion = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": f"{instructions}\n\n{resume_text}"}],
+                temperature=0.0,
+            )
+            profile_json = json.loads(completion.choices[0].message.content)
+        except Exception:
+            profile_json = None
+
     combined = " ".join([
-        ", ".join(student.skills),
-        student.experience_summary,
-        student.interests
+        ", ".join(student_data.skills),
+        student_data.experience_summary,
+        student_data.interests,
     ])
     try:
         resp = client.embeddings.create(input=combined, model="text-embedding-3-small")
@@ -254,10 +336,60 @@ def create_student(student: StudentRequest, current_user: dict = Depends(get_cur
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Embedding failed: {str(e)}")
 
-    data = student.model_dump()
+    user_key = f"user:{current_user.get('sub')}"
+    user_raw = redis_client.get(user_key)
+    school_code = None
+    if user_raw:
+        try:
+            school_code = json.loads(user_raw).get("school_code")
+        except Exception:
+            school_code = None
+
+    data = student_data.model_dump()
     data["embedding"] = embedding
-    redis_client.set(f"student:{student.email}", json.dumps(data))
-    return {"message": "Student stored"}
+    if school_code is not None:
+        data["school_code"] = school_code
+    redis_client.set(f"student:{student_data.email}", json.dumps(data))
+
+    if profile_json is not None:
+        return {"message": "Resume parsed by GPT successfully.", "profile": profile_json}
+    else:
+        return {"message": "Student profile submitted without GPT parsing."}
+
+
+@app.put("/students/{email}")
+def update_student(
+    email: str, updated: StudentRequest, current_user: dict = Depends(get_current_user)
+):
+    key = f"student:{email}"
+    raw = redis_client.get(key)
+    if not raw:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    try:
+        existing = json.loads(raw)
+    except Exception:
+        existing = {}
+
+    combined = " ".join([
+        ", ".join(updated.skills),
+        updated.experience_summary,
+        updated.interests,
+    ])
+    try:
+        resp = client.embeddings.create(input=combined, model="text-embedding-3-small")
+        embedding = resp.data[0].embedding
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Embedding failed: {str(e)}")
+
+    data = updated.model_dump()
+    data["email"] = email
+    data["embedding"] = embedding
+    if existing.get("school_code") is not None:
+        data["school_code"] = existing.get("school_code")
+
+    redis_client.set(key, json.dumps(data))
+    return {"message": "Student updated successfully"}
 
 @app.post("/students/upload")
 def upload_students(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
@@ -640,6 +772,143 @@ def generate_resume(req: ResumeRequest, current_user: dict = Depends(get_current
     return {"status": "success", "message": "Resume stored in Redis"}
 
 
+@app.post("/generate-description")
+def generate_description(req: DescriptionRequest, current_user: dict = Depends(get_current_user)):
+    """Generate a short job description tailored to a student."""
+    print(f"\U0001F4DD Generating description for {req.student_email} - {req.job_code}")
+    desc_key = f"description:{req.job_code}:{req.student_email}"
+    existing = redis_client.get(desc_key)
+    if existing:
+        print("\U0001F4DD Description already exists")
+        return {"status": "exists", "description": existing}
+
+    job_raw = redis_client.get(f"job:{req.job_code}")
+    student_raw = redis_client.get(f"student:{req.student_email}")
+    if not job_raw or not student_raw:
+        raise HTTPException(status_code=404, detail="Job or student not found")
+
+    job = json.loads(job_raw)
+    student = json.loads(student_raw)
+
+    generated_desc = generate_description_text(client, student, job)
+    redis_client.set(desc_key, generated_desc)
+    print("\u2705 Description stored")
+    return {"status": "success", "description": generated_desc}
+
+
+@app.post("/generate-job-description")
+def generate_job_description(req: ResumeRequest, current_user: dict = Depends(get_current_user)):
+    job_code = req.job_code
+    student_email = req.student_email
+    key = f"job_description:{job_code}:{student_email}"
+    html_key = f"jobdesc:{job_code}:{student_email}"
+    existing = redis_client.get(key)
+    if existing:
+        redis_client.set(html_key, existing)
+        return {"status": "exists"}
+
+    job_raw = redis_client.get(f"job:{job_code}")
+    student_raw = redis_client.get(f"student:{student_email}")
+    if not job_raw or not student_raw:
+        raise HTTPException(status_code=404, detail="Job or student not found")
+
+    job = json.loads(job_raw)
+    student = json.loads(student_raw)
+
+    prompt = f"""
+You are generating a job description document for internal career services staff. The purpose is to describe what the student will likely be expected to perform based on their background and the job assignment.
+
+Use the student profile and job information below to:
+
+- Write a **professional summary** of the student's fit for the role with extensive and relevant details
+- Describe **key responsibilities** they might undertake as noted in the job description
+- List **areas of strength** with plenty of details to reinforce existing experience and how it connects with the job description and potential **areas for growth** with plenty of insightful and targeted recommendations for training that will improve the probability of success
+- Mention **school affiliation** and any relevant compliance or readiness info
+
+Format this as a printable HTML document titled "TalentMatch AI", styled professionally but without producing binary output.
+
+Student Info:
+Name: {student.get('first_name')} {student.get('last_name')}
+Email: {student.get('email')}
+Skills: {', '.join(student.get('skills', []))}
+Experience Summary: {student.get('experience_summary')}
+Interests: {student.get('interests')}
+
+Job Info:
+Title: {job.get('job_title')}
+Source: {job.get('source')}
+Description: {job.get('job_description')}
+Desired Skills: {', '.join(job.get('desired_skills', []))}
+
+Output only valid HTML.
+"""
+
+    resp = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.5,
+    )
+
+    raw_content = resp.choices[0].message.content.strip()
+
+    # Clean up Markdown-style ```html block
+    if raw_content.startswith("```html"):
+        raw_content = raw_content.replace("```html", "", 1).strip()
+    if raw_content.endswith("```"):
+        raw_content = raw_content.rsplit("```", 1)[0].strip()
+
+    # Wrap in HTML layout
+    full_html = f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>TalentMatch AI – Job Description</title>
+  <style>
+    body {{
+      font-family: Arial, sans-serif;
+      margin: 2rem;
+      line-height: 1.6;
+    }}
+    h2 {{
+      color: #1a1a1a;
+      border-bottom: 2px solid #eee;
+      padding-bottom: 0.3rem;
+    }}
+    .section {{
+      margin-bottom: 1.5rem;
+    }}
+  </style>
+</head>
+<body>
+{raw_content}
+</body>
+</html>
+"""
+
+    redis_client.set(key, full_html)
+    redis_client.set(html_key, full_html)
+    return {"status": "success"}
+
+
+@app.get("/job-description/{job_code}/{student_email}")
+def get_job_description(job_code: str, student_email: str, current_user: dict = Depends(get_current_user)):
+    key = f"job_description:{job_code}:{student_email}"
+    description = redis_client.get(key)
+    if not description:
+        raise HTTPException(status_code=404, detail="Not found")
+    return {"status": "success", "description": description}
+
+
+@app.get("/job-description-html/{job_code}/{student_email}")
+def get_job_description_html(job_code: str, student_email: str, current_user: dict = Depends(get_current_user)):
+    key = f"jobdesc:{job_code}:{student_email}"
+    html = redis_client.get(key)
+    if not html:
+        raise HTTPException(status_code=404, detail="Job description not found")
+    return HTMLResponse(content=html, status_code=200)
+
+
 @app.get("/resume/{job_code}/{student_email}")
 def get_resume(job_code: str, student_email: str, current_user: dict = Depends(get_current_user)):
     key = f"resume:{job_code}:{student_email}"
@@ -692,3 +961,144 @@ def reset_jobs(current_user: dict = Depends(get_current_user)):
         redis_client.delete(key)
 
     return {"message": f"Deleted {deleted} jobs and match data"}
+
+@app.get("/students/all")
+def get_all_students(current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+
+    # Gather all job data once
+    all_jobs = []
+    for job_key in redis_client.scan_iter("job:*"):
+        job_raw = redis_client.get(job_key)
+        if not job_raw:
+            continue
+        try:
+            job = json.loads(job_raw)
+        except Exception:
+            continue
+        all_jobs.append(job)
+
+    students = []
+    for key in redis_client.scan_iter("student:*"):
+        raw = redis_client.get(key)
+        if not raw:
+            continue
+        try:
+            student = json.loads(raw)
+        except Exception:
+            continue
+
+        email = student.get("email")
+        info = {
+            "first_name": student.get("first_name"),
+            "last_name": student.get("last_name"),
+            "email": email,
+            "phone": student.get("phone"),
+            "education_level": student.get("education_level"),
+            "skills": student.get("skills"),
+            "experience_summary": student.get("experience_summary"),
+            "interests": student.get("interests"),
+            "school_code": student.get("school_code"),  # ✅ Added
+            "assigned_jobs": [],
+            "placed_jobs": 0,
+            "assigned_job_code": None,
+        }
+
+        # Add optional match data
+        info["assigned_jobs"] = [
+            {
+                "job_code": job.get("job_code"),
+                "job_title": job.get("job_title"),
+                "source": job.get("posted_by"),
+                "job_description": job.get("job_description"),
+            }
+            for job in all_jobs
+            if email in job.get("assigned_students", [])
+        ]
+        info["placed_jobs"] = sum(
+            1 for job in all_jobs if email in job.get("placed_students", [])
+        )
+        if info["assigned_jobs"]:
+            info["assigned_job_code"] = info["assigned_jobs"][0]["job_code"]
+
+        students.append(info)
+
+    return {"students": students}
+
+@app.get("/students/by-school")
+def students_by_school(current_user: dict = Depends(get_current_user)):
+    """Return all student profiles belonging to the current user's school."""
+    user_key = f"user:{current_user.get('sub')}"
+    raw_user = redis_client.get(user_key)
+    if not raw_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    try:
+        user = json.loads(raw_user)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Corrupted user data")
+
+    school_code = user.get("school_code")
+
+    # Gather all job data once
+    all_jobs = []
+    for job_key in redis_client.scan_iter("job:*"):
+        job_raw = redis_client.get(job_key)
+        if not job_raw:
+            continue
+        try:
+            job = json.loads(job_raw)
+        except Exception:
+            continue
+        all_jobs.append(job)
+
+    students = []
+
+    for key in redis_client.scan_iter("student:*"):
+        raw = redis_client.get(key)
+        if not raw:
+            continue
+        try:
+            student = json.loads(raw)
+        except Exception:
+            continue
+
+        if student.get("school_code") != school_code:
+            continue
+
+        email = student.get("email")
+        info = {
+            "first_name": student.get("first_name"),
+            "last_name": student.get("last_name"),
+            "email": email,
+            "phone": student.get("phone"),
+            "education_level": student.get("education_level"),
+            "skills": student.get("skills"),
+            "experience_summary": student.get("experience_summary"),
+            "interests": student.get("interests"),
+            "assigned_jobs": [],
+            "placed_jobs": 0,
+            "assigned_job_code": None,
+        }
+
+        # Add assigned/placed jobs info
+        info["assigned_jobs"] = [
+            {
+                "job_code": job.get("job_code"),
+                "job_title": job.get("job_title"),
+                "source": job.get("posted_by"),
+                "job_description": job.get("job_description"),
+            }
+            for job in all_jobs
+            if email in job.get("assigned_students", [])
+        ]
+        info["placed_jobs"] = sum(
+            1 for job in all_jobs if email in job.get("placed_students", [])
+        )
+        if info["assigned_jobs"]:
+            info["assigned_job_code"] = info["assigned_jobs"][0]["job_code"]
+
+        students.append(info)
+
+    return {"students": students}

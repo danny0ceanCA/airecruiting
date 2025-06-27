@@ -49,6 +49,7 @@ class DummyRedis:
 
 main_app.redis_client = DummyRedis()
 from app.main import app, JWT_SECRET, ALGORITHM, init_default_admin
+import backend.app.main  # register additional routes
 
 client = TestClient(app)
 
@@ -82,7 +83,7 @@ def test_registration_flow():
         "email": "jane@example.com",
         "first_name": "Jane",
         "last_name": "Doe",
-        "school": "Test University",
+        "school_code": "1001",
         "password": "secret",
     }
 
@@ -129,7 +130,7 @@ def test_non_admin_cannot_approve():
         "email": "user1@example.com",
         "first_name": "User",
         "last_name": "One",
-        "school": "Test U",
+        "school_code": "1001",
         "password": "pass1",
     }
     client.post("/register", json=user1)
@@ -145,7 +146,7 @@ def test_non_admin_cannot_approve():
         "email": "user2@example.com",
         "first_name": "User",
         "last_name": "Two",
-        "school": "Test U",
+        "school_code": "1001",
         "password": "pass2",
     }
     client.post("/register", json=target)
@@ -172,14 +173,14 @@ def test_pending_users_endpoint():
         "email": "pend1@example.com",
         "first_name": "Pending",
         "last_name": "One",
-        "school": "PU",
+        "school_code": "1001",
         "password": "pass1",
     }
     u2 = {
         "email": "pend2@example.com",
         "first_name": "Pending",
         "last_name": "Two",
-        "school": "PU",
+        "school_code": "1001",
         "password": "pass2",
     }
     client.post("/register", json=u1)
@@ -202,7 +203,7 @@ def test_pending_users_forbidden_for_non_admin():
         "email": "regular@example.com",
         "first_name": "Reg",
         "last_name": "User",
-        "school": "RU",
+        "school_code": "1001",
         "password": "secret",
     }
     client.post("/register", json=regular)
@@ -234,7 +235,7 @@ def test_admin_can_reject_user():
         "email": "rejectme@example.com",
         "first_name": "Reject",
         "last_name": "Me",
-        "school": "RMU",
+        "school_code": "1001",
         "password": "pwd",
     }
     client.post("/register", json=target)
@@ -263,7 +264,7 @@ def test_non_admin_cannot_reject():
         "email": "reg@example.com",
         "first_name": "Reg",
         "last_name": "User",
-        "school": "RU",
+        "school_code": "1001",
         "password": "pass",
     }
     client.post("/register", json=regular)
@@ -278,7 +279,7 @@ def test_non_admin_cannot_reject():
         "email": "victim@example.com",
         "first_name": "Vic",
         "last_name": "Tim",
-        "school": "TU",
+        "school_code": "1001",
         "password": "secret",
     }
     client.post("/register", json=target)
@@ -337,7 +338,7 @@ def test_metrics_endpoint():
     u1 = {
         "first_name": "A",
         "last_name": "B",
-        "school": "X",
+        "school_code": "1001",
         "password": "p",
         "role": "user",
         "approved": True,
@@ -410,4 +411,213 @@ def test_admin_reset_jobs():
     # verify cleanup
     assert list(main_app.redis_client.scan_iter("job:*")) == []
     assert list(main_app.redis_client.scan_iter("match_results:*")) == []
+
+
+def test_students_all_admin_access():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    # Seed some students
+    s1 = {"first_name": "One", "last_name": "A", "email": "one@example.com", "education_level": "College"}
+    s2 = {"first_name": "Two", "last_name": "B", "email": "two@example.com", "education_level": "HS"}
+    main_app.redis_client.set("student:one@example.com", json.dumps(s1))
+    main_app.redis_client.set("student:two@example.com", json.dumps(s2))
+
+    login_resp = client.post("/login", json={"email": "admin@example.com", "password": "admin123"})
+    token = login_resp.json()["token"]
+
+    resp = client.get("/students/all", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200
+    data = resp.json()["students"]
+    emails = {s["email"] for s in data}
+    assert {"one@example.com", "two@example.com"} <= emails
+
+
+def test_students_all_forbidden_for_non_admin():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    user = {
+        "email": "user@example.com",
+        "first_name": "User",
+        "last_name": "Test",
+        "school_code": "1001",
+        "password": "pass",
+    }
+    client.post("/register", json=user)
+    key = f"user:{user['email']}"
+    data = json.loads(main_app.redis_client.get(key))
+    data["approved"] = True
+    main_app.redis_client.set(key, json.dumps(data))
+    login_resp = client.post("/login", json={"email": user["email"], "password": user["password"]})
+    token = login_resp.json()["token"]
+
+    resp = client.get("/students/all", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 403
+
+
+def test_update_student(monkeypatch):
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    login_resp = client.post("/login", json={"email": "admin@example.com", "password": "admin123"})
+    token = login_resp.json()["token"]
+
+    existing = {
+        "first_name": "Old",
+        "last_name": "Name",
+        "email": "stud@example.com",
+        "phone": "000",
+        "education_level": "HS",
+        "skills": ["c"],
+        "experience_summary": "old",
+        "interests": "old",
+        "embedding": [0.0, 0.0],
+        "school_code": "SC1",
+    }
+    main_app.redis_client.set("student:stud@example.com", json.dumps(existing))
+
+    class FakeResp:
+        def __init__(self):
+            self.data = [type("obj", (), {"embedding": [1.0, 2.0]})]
+
+    def fake_create(input, model):
+        return FakeResp()
+
+    monkeypatch.setattr(main_app.client.embeddings, "create", fake_create)
+
+    updated = {
+        "first_name": "New",
+        "last_name": "Name",
+        "email": "stud@example.com",
+        "phone": "111",
+        "education_level": "College",
+        "skills": ["python"],
+        "experience_summary": "new summary",
+        "interests": "coding",
+    }
+
+    resp = client.put(
+        "/students/stud@example.com",
+        json=updated,
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["message"] == "Student updated successfully"
+
+    saved = json.loads(main_app.redis_client.get("student:stud@example.com"))
+    assert saved["first_name"] == "New"
+    assert saved["education_level"] == "College"
+    assert saved["embedding"] == [1.0, 2.0]
+    assert saved["school_code"] == "SC1"
+
+
+def test_generate_description(monkeypatch):
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    # Seed job and student
+    main_app.redis_client.set(
+        "student:stud@example.com",
+        json.dumps({"first_name": "Stud", "last_name": "S", "skills": ["python"]})
+    )
+    main_app.redis_client.set(
+        "job:code1",
+        json.dumps({
+            "job_code": "code1",
+            "job_title": "Dev",
+            "job_description": "desc",
+            "desired_skills": ["python"],
+        })
+    )
+
+    class FakeResp:
+        def __init__(self):
+            self.choices = [type("obj", (), {"message": type("obj", (), {"content": "done"})})]
+
+    def fake_create(model, messages, temperature):
+        return FakeResp()
+
+    monkeypatch.setattr(main_app.client.chat.completions, "create", fake_create)
+
+    login_resp = client.post("/login", json={"email": "admin@example.com", "password": "admin123"})
+    token = login_resp.json()["token"]
+
+    resp = client.post(
+        "/generate-description",
+        json={"student_email": "stud@example.com", "job_code": "code1"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "success"
+
+
+def test_generate_job_description(monkeypatch):
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    main_app.redis_client.set(
+        "student:stud@example.com",
+        json.dumps({"first_name": "Stud", "last_name": "S", "skills": ["python"]})
+    )
+    main_app.redis_client.set(
+        "job:code2",
+        json.dumps({
+            "job_code": "code2",
+            "job_title": "Dev",
+            "job_description": "desc",
+            "desired_skills": ["python"],
+        })
+    )
+
+    class FakeResp:
+        def __init__(self):
+            self.choices = [type("obj", (), {"message": type("obj", (), {"content": "done"})})]
+
+    def fake_create(model, messages, temperature):
+        return FakeResp()
+
+    monkeypatch.setattr(main_app.client.chat.completions, "create", fake_create)
+
+    login_resp = client.post("/login", json={"email": "admin@example.com", "password": "admin123"})
+    token = login_resp.json()["token"]
+
+    resp = client.post(
+        "/generate-job-description",
+        json={"student_email": "stud@example.com", "job_code": "code2"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "success"
+
+    get_resp = client.get(
+        "/job-description/code2/stud@example.com",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert get_resp.status_code == 200
+    html_content = get_resp.json()["description"]
+    assert html_content.lstrip().startswith("<!DOCTYPE html>")
+    assert "done" in html_content
+
+
+def test_job_description_html_route():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    main_app.redis_client.set(
+        "jobdesc:codeh:stud@example.com",
+        "html desc",
+    )
+
+    login_resp = client.post(
+        "/login", json={"email": "admin@example.com", "password": "admin123"}
+    )
+    token = login_resp.json()["token"]
+
+    resp = client.get(
+        "/job-description-html/codeh/stud@example.com",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    assert "html" in resp.text.lower()
 

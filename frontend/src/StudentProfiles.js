@@ -1,196 +1,455 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import api from './api';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import jwt_decode from 'jwt-decode';
 import './StudentProfiles.css';
 
 function StudentProfiles() {
-  // Manual form state
   const [formData, setFormData] = useState({
-    firstName: '',
-    lastName: '',
+    first_name: '',
+    last_name: '',
     email: '',
     phone: '',
-    educationLevel: '',
+    education_level: '',
     skills: '',
-    experienceSummary: '',
+    experience_summary: '',
     interests: ''
   });
-  const [formMessage, setFormMessage] = useState('');
   const [formError, setFormError] = useState('');
+  const [resumeFile, setResumeFile] = useState(null);
+  const [toast, setToast] = useState('');
 
-  // CSV upload state
-  const [csvFile, setCsvFile] = useState(null);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [uploadResult, setUploadResult] = useState('');
-  const [uploadError, setUploadError] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const [schoolStudents, setSchoolStudents] = useState([]);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editingEmail, setEditingEmail] = useState('');
+
+  const [jobDescriptionStatus, setJobDescriptionStatus] = useState({});
+
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [expandedRows, setExpandedRows] = useState({});
+  const navigate = useNavigate();
 
   const token = localStorage.getItem('token');
+  const decoded = token ? jwt_decode(token) : {};
+  const userRole = decoded?.role;
+
+  const fetchStudents = async () => {
+    setIsLoading(true);
+    try {
+      const endpoint = userRole === 'admin' ? '/students/all' : '/students/by-school';
+      const resp = await api.get(endpoint, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setSchoolStudents(resp.data?.students || []);
+    } catch (err) {
+      console.error('Failed to fetch students:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (token) fetchStudents();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setFormMessage('');
-    setFormError('');
+  const toggleRow = (email, assignedJobs = []) => {
+    setExpandedRows((prev) => {
+      const expanded = !prev[email];
+      if (!prev[email]) {
+        for (const job of assignedJobs) {
+          fetchJobDescriptionStatus(email, job.job_code);
+        }
+      }
+      return { ...prev, [email]: expanded };
+    });
+  };
+
+  const handleEdit = (email) => {
+    const student = schoolStudents.find((s) => s.email === email);
+    if (student) {
+      setFormData({
+        first_name: student.first_name || '',
+        last_name: student.last_name || '',
+        email: student.email || '',
+        phone: student.phone || '',
+        education_level: student.education_level || '',
+        skills: Array.isArray(student.skills)
+          ? student.skills.join(', ')
+          : student.skills || '',
+        experience_summary: student.experience_summary || '',
+        interests: Array.isArray(student.interests)
+          ? student.interests.join(', ')
+          : student.interests || '',
+      });
+      setIsEditing(true);
+      setEditingEmail(student.email);
+    }
+  };
+
+  const handleMarkPlaced = async (student) => {
     try {
       await api.post(
-        '/students',
+        '/place',
         {
-          first_name: formData.firstName,
-          last_name: formData.lastName,
-          email: formData.email,
-          phone: formData.phone,
-          education_level: formData.educationLevel,
-          skills: formData.skills.split(',').map((s) => s.trim()).filter(Boolean),
-          experience_summary: formData.experienceSummary,
-          interests: formData.interests
+          student_email: student.email,
+          job_code: student.assigned_job_code,
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      setFormMessage('Student profile submitted!');
+      setToast('\u2705 Marked as Placed');
+      setTimeout(() => setToast(''), 3000);
+      fetchStudents();
+    } catch (err) {
+      console.error('Placement failed:', err);
+    }
+  };
+
+  const [loadingJobDescriptions, setLoadingJobDescriptions] = useState({});
+
+  const fetchJobDescriptionStatus = async (studentEmail, jobCode) => {
+    try {
+      const resp = await api.get(`/job-description/${jobCode}/${studentEmail}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (resp.data.status === 'success') {
+        setJobDescriptionStatus(prev => ({
+          ...prev,
+          [jobCode]: 'ready',
+        }));
+      }
+    } catch (err) {
+      // leave undefined if not found
+    }
+  };
+
+  const generateJobDescription = async (jobCode, studentEmail) => {
+    setLoadingJobDescriptions(prev => ({ ...prev, [jobCode]: true }));
+    try {
+      await api.post(
+        '/generate-job-description',
+        { job_code: jobCode, student_email: studentEmail },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setJobDescriptionStatus(prev => ({ ...prev, [jobCode]: 'ready' }));
+    } catch (err) {
+      console.error('Generation failed', err);
+    } finally {
+      setLoadingJobDescriptions(prev => ({ ...prev, [jobCode]: false }));
+    }
+  };
+
+  const handleViewJobDescription = async (jobCode, studentEmail) => {
+    const token = localStorage.getItem("token");
+    try {
+      const resp = await fetch(
+        `http://localhost:8000/job-description-html/${jobCode}/${studentEmail}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (!resp.ok) {
+        throw new Error(`Server responded with ${resp.status}`);
+      }
+
+      const html = await resp.text();
+      const newWindow = window.open("", "_blank");
+      if (newWindow) {
+        newWindow.document.write(html);
+        newWindow.document.close();
+      } else {
+        alert("Popup blocked. Please allow popups for this site.");
+      }
+    } catch (err) {
+      console.error("Failed to load job description:", err);
+      alert("Could not open job description.");
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setFormError('');
+    setIsSaving(true);
+    const studentData = {
+      first_name: formData.first_name,
+      last_name: formData.last_name,
+      email: formData.email,
+      phone: formData.phone,
+      education_level: formData.education_level,
+      skills: formData.skills.split(',').map((s) => s.trim()),
+      experience_summary: formData.experience_summary,
+      interests: formData.interests.trim(),
+    };
+    try {
+      const method = isEditing ? 'put' : 'post';
+      const url = isEditing ? `/students/${editingEmail}` : '/students';
+      await api[method](url, studentData, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      const msg = isEditing ? 'Student profile updated!' : 'Student profile submitted!';
+      setToast(msg);
+      setTimeout(() => setToast(''), 3000);
       setFormData({
-        firstName: '',
-        lastName: '',
+        first_name: '',
+        last_name: '',
         email: '',
         phone: '',
-        educationLevel: '',
+        education_level: '',
         skills: '',
-        experienceSummary: '',
+        experience_summary: '',
         interests: ''
       });
+      setResumeFile(null);
+      setIsEditing(false);
+      setEditingEmail('');
+      fetchStudents();
     } catch (err) {
-      setFormError(err.response?.data?.detail || 'Submission failed');
+      console.error('Submission failed:', err);
+      setFormError('Submission failed. Please check all required fields.');
+    } finally {
+      setIsSaving(false);
     }
   };
 
-  const handleFileChange = (e) => {
-    setCsvFile(e.target.files[0]);
-    setUploadProgress(0);
-    setUploadResult('');
-    setUploadError('');
+  const handleResumeChange = (e) => {
+    setResumeFile(e.target.files[0] || null);
   };
 
-  const handleUpload = async () => {
-    if (!csvFile) return;
-    setUploadProgress(0);
-    setUploadResult('');
-    setUploadError('');
-    const data = new FormData();
-    data.append('file', csvFile);
-    try {
-      const resp = await api.post('/students/upload', data, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-          Authorization: `Bearer ${token}`
-        },
-        onUploadProgress: (p) => {
-          if (p.total) {
-            setUploadProgress(Math.round((p.loaded * 100) / p.total));
-          }
-        }
-      });
-      setUploadResult(resp.data.message);
-    } catch (err) {
-      setUploadError(err.response?.data?.detail || 'Upload failed');
-    }
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    navigate('/login');
   };
 
   return (
     <div className="profiles-container">
-      <Link to="/dashboard" className="back-button">Back to Dashboard</Link>
-      <div className="form-section">
-        <h2>New Student Profile</h2>
-        <form className="profile-form" onSubmit={handleSubmit}>
-          <label htmlFor="firstName">First Name</label>
-          <input
-            id="firstName"
-            name="firstName"
-            type="text"
-            value={formData.firstName}
-            onChange={handleChange}
-          />
-
-          <label htmlFor="lastName">Last Name</label>
-          <input
-            id="lastName"
-            name="lastName"
-            type="text"
-            value={formData.lastName}
-            onChange={handleChange}
-          />
-
-          <label htmlFor="email">Email</label>
-          <input
-            id="email"
-            name="email"
-            type="email"
-            value={formData.email}
-            onChange={handleChange}
-          />
-
-          <label htmlFor="phone">Phone</label>
-          <input
-            id="phone"
-            name="phone"
-            type="text"
-            value={formData.phone}
-            onChange={handleChange}
-          />
-
-          <label htmlFor="educationLevel">Education Level</label>
-          <input
-            id="educationLevel"
-            name="educationLevel"
-            type="text"
-            value={formData.educationLevel}
-            onChange={handleChange}
-          />
-
-          <label htmlFor="skills">Skills (comma separated)</label>
-          <input
-            id="skills"
-            name="skills"
-            type="text"
-            value={formData.skills}
-            onChange={handleChange}
-          />
-
-          <label htmlFor="experienceSummary">Experience Summary</label>
-          <textarea
-            id="experienceSummary"
-            name="experienceSummary"
-            value={formData.experienceSummary}
-            onChange={handleChange}
-          ></textarea>
-
-          <label htmlFor="interests">Interests</label>
-          <input
-            id="interests"
-            name="interests"
-            type="text"
-            value={formData.interests}
-            onChange={handleChange}
-          />
-
-          <button type="submit">Submit</button>
-          {formMessage && <p className="message">{formMessage}</p>}
-          {formError && <p className="error">{formError}</p>}
-        </form>
+      <div className="admin-menu">
+        <button className="menu-button" onClick={() => setMenuOpen((o) => !o)}>
+          Admin Menu
+        </button>
+        {menuOpen && (
+          <div className="dropdown-menu">
+            <Link to="/dashboard">Dashboard</Link>
+            <Link to="/admin/pending">Pending Approvals</Link>
+            <Link to="/students">Student Profiles</Link>
+            {userRole === 'admin' && (
+              <button
+                className="admin-reset-button"
+                onClick={async () => {
+                  if (window.confirm('Are you sure you want to delete ALL jobs and match data?')) {
+                    try {
+                      const resp = await api.delete('/admin/reset-jobs', {
+                        headers: { Authorization: `Bearer ${token}` },
+                      });
+                      alert(resp.data.message);
+                    } catch (err) {
+                      console.error('Reset failed:', err);
+                      alert('Failed to reset jobs.');
+                    }
+                  }
+                }}
+              >
+                🧨 Reset All Jobs
+              </button>
+            )}
+            <button onClick={handleLogout}>Logout</button>
+          </div>
+        )}
       </div>
 
-      <div className="upload-section">
-        <h2>Upload CSV</h2>
-        <input type="file" accept=".csv" onChange={handleFileChange} />
-        <button onClick={handleUpload} disabled={!csvFile}>Upload</button>
-        {uploadProgress > 0 && <p>Progress: {uploadProgress}%</p>}
-        {uploadResult && <p className="message">{uploadResult}</p>}
-        {uploadError && <p className="error">{uploadError}</p>}
+      {toast && <div className="toast">{toast}</div>}
+
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'row',
+          alignItems: 'flex-start',
+          justifyContent: 'space-between',
+          width: '100%',
+          minHeight: '100vh',
+          gap: '2rem',
+        }}
+      >
+        <div style={{ flex: 1, maxWidth: '600px' }}>
+          <h2>{isEditing ? 'Edit Student Profile' : 'New Student Profile'}</h2>
+          <form className="profile-form" onSubmit={handleSubmit}>
+            {['first_name', 'last_name', 'email', 'phone', 'education_level', 'skills', 'experience_summary', 'interests'].map((field) => (
+              <React.Fragment key={field}>
+                <label htmlFor={field}>{field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</label>
+                {field === 'experience_summary' ? (
+                  <textarea
+                    id={field}
+                    name={field}
+                    value={formData[field]}
+                    onChange={handleChange}
+                  />
+                ) : (
+                  <input
+                    id={field}
+                    name={field}
+                    type="text"
+                    value={formData[field]}
+                    onChange={handleChange}
+                  />
+                )}
+              </React.Fragment>
+            ))}
+            <label htmlFor="resume">Upload Resume (PDF or DOCX)</label>
+            <input id="resume" name="resume" type="file" onChange={handleResumeChange} />
+            <button type="submit" disabled={isSaving}>
+              {isSaving ? (
+                <>
+                  <span className="spinner" /> Saving...
+                </>
+              ) : (
+                isEditing ? 'Update' : 'Submit'
+              )}
+            </button>
+            {formError && <p className="error">{formError}</p>}
+          </form>
+        </div>
+
+        <div
+          className="rightColumn"
+          style={{
+            flex: 1,
+            minWidth: '600px',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'flex-start',
+          }}
+        >
+          <div style={{ flexGrow: 1, minHeight: 0, marginTop: '3rem' }}>
+            <h2>Students from Your School</h2>
+            {isLoading ? (
+              <div className="loading-container">
+                <span className="spinner" />
+                <span style={{ marginLeft: '0.5rem' }}>Loading students...</span>
+              </div>
+            ) : schoolStudents.length > 0 ? (
+              <table className="school-table">
+                <thead>
+                  <tr>
+                    <th></th>
+                    <th>Name</th>
+                    {userRole === 'admin' && <th>School</th>}
+                    <th>Edit</th>
+                    <th>Assigned Jobs</th>
+                    <th>Placement Status</th>
+                    <th>Placement Controls</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {schoolStudents.map((s) => {
+                    const assigned = Array.isArray(s.assigned_jobs) ? s.assigned_jobs.length : s.assigned_jobs || 0;
+                    const placed = Array.isArray(s.placed_jobs) ? s.placed_jobs.length : s.placed_jobs || 0;
+                    return (
+                      <React.Fragment key={s.email}>
+                        <tr>
+                          <td>
+                            <span
+                              className="expand-toggle"
+                              onClick={() => toggleRow(s.email, s.assigned_jobs)}
+                              title={expandedRows[s.email] ? 'Collapse' : 'Expand'}
+                            >
+                              {expandedRows[s.email] ? '–' : '+'}
+                            </span>
+                          </td>
+                          <td>{s.first_name} {s.last_name}</td>
+                          {userRole === 'admin' && <td>{s.school_code}</td>}
+                          <td>
+                            <button onClick={() => handleEdit(s.email)} style={{
+                              background: 'none',
+                              border: 'none',
+                              cursor: 'pointer',
+                              fontSize: '1.2rem',
+                            }} title="Edit">✏️</button>
+                          </td>
+                          <td>{assigned}</td>
+                          <td>{placed > 0 ? '✅' : '❌'}</td>
+                          <td>
+                            {assigned > 0 && placed === 0 && userRole !== 'admin' && (
+                              <button onClick={() => handleMarkPlaced(s)}>
+                                Mark as Placed
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                        {expandedRows[s.email] && (
+                          <tr className="job-subrow" key={`${s.email}-jobs`}>
+                            <td colSpan="100%">
+                              <table className="job-subtable">
+                                <thead>
+                                  <tr>
+                                    <th>Job Title</th>
+                                    <th>Job Code</th>
+                                    <th>Source</th>
+                                    <th>Job Description</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {s.assigned_jobs && s.assigned_jobs.length > 0 ? (
+                                    s.assigned_jobs.map((job, index) => (
+                                      <tr key={index}>
+                                        <td>{job.job_title}</td>
+                                        <td>{job.job_code}</td>
+                                        <td>{job.source}</td>
+                                        <td style={{ textAlign: 'center' }}>
+                                          {jobDescriptionStatus[job.job_code] === 'ready' ? (
+                                            <button
+                                              onClick={() => handleViewJobDescription(job.job_code, s.email)}
+                                              style={{ marginRight: '0.5rem' }}
+                                              title="View Job Description"
+                                            >
+                                              📄 View
+                                            </button>
+                                          ) : (
+                                            <button
+                                              onClick={() => generateJobDescription(job.job_code, s.email)}
+                                              disabled={loadingJobDescriptions[job.job_code]}
+                                              style={{ marginRight: '0.5rem' }}
+                                              title="Generate Job Description"
+                                            >
+                                              {loadingJobDescriptions[job.job_code] ? '⏳' : '🧾'}
+                                            </button>
+                                          )}
+                                        </td>
+                                      </tr>
+                                    ))
+                                  ) : (
+                                    <tr className="no-jobs-row">
+                                      <td colSpan="4">No jobs assigned by recruiters.</td>
+                                    </tr>
+                                  )}
+                                </tbody>
+                              </table>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            ) : (
+              <p>No students found for your school.</p>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
 export default StudentProfiles;
-
