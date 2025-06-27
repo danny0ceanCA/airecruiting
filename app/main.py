@@ -848,8 +848,46 @@ Output only valid HTML.
         messages=[{"role": "user", "content": prompt}],
         temperature=0.5,
     )
-    redis_client.set(key, resp.choices[0].message.content)
-    redis_client.set(html_key, resp.choices[0].message.content)
+
+    raw_content = resp.choices[0].message.content.strip()
+
+    # Clean up Markdown-style ```html block
+    if raw_content.startswith("```html"):
+        raw_content = raw_content.replace("```html", "", 1).strip()
+    if raw_content.endswith("```"):
+        raw_content = raw_content.rsplit("```", 1)[0].strip()
+
+    # Wrap in HTML layout
+    full_html = f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>TalentMatch AI – Job Description</title>
+  <style>
+    body {{
+      font-family: Arial, sans-serif;
+      margin: 2rem;
+      line-height: 1.6;
+    }}
+    h2 {{
+      color: #1a1a1a;
+      border-bottom: 2px solid #eee;
+      padding-bottom: 0.3rem;
+    }}
+    .section {{
+      margin-bottom: 1.5rem;
+    }}
+  </style>
+</head>
+<body>
+{raw_content}
+</body>
+</html>
+"""
+
+    redis_client.set(key, full_html)
+    redis_client.set(html_key, full_html)
     return {"status": "success"}
 
 
