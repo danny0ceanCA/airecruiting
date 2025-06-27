@@ -801,8 +801,10 @@ def generate_job_description(req: ResumeRequest, current_user: dict = Depends(ge
     job_code = req.job_code
     student_email = req.student_email
     key = f"job_description:{job_code}:{student_email}"
+    html_key = f"jobdesc:{job_code}:{student_email}"
     existing = redis_client.get(key)
     if existing:
+        redis_client.set(html_key, existing)
         return {"status": "exists"}
 
     job_raw = redis_client.get(f"job:{job_code}")
@@ -813,20 +815,32 @@ def generate_job_description(req: ResumeRequest, current_user: dict = Depends(ge
     job = json.loads(job_raw)
     student = json.loads(student_raw)
 
-    prompt = f"""Write a professional job description based on the following information.
+    prompt = f"""
+You are generating a job description document for internal career services staff. The purpose is to describe what the student will likely be expected to perform based on their background and the job assignment.
 
-Job Title: {job.get('job_title')}
-Job Description: {job.get('job_description')}
-Required Skills: {', '.join(job.get('desired_skills', []))}
+Use the student profile and job information below to:
 
-Student:
+- Write a **professional summary** of the student's fit for the role
+- Describe **key responsibilities** they might undertake
+- List **areas of strength** and potential **areas for growth**
+- Mention **school affiliation** and any relevant compliance or readiness info
+
+Format this as a printable HTML document titled "TalentMatch AI – Generated Job Description", styled professionally but without producing binary output.
+
+Student Info:
 Name: {student.get('first_name')} {student.get('last_name')}
-Education: {student.get('education_level')}
+Email: {student.get('email')}
 Skills: {', '.join(student.get('skills', []))}
 Experience Summary: {student.get('experience_summary')}
 Interests: {student.get('interests')}
 
-Include what the student will likely perform, what they are currently capable of, and areas for growth.
+Job Info:
+Title: {job.get('job_title')}
+Source: {job.get('source')}
+Description: {job.get('job_description')}
+Desired Skills: {', '.join(job.get('desired_skills', []))}
+
+Output only valid HTML.
 """
 
     resp = client.chat.completions.create(
@@ -835,6 +849,7 @@ Include what the student will likely perform, what they are currently capable of
         temperature=0.5,
     )
     redis_client.set(key, resp.choices[0].message.content)
+    redis_client.set(html_key, resp.choices[0].message.content)
     return {"status": "success"}
 
 
@@ -847,56 +862,13 @@ def get_job_description(job_code: str, student_email: str, current_user: dict = 
     return {"status": "success", "description": description}
 
 
-@app.get("/job-description-html/{job_code}/{student_email}", response_class=HTMLResponse)
+@app.get("/job-description-html/{job_code}/{student_email}")
 def get_job_description_html(job_code: str, student_email: str, current_user: dict = Depends(get_current_user)):
-    key = f"resume:{job_code}:{student_email}"
-    resume = redis_client.get(key)
-
-    if not resume:
+    key = f"jobdesc:{job_code}:{student_email}"
+    html = redis_client.get(key)
+    if not html:
         raise HTTPException(status_code=404, detail="Job description not found")
-
-    html_content = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset=\"utf-8\" />
-      <title>Job Description</title>
-      <style>
-        body {{
-          font-family: Arial, sans-serif;
-          padding: 2rem;
-          max-width: 800px;
-          margin: auto;
-          background-color: #fff;
-          color: #333;
-        }}
-        h1 {{
-          text-align: center;
-          color: #003366;
-        }}
-        .section {{
-          margin-bottom: 2rem;
-        }}
-        pre {{
-          white-space: pre-wrap;
-          word-wrap: break-word;
-          background: #f5f5f5;
-          padding: 1rem;
-          border-radius: 5px;
-        }}
-      </style>
-    </head>
-    <body>
-      <h1>TalentMatch AI</h1>
-      <div class=\"section\">
-        <h2>Generated Job Description</h2>
-        <pre>{resume}</pre>
-      </div>
-      <p style=\"text-align:center;\"><em>This job description was automatically generated based on job requirements and candidate qualifications.</em></p>
-    </body>
-    </html>
-    """
-    return HTMLResponse(content=html_content)
+    return HTMLResponse(content=html, status_code=200)
 
 
 @app.get("/resume/{job_code}/{student_email}")
