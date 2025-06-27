@@ -247,10 +247,17 @@
   text-align: center;
 }
 
-.desc-icon-button {
-  background: none;
+.desc-button {
+  background-color: #0074d9;
+  color: white;
   border: none;
+  padding: 0.4rem 0.8rem;
+  border-radius: 5px;
   cursor: pointer;
-  font-size: 1.2rem;
+  margin-right: 0.5rem;
+}
+
+.desc-button:hover {
+  background-color: #005fa3;
 }
 
