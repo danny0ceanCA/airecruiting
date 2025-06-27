@@ -445,20 +445,27 @@ function StudentProfiles() {
                                         <td style={{ textAlign: 'center' }}>
                                           {jobDescriptionStatus[job.job_code] === 'ready' ? (
                                             <button
+                                              className="desc-button"
                                               onClick={() => handleViewJobDescription(job.job_code, s.email)}
-                                              style={{ marginRight: '0.5rem' }}
                                               title="View Job Description"
                                             >
-                                              📄 View
+                                              View Job Description
                                             </button>
                                           ) : (
                                             <button
+                                              className="desc-button"
                                               onClick={() => generateJobDescription(job.job_code, s.email)}
                                               disabled={loadingJobDescriptions[job.job_code]}
-                                              style={{ marginRight: '0.5rem' }}
                                               title="Generate Job Description"
                                             >
-                                              {loadingJobDescriptions[job.job_code] ? '⏳' : '🧾'}
+                                              {loadingJobDescriptions[job.job_code] ? (
+                                                <>
+                                                  <span className="spinner" style={{ marginRight: '0.25rem' }} />
+                                                  Generating...
+                                                </>
+                                              ) : (
+                                                'Load Job Description'
+                                              )}
                                             </button>
                                           )}
                                         </td>
