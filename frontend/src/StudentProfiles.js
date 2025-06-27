@@ -256,7 +256,7 @@ function StudentProfiles() {
           <div className="dropdown-menu">
             <Link to="/dashboard">Dashboard</Link>
             <Link to="/admin/pending">Pending Approvals</Link>
-            <Link to="/students">Student Profiles</Link>
+            <button onClick={() => navigate('/admin/jobs')}>Job Matching</button>
             {userRole === 'admin' && (
               <button
                 className="admin-reset-button"
