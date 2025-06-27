@@ -145,19 +145,11 @@ function StudentProfiles() {
     }
   };
 
-  const viewJobDescription = async (jobCode, studentEmail) => {
-    try {
-      const resp = await api.get(`/job-description-html/${jobCode}/${studentEmail}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const html = resp.data;
-
-      const newWindow = window.open('', '_blank');
-      newWindow.document.write(html);
-      newWindow.document.close();
-    } catch (err) {
-      alert('Failed to load job description.');
-    }
+  const viewJobDescription = (jobCode, studentEmail) => {
+    window.open(
+      `http://localhost:8000/job-description-html/${jobCode}/${studentEmail}`,
+      '_blank'
+    );
   };
 
   const handleSubmit = async (e) => {

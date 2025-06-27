@@ -603,7 +603,7 @@ def test_job_description_html_route():
     init_default_admin()
 
     main_app.redis_client.set(
-        "resume:codeh:stud@example.com",
+        "jobdesc:codeh:stud@example.com",
         "html desc",
     )
 
