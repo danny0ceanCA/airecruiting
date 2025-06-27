@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import api from './api';
 import { Link, useNavigate } from 'react-router-dom';
 import jwt_decode from 'jwt-decode';
+import { jsPDF } from 'jspdf';
 import './StudentProfiles.css';
 
 function StudentProfiles() {
@@ -121,7 +122,7 @@ function StudentProfiles() {
       if (resp.data.status === 'success') {
         setJobDescriptionStatus(prev => ({
           ...prev,
-          [`${jobCode}_${studentEmail}`]: 'ready',
+          [jobCode]: 'ready',
         }));
       }
     } catch (err) {
@@ -138,7 +139,7 @@ function StudentProfiles() {
         { job_code: jobCode, student_email: studentEmail },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      setJobDescriptionStatus(prev => ({ ...prev, [key]: 'ready' }));
+      setJobDescriptionStatus(prev => ({ ...prev, [jobCode]: 'ready' }));
     } catch (err) {
       console.error('Generation failed', err);
     } finally {
@@ -147,15 +148,39 @@ function StudentProfiles() {
   };
 
   const downloadJobDescription = async (jobCode, studentEmail) => {
-    const resp = await api.get(`/job-description/${jobCode}/${studentEmail}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const blob = new Blob([resp.data.description], { type: 'application/pdf' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Job_Description_${studentEmail}.pdf`;
-    a.click();
+    try {
+      const resp = await api.get(`/job-description/${jobCode}/${studentEmail}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (resp.data.status === 'success') {
+        const doc = new jsPDF();
+
+        // Header
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(16);
+        doc.setTextColor(33, 37, 41);
+        doc.text('TalentMatch AI – Job Description', 20, 20);
+
+        // Subheading
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(11);
+        doc.setTextColor(90, 90, 90);
+        doc.text(`Generated for: ${studentEmail}`, 20, 28);
+
+        // Body
+        doc.setTextColor(20, 20, 20);
+        doc.setFontSize(12);
+        const lines = doc.splitTextToSize(resp.data.description || resp.data.resume, 170);
+        doc.text(lines, 20, 40);
+
+        // Save
+        doc.save(`Job_Description_${studentEmail}_${jobCode}.pdf`);
+      }
+    } catch (err) {
+      console.error('Failed to download job description:', err);
+      alert('Unable to download job description.');
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -389,7 +414,7 @@ function StudentProfiles() {
                                         <td>{job.job_code}</td>
                                         <td>{job.source}</td>
                                         <td style={{ textAlign: 'center' }}>
-                                          {jobDescriptionStatus[`${job.job_code}_${s.email}`] === 'ready' ? (
+                                          {jobDescriptionStatus[job.job_code] === 'ready' && (
                                             <button
                                               onClick={() => downloadJobDescription(job.job_code, s.email)}
                                               title="Download Job Description"
@@ -400,23 +425,26 @@ function StudentProfiles() {
                                                 fontSize: '1rem'
                                               }}
                                             >
-                                              📄
+                                              📄 Download Job Description
                                             </button>
-                                          ) : loadingStatus[`${job.job_code}_${s.email}`] ? (
-                                            <span className="spinner"></span>
-                                          ) : (
-                                            <button
-                                              onClick={() => generateJobDescription(job.job_code, s.email)}
-                                              title="Generate Position Description"
-                                              style={{
-                                                background: 'none',
-                                                border: 'none',
-                                                cursor: 'pointer',
-                                                fontSize: '1rem'
-                                              }}
-                                            >
-                                              🧾
-                                            </button>
+                                          )}
+                                          {jobDescriptionStatus[job.job_code] !== 'ready' && (
+                                            loadingStatus[`${job.job_code}_${s.email}`] ? (
+                                              <span className="spinner"></span>
+                                            ) : (
+                                              <button
+                                                onClick={() => generateJobDescription(job.job_code, s.email)}
+                                                title="Generate Position Description"
+                                                style={{
+                                                  background: 'none',
+                                                  border: 'none',
+                                                  cursor: 'pointer',
+                                                  fontSize: '1rem'
+                                                }}
+                                              >
+                                                🧾
+                                              </button>
+                                            )
                                           )}
                                         </td>
                                       </tr>
