@@ -9,6 +9,7 @@ function AdminPending() {
   const [toast, setToast] = useState('');
   const [error, setError] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [selectedRoles, setSelectedRoles] = useState({});
   const navigate = useNavigate();
 
   const token = localStorage.getItem('token');
@@ -32,13 +33,14 @@ function AdminPending() {
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const approve = async (email) => {
+  const handleApprove = async (email) => {
     setToast('');
     setError('');
     try {
+      const role = selectedRoles[email] || 'career';
       await api.post(
         '/approve',
-        { email },
+        { email, role },
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setToast('User approved!');
@@ -51,7 +53,7 @@ function AdminPending() {
     }
   };
 
-  const reject = async (email) => {
+  const handleReject = async (email) => {
     setToast('');
     setError('');
     try {
@@ -114,8 +116,22 @@ function AdminPending() {
               <td>{user.school}</td>
               <td>{user.role}</td>
               <td>
-                <button className="approve-button" onClick={() => approve(user.email)}>Approve</button>
-                <button className="reject-button" onClick={() => reject(user.email)}>Reject</button>
+                <select
+                  value={selectedRoles[user.email] || 'career'}
+                  onChange={(e) =>
+                    setSelectedRoles((prev) => ({ ...prev, [user.email]: e.target.value }))
+                  }
+                  style={{
+                    padding: '4px 8px',
+                    marginRight: '10px',
+                    borderRadius: '4px',
+                  }}
+                >
+                  <option value="career">Career Service Staff</option>
+                  <option value="recruiter">Recruiter</option>
+                </select>
+                <button className="approve-button" onClick={() => handleApprove(user.email)}>Approve</button>
+                <button className="reject-button" onClick={() => handleReject(user.email)}>Reject</button>
               </td>
             </tr>
           ))}
