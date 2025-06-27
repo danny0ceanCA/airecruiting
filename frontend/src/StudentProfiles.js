@@ -144,50 +144,25 @@ function StudentProfiles() {
   };
 
   const generateJobDescription = async (jobCode, studentEmail) => {
-    setLoadingJobDescriptions(prev => ({ ...prev, [jobCode]: true }));
+    setLoadingJobDescriptions((prev) => ({ ...prev, [jobCode]: true }));
     try {
       await api.post(
         '/generate-job-description',
         { job_code: jobCode, student_email: studentEmail },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      setJobDescriptionStatus(prev => ({ ...prev, [jobCode]: 'ready' }));
+      setJobDescriptionStatus((prev) => ({ ...prev, [jobCode]: 'ready' }));
     } catch (err) {
       console.error('Generation failed', err);
     } finally {
-      setLoadingJobDescriptions(prev => ({ ...prev, [jobCode]: false }));
+      setLoadingJobDescriptions((prev) => ({ ...prev, [jobCode]: false }));
     }
   };
 
-  const handleViewJobDescription = async (jobCode, studentEmail) => {
-    const token = localStorage.getItem("token");
-    try {
-      const resp = await fetch(
-        `http://localhost:8000/job-description-html/${jobCode}/${studentEmail}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      if (!resp.ok) {
-        throw new Error(`Server responded with ${resp.status}`);
-      }
-
-      const html = await resp.text();
-      const newWindow = window.open("", "_blank");
-      if (newWindow) {
-        newWindow.document.write(html);
-        newWindow.document.close();
-      } else {
-        alert("Popup blocked. Please allow popups for this site.");
-      }
-    } catch (err) {
-      console.error("Failed to load job description:", err);
-      alert("Could not open job description.");
-    }
+  const handleGenerateJobDescription = (jobCode, studentEmail) => {
+    generateJobDescription(jobCode, studentEmail);
   };
+
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -443,29 +418,35 @@ function StudentProfiles() {
                                         <td>{job.rate_of_pay_range || 'N/A'}</td>
                                         <td>{job.source || 'N/A'}</td>
                                         <td style={{ textAlign: 'center' }}>
-                                          {jobDescriptionStatus[job.job_code] === 'ready' ? (
+                                          {loadingJobDescriptions[job.job_code] ? (
+                                            <span>Generating...</span>
+                                          ) : jobDescriptionStatus[job.job_code] === 'ready' ? (
                                             <button
-                                              className="desc-button"
-                                              onClick={() => handleViewJobDescription(job.job_code, s.email)}
-                                              title="View Job Description"
+                                              style={{
+                                                padding: '4px 10px',
+                                                fontSize: '14px',
+                                                border: '1px solid #ccc',
+                                                borderRadius: '4px',
+                                                backgroundColor: '#f5f5f5',
+                                                cursor: 'pointer'
+                                              }}
+                                              onClick={() => window.open(`/job-description-html/${job.job_code}/${s.email}`, '_blank')}
                                             >
                                               View Job Description
                                             </button>
                                           ) : (
                                             <button
-                                              className="desc-button"
-                                              onClick={() => generateJobDescription(job.job_code, s.email)}
-                                              disabled={loadingJobDescriptions[job.job_code]}
-                                              title="Generate Job Description"
+                                              style={{
+                                                padding: '4px 10px',
+                                                fontSize: '14px',
+                                                border: '1px solid #ccc',
+                                                borderRadius: '4px',
+                                                backgroundColor: '#f5f5f5',
+                                                cursor: 'pointer'
+                                              }}
+                                              onClick={() => handleGenerateJobDescription(job.job_code, s.email)}
                                             >
-                                              {loadingJobDescriptions[job.job_code] ? (
-                                                <>
-                                                  <span className="spinner" style={{ marginRight: '0.25rem' }} />
-                                                  Generating...
-                                                </>
-                                              ) : (
-                                                'Load Job Description'
-                                              )}
+                                              Load Job Description
                                             </button>
                                           )}
                                         </td>
