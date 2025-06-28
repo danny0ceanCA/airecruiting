@@ -10,7 +10,7 @@ function RegisterForm() {
     lastName: '',
     password: '',
   });
-  const [schoolCode, setSchoolCode] = useState('');
+  const [institutionalCode, setInstitutionalCode] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const navigate = useNavigate();
@@ -28,7 +28,7 @@ function RegisterForm() {
         first_name: formData.firstName,
         last_name: formData.lastName,
         password: formData.password,
-        school_code: schoolCode,
+        institutional_code: institutionalCode,
       });
       setMessage('Registration submitted. Awaiting admin approval.');
       setTimeout(() => navigate('/login'), 3000);
@@ -65,14 +65,14 @@ function RegisterForm() {
           value={formData.lastName}
           onChange={handleChange}
         />
-        <label htmlFor="school_code">Enter Your School Code (e.g. 1001)</label>
+        <label htmlFor="institutional_code">Enter Your Institutional Code (e.g. 1001)</label>
         <input
-          id="school_code"
-          name="school_code"
+          id="institutional_code"
+          name="institutional_code"
           type="text"
           maxLength={4}
-          value={schoolCode}
-          onChange={(e) => setSchoolCode(e.target.value)}
+          value={institutionalCode}
+          onChange={(e) => setInstitutionalCode(e.target.value)}
         />
         {error && <p className="error">{error}</p>}
         <label htmlFor="password">Password</label>

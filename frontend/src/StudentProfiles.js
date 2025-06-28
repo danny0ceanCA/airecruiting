@@ -356,7 +356,7 @@ function StudentProfiles() {
                             </span>
                           </td>
                           <td>{s.first_name} {s.last_name}</td>
-                          {userRole === 'admin' && <td>{s.school_code}</td>}
+                          {userRole === 'admin' && <td>{s.institutional_code}</td>}
                           <td>
                             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                               <button
