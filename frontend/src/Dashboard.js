@@ -51,7 +51,6 @@ function Dashboard() {
             <Link to="/students" className="dashboard-tile">Student Profiles</Link>
             <Link to="/metrics" className="dashboard-tile">School Metrics</Link>
             <Link to="/admin/pending" className="dashboard-tile">Pending Registrations</Link>
-            <Link to="/admin/jobs" className="dashboard-tile">Job Matching</Link>
           </>
         )}
 
@@ -62,11 +61,11 @@ function Dashboard() {
           </>
         )}
 
-        {role === 'recruiter' && (
-          <>
-            <Link to="/recruiter/jobs" className="dashboard-tile">Job Matching</Link>
-          </>
-        )}
+        {role === 'admin' || role === 'recruiter' ? (
+          <Link to={role === 'admin' ? '/admin/jobs' : '/recruiter/jobs'}>
+            <div className="dashboard-tile">Job Matching</div>
+          </Link>
+        ) : null}
       </div>
     </div>
   );
