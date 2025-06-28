@@ -163,6 +163,22 @@ function StudentProfiles() {
     generateJobDescription(jobCode, studentEmail);
   };
 
+  const viewJobDescription = async (jobCode, studentEmail) => {
+    try {
+      const resp = await api.get(`/job-description-html/${jobCode}/${studentEmail}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const newWindow = window.open('', '_blank');
+      if (newWindow) {
+        newWindow.document.write(resp.data);
+        newWindow.document.close();
+      }
+    } catch (err) {
+      alert("Failed to load job description.");
+      console.error(err);
+    }
+  };
+
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -356,7 +372,7 @@ function StudentProfiles() {
                             </span>
                           </td>
                           <td>{s.first_name} {s.last_name}</td>
-                          {userRole === 'admin' && <td>{s.school_code}</td>}
+                          {userRole === 'admin' && <td>{s.institutional_code}</td>}
                           <td>
                             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                               <button
@@ -430,7 +446,8 @@ function StudentProfiles() {
                                                 backgroundColor: '#f5f5f5',
                                                 cursor: 'pointer'
                                               }}
-                                              onClick={() => window.open(`/job-description-html/${job.job_code}/${s.email}`, '_blank')}
+                                              onClick={() => viewJobDescription(job.job_code, s.email)}
+                                              className="view-btn"
                                             >
                                               View Job Description
                                             </button>
