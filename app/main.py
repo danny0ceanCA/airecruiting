@@ -64,11 +64,13 @@ app.add_middleware(
         "http://localhost:3000",
         "http://localhost:3001",
         "http://localhost:3002",
+        "https://airecruiting-frontend.onrender.com"  # ✅ Add this
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 # ----- User Utilities ----- #
 
