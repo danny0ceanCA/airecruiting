@@ -24,12 +24,7 @@ function Dashboard() {
     }
   }, []);
 
-  const tiles = [
-    { label: 'Student Profiles', path: '/students', admin: false },
-    { label: 'School Metrics', path: '/metrics', admin: false },
-    { label: 'Pending Registrations', path: '/admin/pending', admin: true },
-    { label: 'Job Matching', path: '/admin/jobs', admin: true },
-  ];
+  // Tiles are conditionally rendered based on the user's role
 
   return (
     <div className="dashboard-container">
@@ -51,13 +46,26 @@ function Dashboard() {
         </button>
       </div>
       <div className="tile-grid">
-        {tiles
-          .filter(tile => !tile.admin || role === 'admin')
-          .map(tile => (
-            <Link key={tile.path} to={tile.path} className="dashboard-tile">
-              {tile.label}
-            </Link>
-          ))}
+        {role === 'admin' && (
+          <>
+            <Link to="/students" className="dashboard-tile">Student Profiles</Link>
+            <Link to="/metrics" className="dashboard-tile">School Metrics</Link>
+            <Link to="/admin/pending" className="dashboard-tile">Pending Registrations</Link>
+          </>
+        )}
+
+        {role === 'career' && (
+          <>
+            <Link to="/students" className="dashboard-tile">Student Profiles</Link>
+            <Link to="/metrics" className="dashboard-tile">School Metrics</Link>
+          </>
+        )}
+
+        {role === 'admin' || role === 'recruiter' ? (
+          <Link to={role === 'admin' ? '/admin/jobs' : '/recruiter/jobs'}>
+            <div className="dashboard-tile">Job Matching</div>
+          </Link>
+        ) : null}
       </div>
     </div>
   );

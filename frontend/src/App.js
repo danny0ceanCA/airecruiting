@@ -42,14 +42,22 @@ function App() {
               </ProtectedRoute>
             }
           />
-          <Route
-            path="/admin/jobs"
-            element={
-              <ProtectedRoute>
-                <JobPosting />
-              </ProtectedRoute>
-            }
-          />
+            <Route
+              path="/admin/jobs"
+              element={
+                <ProtectedRoute>
+                  <JobPosting />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/recruiter/jobs"
+              element={
+                <ProtectedRoute>
+                  <JobPosting />
+                </ProtectedRoute>
+              }
+            />
           <Route
             path="/metrics"
             element={

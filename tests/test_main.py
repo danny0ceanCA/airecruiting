@@ -694,3 +694,36 @@ def test_delete_student_forbidden_non_admin():
     )
     assert resp.status_code == 403
 
+
+def test_recruiter_cannot_place_student():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    # Seed a job to place into
+    main_app.redis_client.set(
+        "job:j1", json.dumps({"job_code": "j1", "assigned_students": [], "placed_students": []})
+    )
+
+    recruiter = {
+        "email": "rec@example.com",
+        "first_name": "Rec",
+        "last_name": "R",
+        "school_code": "1001",
+        "password": "pass",
+    }
+    client.post("/register", json=recruiter)
+    key = f"user:{recruiter['email']}"
+    data = json.loads(main_app.redis_client.get(key))
+    data["approved"] = True
+    data["role"] = "recruiter"
+    main_app.redis_client.set(key, json.dumps(data))
+    login_resp = client.post("/login", json={"email": recruiter["email"], "password": recruiter["password"]})
+    token = login_resp.json()["token"]
+
+    resp = client.post(
+        "/place",
+        json={"job_code": "j1", "student_email": "stud@example.com"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 403
+

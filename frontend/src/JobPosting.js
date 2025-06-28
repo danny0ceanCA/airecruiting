@@ -33,16 +33,24 @@ function JobPosting() {
   const navigate = useNavigate();
 
   const token = localStorage.getItem('token');
-  const { role, sub: email } = token ? jwtDecode(token) : {};
-  if (role !== 'admin') return <Navigate to="/dashboard" />;
+  const decoded = token ? jwtDecode(token) : {};
+  const userRole = decoded?.role;
+  const { sub: email } = decoded;
+  const isRecruiter = userRole === 'recruiter';
+  if (userRole !== 'admin' && userRole !== 'recruiter') {
+    return <Navigate to="/dashboard" />;
+  }
 
   const fetchJobs = async () => {
     try {
       const resp = await api.get('/jobs', {
         headers: { Authorization: `Bearer ${token}` }
       });
-      const loadedJobs = resp.data.jobs || [];
-      setJobs(loadedJobs);
+      const allJobs = resp.data.jobs || [];
+      const filtered = isRecruiter
+        ? allJobs.filter((job) => job.posted_by === email)
+        : allJobs;
+      setJobs(filtered);
     } catch (err) {
       console.error('Error fetching jobs:', err);
       setJobs([]);
@@ -392,12 +400,16 @@ function JobPosting() {
                       ) : row.status === 'assigned' ? (
                         <>
                           <span className="badge assigned inline">Assigned</span>
-                          <button onClick={() => handlePlace(job, row)}>Place</button>
+                          {!isRecruiter && (
+                            <button onClick={() => handlePlace(job, row)}>Place</button>
+                          )}
                         </>
                       ) : (
                         <>
                           <button onClick={() => handleAssign(job, row)}>Assign</button>
-                          <button onClick={() => handlePlace(job, row)}>Place</button>
+                          {!isRecruiter && (
+                            <button onClick={() => handlePlace(job, row)}>Place</button>
+                          )}
                         </>
                       )}
                     </td>
@@ -446,7 +458,9 @@ function JobPosting() {
               </td>
               <td>
                 <span className="badge assigned inline">Assigned</span>
-                <button onClick={() => handlePlace(job, row)}>Place</button>
+                {!isRecruiter && (
+                  <button onClick={() => handlePlace(job, row)}>Place</button>
+                )}
               </td>
             </tr>
           ))}
@@ -499,7 +513,7 @@ function JobPosting() {
             <Link to="/dashboard">Dashboard</Link>
             <Link to="/admin/pending">Pending Approvals</Link>
             <Link to="/students">Student Profiles</Link>
-            {role === "admin" && (
+            {userRole === "admin" && (
               <button
                 className="admin-reset-button"
                 onClick={async () => {
@@ -597,7 +611,7 @@ function JobPosting() {
               <th>Source</th>
               <th>Rate</th>
               <th>Assigned</th>
-              <th>Placed</th>
+              {!isRecruiter && <th>Placed</th>}
               <th>Action</th>
             </tr>
             <tr className="filter-row">
@@ -605,7 +619,7 @@ function JobPosting() {
               <th><input className="column-filter" type="text" value={codeFilter} onChange={(e) => setCodeFilter(e.target.value)} placeholder="Filter" /></th>
               <th><input className="column-filter" type="text" value={titleFilter} onChange={(e) => setTitleFilter(e.target.value)} placeholder="Filter" /></th>
               <th><input className="column-filter" type="text" value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)} placeholder="Filter" /></th>
-              <th colSpan="4"></th>
+              <th colSpan={!isRecruiter ? 4 : 3}></th>
             </tr>
           </thead>
           <tbody>
@@ -664,20 +678,25 @@ function JobPosting() {
                       </span>
                     )}
                   </td>
-                  <td className="status-cell">
-                    {job.placed_students?.length > 0 && (
-                      <span
-                        className="badge placed"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setExpandedJob(job.job_code);
-                          setActiveSubtab((prev) => ({ ...prev, [job.job_code]: "placed" }));
-                        }}
-                      >
-                        {job.placed_students.length}
-                      </span>
-                    )}
-                  </td>
+                  {!isRecruiter && (
+                    <td className="status-cell">
+                      {job.placed_students?.length > 0 && (
+                        <span
+                          className="badge placed"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setExpandedJob(job.job_code);
+                            setActiveSubtab((prev) => ({
+                              ...prev,
+                              [job.job_code]: "placed",
+                            }));
+                          }}
+                        >
+                          {job.placed_students.length}
+                        </span>
+                      )}
+                    </td>
+                  )}
                   <td>
                     {(() => {
                       const hasMatchInRedis = matchPresence[job.job_code] === true;
@@ -716,7 +735,7 @@ function JobPosting() {
                 {expandedJob === job.job_code && (
                   activeSubtab[job.job_code] === 'details' ? (
                     <tr className="job-details-row">
-                      <td colSpan="8">
+                      <td colSpan={!isRecruiter ? 8 : 7}>
                         <div className="job-description-panel">
                           <h3>{job.job_title}</h3>
                           {editMode[job.job_code] ? (
@@ -800,7 +819,7 @@ function JobPosting() {
                               )}
                               <p>Source: {job.source}</p>
                               <p>Rate of Pay: {job.rate_of_pay_range}</p>
-                              {(role === 'admin' || job.posted_by === email) && (
+                              {(userRole === 'admin' || job.posted_by === email) && (
                                 <button
                                   onClick={() =>
                                     setEditMode((prev) => ({
@@ -819,7 +838,7 @@ function JobPosting() {
                     </tr>
                   ) : (
                     <tr className="match-table-row">
-                      <td colSpan="8">
+                      <td colSpan={!isRecruiter ? 8 : 7}>
                         {activeSubtab[job.job_code] === 'matches' && renderMatches(job)}
                         {activeSubtab[job.job_code] === 'assigned' && renderAssigned(job)}
                         {activeSubtab[job.job_code] === 'placed' && renderPlaced(job)}
