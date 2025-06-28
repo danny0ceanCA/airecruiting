@@ -54,6 +54,10 @@ async def log_requests(request, call_next):
     print(f"Response status: {response.status_code}")
     return response
 
+@app.options("/{rest_of_path:path}")
+async def preflight_handler(rest_of_path: str):
+    return {}
+
 @app.get("/routes")
 def list_routes():
     return [route.path for route in app.routes]
@@ -1170,3 +1174,10 @@ def students_by_school(current_user: dict = Depends(get_current_user)):
         students.append(info)
 
     return {"students": students}
+
+@app.get("/dev/check-admin")
+def check_admin():
+    raw = redis_client.get("user:admin@example.com")
+    if not raw:
+        return {"exists": False}
+    return json.loads(raw)
