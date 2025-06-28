@@ -64,7 +64,7 @@ function Dashboard() {
 
         {role === 'recruiter' && (
           <>
-            <Link to="/admin/jobs" className="dashboard-tile">Job Matching</Link>
+            <Link to="/recruiter/jobs" className="dashboard-tile">Job Matching</Link>
           </>
         )}
       </div>
