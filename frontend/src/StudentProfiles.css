@@ -261,3 +261,12 @@
   background-color: #005fa3;
 }
 
+.view-btn {
+  background: white;
+  border: 1px solid #ccc;
+  padding: 6px 10px;
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+
