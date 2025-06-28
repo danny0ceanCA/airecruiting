@@ -82,7 +82,7 @@ def init_default_admin():
                 {
                     "first_name": "Admin",
                     "last_name": "User",
-                    "school_code": "Admin School",
+                    "institutional_code": "Admin School",
                     "password": hashed,
                     "role": "admin",
                     "approved": True,
@@ -110,7 +110,7 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     first_name: str
     last_name: str
-    school_code: str
+    institutional_code: str
     password: str
 
 class LoginRequest(BaseModel):
@@ -167,7 +167,7 @@ def register(req: RegisterRequest):
     if redis_client.exists(key):
         raise HTTPException(status_code=400, detail="User already exists")
 
-    label = SCHOOL_CODE_MAP.get(req.school_code)
+    label = SCHOOL_CODE_MAP.get(req.institutional_code)
     if not label:
         raise HTTPException(
             status_code=400,
@@ -181,7 +181,7 @@ def register(req: RegisterRequest):
             {
                 "first_name": req.first_name,
                 "last_name": req.last_name,
-                "school_code": label,
+                "institutional_code": label,
                 "password": hashed,
                 "role": "user",
                 "approved": False,
@@ -340,17 +340,17 @@ async def create_student(request: Request, current_user: dict = Depends(get_curr
 
     user_key = f"user:{current_user.get('sub')}"
     user_raw = redis_client.get(user_key)
-    school_code = None
+    institutional_code = None
     if user_raw:
         try:
-            school_code = json.loads(user_raw).get("school_code")
+            institutional_code = json.loads(user_raw).get("institutional_code")
         except Exception:
-            school_code = None
+            institutional_code = None
 
     data = student_data.model_dump()
     data["embedding"] = embedding
-    if school_code is not None:
-        data["school_code"] = school_code
+    if institutional_code is not None:
+        data["institutional_code"] = institutional_code
     redis_client.set(f"student:{student_data.email}", json.dumps(data))
 
     if profile_json is not None:
@@ -387,8 +387,8 @@ def update_student(
     data = updated.model_dump()
     data["email"] = email
     data["embedding"] = embedding
-    if existing.get("school_code") is not None:
-        data["school_code"] = existing.get("school_code")
+    if existing.get("institutional_code") is not None:
+        data["institutional_code"] = existing.get("institutional_code")
 
     redis_client.set(key, json.dumps(data))
     return {"message": "Student updated successfully"}
@@ -1061,7 +1061,7 @@ def get_all_students(current_user: dict = Depends(get_current_user)):
             "skills": student.get("skills"),
             "experience_summary": student.get("experience_summary"),
             "interests": student.get("interests"),
-            "school_code": student.get("school_code"),  # ✅ Added
+            "institutional_code": student.get("institutional_code"),  # ✅ Added
             "assigned_jobs": [],
             "placed_jobs": 0,
             "assigned_job_code": None,
@@ -1102,7 +1102,7 @@ def students_by_school(current_user: dict = Depends(get_current_user)):
     except Exception:
         raise HTTPException(status_code=500, detail="Corrupted user data")
 
-    school_code = user.get("school_code")
+    institutional_code = user.get("institutional_code")
 
     # Gather all job data once
     all_jobs = []
@@ -1127,7 +1127,7 @@ def students_by_school(current_user: dict = Depends(get_current_user)):
         except Exception:
             continue
 
-        if student.get("school_code") != school_code:
+        if student.get("institutional_code") != institutional_code:
             continue
 
         email = student.get("email")
