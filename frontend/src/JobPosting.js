@@ -36,15 +36,21 @@ function JobPosting() {
   const decoded = token ? jwtDecode(token) : {};
   const userRole = decoded?.role;
   const { sub: email } = decoded;
-  if (userRole !== 'admin') return <Navigate to="/dashboard" />;
+  const isRecruiter = userRole === 'recruiter';
+  if (userRole !== 'admin' && userRole !== 'recruiter') {
+    return <Navigate to="/dashboard" />;
+  }
 
   const fetchJobs = async () => {
     try {
       const resp = await api.get('/jobs', {
         headers: { Authorization: `Bearer ${token}` }
       });
-      const loadedJobs = resp.data.jobs || [];
-      setJobs(loadedJobs);
+      const allJobs = resp.data.jobs || [];
+      const filtered = isRecruiter
+        ? allJobs.filter((job) => job.posted_by === email)
+        : allJobs;
+      setJobs(filtered);
     } catch (err) {
       console.error('Error fetching jobs:', err);
       setJobs([]);
@@ -394,14 +400,14 @@ function JobPosting() {
                       ) : row.status === 'assigned' ? (
                         <>
                           <span className="badge assigned inline">Assigned</span>
-                          {userRole !== 'recruiter' && (
+                          {!isRecruiter && (
                             <button onClick={() => handlePlace(job, row)}>Place</button>
                           )}
                         </>
                       ) : (
                         <>
                           <button onClick={() => handleAssign(job, row)}>Assign</button>
-                          {userRole !== 'recruiter' && (
+                          {!isRecruiter && (
                             <button onClick={() => handlePlace(job, row)}>Place</button>
                           )}
                         </>
@@ -452,7 +458,7 @@ function JobPosting() {
               </td>
               <td>
                 <span className="badge assigned inline">Assigned</span>
-                {userRole !== 'recruiter' && (
+                {!isRecruiter && (
                   <button onClick={() => handlePlace(job, row)}>Place</button>
                 )}
               </td>
@@ -605,7 +611,7 @@ function JobPosting() {
               <th>Source</th>
               <th>Rate</th>
               <th>Assigned</th>
-              {userRole !== 'recruiter' && <th>Placed</th>}
+              {!isRecruiter && <th>Placed</th>}
               <th>Action</th>
             </tr>
             <tr className="filter-row">
@@ -613,7 +619,7 @@ function JobPosting() {
               <th><input className="column-filter" type="text" value={codeFilter} onChange={(e) => setCodeFilter(e.target.value)} placeholder="Filter" /></th>
               <th><input className="column-filter" type="text" value={titleFilter} onChange={(e) => setTitleFilter(e.target.value)} placeholder="Filter" /></th>
               <th><input className="column-filter" type="text" value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)} placeholder="Filter" /></th>
-              <th colSpan={userRole !== 'recruiter' ? 4 : 3}></th>
+              <th colSpan={!isRecruiter ? 4 : 3}></th>
             </tr>
           </thead>
           <tbody>
@@ -672,7 +678,7 @@ function JobPosting() {
                       </span>
                     )}
                   </td>
-                  {userRole !== 'recruiter' && (
+                  {!isRecruiter && (
                     <td className="status-cell">
                       {job.placed_students?.length > 0 && (
                         <span
@@ -729,7 +735,7 @@ function JobPosting() {
                 {expandedJob === job.job_code && (
                   activeSubtab[job.job_code] === 'details' ? (
                     <tr className="job-details-row">
-                      <td colSpan={userRole !== 'recruiter' ? 8 : 7}>
+                      <td colSpan={!isRecruiter ? 8 : 7}>
                         <div className="job-description-panel">
                           <h3>{job.job_title}</h3>
                           {editMode[job.job_code] ? (
@@ -832,7 +838,7 @@ function JobPosting() {
                     </tr>
                   ) : (
                     <tr className="match-table-row">
-                      <td colSpan={userRole !== 'recruiter' ? 8 : 7}>
+                      <td colSpan={!isRecruiter ? 8 : 7}>
                         {activeSubtab[job.job_code] === 'matches' && renderMatches(job)}
                         {activeSubtab[job.job_code] === 'assigned' && renderAssigned(job)}
                         {activeSubtab[job.job_code] === 'placed' && renderPlaced(job)}
