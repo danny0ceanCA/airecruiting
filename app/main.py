@@ -708,6 +708,8 @@ class PlacementRequest(BaseModel):
 
 @app.post("/place")
 def place_student(data: dict, token_data: dict = Depends(get_current_user)):
+    if token_data.get("role") not in {"admin", "career"}:
+        raise HTTPException(status_code=403, detail="Not authorized to place students")
     job_code = data["job_code"]
     student_email = data["student_email"]
     key = f"job:{job_code}"
