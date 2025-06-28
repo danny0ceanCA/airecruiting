@@ -73,24 +73,30 @@ function JobPosting() {
   };
 
   useEffect(() => {
-    if (token) fetchJobs();
-  }, []);
+  if (token) {
+    fetchJobs();
+  }
+}, [token]);
+
 
   useEffect(() => {
-    if (jobs.length > 0) {
-      checkMatchFlags();
-    }
-  }, [jobs]);
+  if (jobs.length > 0) {
+    checkMatchFlags();
+  }
+}, [jobs]);
+
 
   useEffect(() => {
-    if (
-      expandedJob &&
-      matchPresence[expandedJob] === true &&
-      !matches[expandedJob]
-    ) {
-      loadMatchResults(expandedJob);
-    }
-  }, [expandedJob, matchPresence]);
+  const shouldLoad =
+    expandedJob &&
+    matchPresence[expandedJob] === true &&
+    !matches[expandedJob];
+
+  if (shouldLoad) {
+    loadMatchResults(expandedJob);
+  }
+}, [expandedJob, matchPresence, matches]);
+
 
 
   const handleChange = (e) => {
