@@ -54,27 +54,29 @@ async def log_requests(request, call_next):
     print(f"Response status: {response.status_code}")
     return response
 
-@app.options("/{rest_of_path:path}")
-async def preflight_handler(rest_of_path: str):
-    return {}
-
 @app.get("/routes")
 def list_routes():
     return [route.path for route in app.routes]
 
+
+# Add CORS middleware BEFORE defining routes
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
         "http://localhost:3001",
         "http://localhost:3002",
-        "https://airecruiting-frontend.onrender.com"  # ✅ Add this
+        "https://airecruiting-frontend.onrender.com"
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# Optional: Preflight catch-all
+@app.options("/{rest_of_path:path}")
+async def preflight_handler(rest_of_path: str):
+    return {}
 
 # ----- User Utilities ----- #
 
