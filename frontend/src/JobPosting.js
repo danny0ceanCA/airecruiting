@@ -35,11 +35,10 @@ function JobPosting() {
   const token = localStorage.getItem('token');
   const decoded = token ? jwtDecode(token) : {};
   const userRole = decoded?.role;
-  const { sub: email } = decoded;
-  const isRecruiter = userRole === 'recruiter';
-  if (userRole !== 'admin' && userRole !== 'recruiter') {
-    return <Navigate to="/dashboard" />;
-  }
+const { sub: email } = decoded;
+const isRecruiter = userRole === 'recruiter';
+const shouldRedirect = userRole !== 'admin' && userRole !== 'recruiter';
+
 
   const fetchJobs = async () => {
     try {
@@ -72,6 +71,7 @@ function JobPosting() {
     setMatchPresence(result);
   };
 
+
   useEffect(() => {
   if (token) {
     fetchJobs();
@@ -97,7 +97,9 @@ function JobPosting() {
   }
 }, [expandedJob, matchPresence, matches]);
 
-
+if (shouldRedirect) {
+  return <Navigate to="/dashboard" />;
+}
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
