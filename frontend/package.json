@@ -21,7 +21,7 @@
   "scripts": {
   "start": "react-scripts start",
   "build": "react-scripts build",
-  "postbuild": "cp frontend/public/_redirects frontend/build/_redirects",
+  "postbuild": "cp public/_redirects build/_redirects",
   "test": "react-scripts test",
   "eject": "react-scripts eject"
 }
