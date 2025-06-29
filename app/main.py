@@ -58,7 +58,6 @@ async def log_requests(request, call_next):
 def list_routes():
     return [route.path for route in app.routes]
 
-
 # Add CORS middleware BEFORE defining routes
 app.add_middleware(
     CORSMiddleware,
@@ -66,7 +65,8 @@ app.add_middleware(
         "http://localhost:3000",
         "http://localhost:3001",
         "http://localhost:3002",
-        "https://airecruiting-frontend.onrender.com"
+        "https://airecruiting-frontend.onrender.com",
+        "https://talentmatchai-frontend.onrender.com"
     ],
     allow_credentials=True,
     allow_methods=["*"],
