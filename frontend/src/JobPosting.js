@@ -282,6 +282,26 @@ if (shouldRedirect) {
     }
   };
 
+  const handleDeleteJob = async (jobCode) => {
+    if (
+      !window.confirm(
+        `Are you sure you want to delete job ${jobCode}? This cannot be undone.`
+      )
+    )
+      return;
+
+    try {
+      await api.delete(`/jobs/${jobCode}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      alert("Job deleted successfully.");
+      fetchJobs();
+    } catch (err) {
+      console.error("Failed to delete job", err);
+      alert("Failed to delete the job.");
+    }
+  };
+
   const generateResume = async (email, jobCode) => {
     const key = `${jobCode}:${email}`;
     if (generatedResumes[key]) return;
@@ -821,6 +841,22 @@ if (shouldRedirect) {
                                   }
                                 >
                                   Edit
+                                </button>
+                              )}
+                              {userRole === 'admin' && (
+                                <button
+                                  onClick={() => handleDeleteJob(job.job_code)}
+                                  style={{
+                                    backgroundColor: 'transparent',
+                                    border: '1px solid red',
+                                    color: 'red',
+                                    padding: '6px 12px',
+                                    cursor: 'pointer',
+                                    marginTop: '8px',
+                                    borderRadius: '4px',
+                                  }}
+                                >
+                                  🗑️ Delete Job
                                 </button>
                               )}
                             </>
