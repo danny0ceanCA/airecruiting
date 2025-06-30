@@ -66,7 +66,8 @@ app.add_middleware(
         "http://localhost:3001",
         "http://localhost:3002",
         "https://airecruiting-frontend.onrender.com",
-        "https://talentmatch-frontend-nacw.onrender.com"
+        "https://talentmatch-frontend-nacw.onrender.com",
+        "https://talentmatch-ai.com"
     ],
     allow_credentials=True,
     allow_methods=["*"],
