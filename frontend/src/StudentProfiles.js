@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from './api';
-import { Link, useNavigate } from 'react-router-dom';
+
+import AdminMenu from './AdminMenu';
 import jwt_decode from 'jwt-decode';
 import './StudentProfiles.css';
 
@@ -33,9 +34,7 @@ function StudentProfiles() {
 
   const [jobDescriptionStatus, setJobDescriptionStatus] = useState({});
 
-  const [menuOpen, setMenuOpen] = useState(false);
   const [expandedRows, setExpandedRows] = useState({});
-  const navigate = useNavigate();
 
   const token = localStorage.getItem('token');
   const decoded = token ? jwt_decode(token) : {};
@@ -237,10 +236,6 @@ function StudentProfiles() {
     setResumeFile(e.target.files[0] || null);
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    navigate('/login');
-  };
 
   const filteredStudents = schoolStudents.filter((s) => {
     const firstMatch = s.first_name
@@ -269,39 +264,28 @@ function StudentProfiles() {
 
   return (
     <div className="profiles-container">
-      <div className="admin-menu">
-        <button className="menu-button" onClick={() => setMenuOpen((o) => !o)}>
-          Admin Menu
-        </button>
-        {menuOpen && (
-          <div className="dropdown-menu">
-            <Link to="/dashboard">Dashboard</Link>
-            <Link to="/admin/pending">Pending Approvals</Link>
-            <button onClick={() => navigate('/admin/jobs')}>Job Matching</button>
-            {userRole === 'admin' && (
-              <button
-                className="admin-reset-button"
-                onClick={async () => {
-                  if (window.confirm('Are you sure you want to delete ALL jobs and match data?')) {
-                    try {
-                      const resp = await api.delete('/admin/reset-jobs', {
-                        headers: { Authorization: `Bearer ${token}` },
-                      });
-                      alert(resp.data.message);
-                    } catch (err) {
-                      console.error('Reset failed:', err);
-                      alert('Failed to reset jobs.');
-                    }
-                  }
-                }}
-              >
-                🧨 Reset All Jobs
-              </button>
-            )}
-            <button onClick={handleLogout}>Logout</button>
-          </div>
+      <AdminMenu>
+        {userRole === 'admin' && (
+          <button
+            className="admin-reset-button"
+            onClick={async () => {
+              if (window.confirm('Are you sure you want to delete ALL jobs and match data?')) {
+                try {
+                  const resp = await api.delete('/admin/reset-jobs', {
+                    headers: { Authorization: `Bearer ${token}` },
+                  });
+                  alert(resp.data.message);
+                } catch (err) {
+                  console.error('Reset failed:', err);
+                  alert('Failed to reset jobs.');
+                }
+              }
+            }}
+          >
+            🧨 Reset All Jobs
+          </button>
         )}
-      </div>
+      </AdminMenu>
 
       {toast && <div className="toast">{toast}</div>}
 
