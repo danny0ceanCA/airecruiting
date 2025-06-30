@@ -224,6 +224,19 @@
   text-align: center;
 }
 
+.column-filter {
+  width: 100%;
+  padding: 4px;
+  font-size: 0.9rem;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  box-sizing: border-box;
+}
+
+.filter-row th {
+  background-color: #001f3f;
+}
+
 .job-subtable th,
 .job-subtable td {
   border: 1px solid #ccc;
