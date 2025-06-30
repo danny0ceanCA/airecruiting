@@ -612,6 +612,23 @@ def list_jobs(current_user: dict = Depends(get_current_user)):
     return {"jobs": jobs}
 
 
+@app.delete("/jobs/{job_code}")
+def delete_job(job_code: str, token_data: dict = Depends(get_current_user)):
+    if token_data.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    job_key = f"job:{job_code}"
+    match_key = f"match_results:{job_code}"
+
+    if not redis_client.exists(job_key):
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    redis_client.delete(job_key)
+    redis_client.delete(match_key)
+
+    return {"message": f"Job {job_code} deleted successfully"}
+
+
 @app.get("/metrics")
 def get_metrics(current_user: dict = Depends(get_current_user)):
     """Return various application metrics."""
