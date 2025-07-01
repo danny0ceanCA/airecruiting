@@ -90,7 +90,7 @@
 .post-job-panel h2,
 .posted-jobs-panel h2 {
   font-size: 1.5rem;
-  margin: 0 0 1rem 0;
+  margin: 0 !important;
   padding-top: 0;
 }
 
@@ -425,7 +425,7 @@
 }
 
 .tab {
-  background: #f0f0f0 !important;
+  background: #e9ecef !important;
   color: #032c4d !important;
   border: none !important;
   border-bottom: none !important;
@@ -459,6 +459,35 @@
   padding: 0 1.5rem 1.5rem 1.5rem;
   min-height: 420px;
   box-shadow: none;
+  border-top: none !important;
+}
+
+/* Remove ALL margins, paddings, and borders above the jobs table */
+.tab-bar + *,
+.tab-bar + * > *,
+.tab-bar + * > * > *,
+.tab-bar + * > * > * > * {
+  margin-top: 0 !important;
+  padding-top: 0 !important;
+  border-top: none !important;
+  background: transparent !important;
+}
+
+/* Also target common table wrapper classes */
+.MuiPaper-root,
+.table-container,
+.jobs-table-container,
+.MuiTableContainer-root {
+  margin-top: 0 !important;
+  padding-top: 0 !important;
+  border-top: none !important;
+  background: #fff !important;
+}
+
+/* Universal selector to ensure nothing adds a gap */
+.job-matching-module * {
+  margin-top: 0 !important;
+  padding-top: 0 !important;
   border-top: none !important;
 }
 
