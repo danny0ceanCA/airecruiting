@@ -527,7 +527,7 @@ if (shouldRedirect) {
   const filteredJobs = jobs.filter(matchFilter);
 
   return (
-    <div className="job-posting-container">
+    <div className="job-posting-container job-matching-module">
       <AdminMenu>
         {userRole === "admin" && (
           <button
