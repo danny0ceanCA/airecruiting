@@ -359,8 +359,7 @@ function StudentProfiles() {
             justifyContent: 'flex-start',
           }}
         >
-          <div style={{ flexGrow: 1, minHeight: 0, marginTop: '3rem' }}>
-            <h2>Students from Your School</h2>
+          <div style={{ flexGrow: 1, minHeight: 0, marginTop: '0' }}>
             {isLoading ? (
               <div className="loading-container">
                 <span className="spinner" />

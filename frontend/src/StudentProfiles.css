@@ -283,6 +283,16 @@
   font-size: 0.85rem;
 }
 
+
+/* Ensure the students table sits directly under the tab bar */
+.students-panel {
+  margin-top: 0 !important;
+  padding-top: 0 !important;
+  border-top: none !important;
+  background: transparent !important;
+}
+
+
 /* Tab styles copied from JobPosting */
 .tab-bar {
   display: flex;
