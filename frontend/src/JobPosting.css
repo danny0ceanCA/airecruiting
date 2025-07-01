@@ -425,7 +425,7 @@
 }
 
 .tab {
-  background: #e9ecef !important;
+  background: #f0f0f0 !important;
   color: #032c4d !important;
   border: none !important;
   border-bottom: none !important;
@@ -443,6 +443,7 @@
   color: #fff !important;
   border: none !important;
   border-bottom: none !important;
+  margin-bottom: -1px;
   z-index: 2 !important;
 }
 
@@ -454,8 +455,8 @@
 .tab-content {
   background: #fff;
   border-radius: 0 0 1rem 1rem;
-  margin-top: -2px !important;
-  padding: 1.5rem;
+  margin-top: 0 !important;
+  padding: 0 1.5rem 1.5rem 1.5rem;
   min-height: 420px;
   box-shadow: none;
   border-top: none !important;
