@@ -15,7 +15,7 @@ from fastapi import (
 )
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field, ConfigDict, field_validator, model_validator
 from jose import jwt, JWTError
 from dotenv import load_dotenv
 import bcrypt
@@ -119,8 +119,10 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     first_name: str
     last_name: str
-    institutional_code: str
+    institutional_code: str = Field(alias="school_code")
     password: str
+
+    model_config = ConfigDict(populate_by_name=True)
 
 class LoginRequest(BaseModel):
     email: EmailStr
@@ -149,7 +151,21 @@ class JobRequest(BaseModel):
     desired_skills: list[str]
     job_code: Optional[str] = None
     source: str
-    rate_of_pay_range: str
+    min_pay: float
+    max_pay: float
+
+    @field_validator("min_pay", "max_pay")
+    @classmethod
+    def check_positive(cls, v):
+        if v <= 0:
+            raise ValueError("Pay must be positive")
+        return v
+
+    @model_validator(mode="after")
+    def validate_range(self):
+        if self.min_pay > self.max_pay:
+            raise ValueError("Minimum pay cannot exceed maximum pay")
+        return self
 
 class JobCodeRequest(BaseModel):
     job_code: str
@@ -396,8 +412,10 @@ def update_student(
     data = updated.model_dump()
     data["email"] = email
     data["embedding"] = embedding
-    if existing.get("institutional_code") is not None:
-        data["institutional_code"] = existing.get("institutional_code")
+    inst_code = existing.get("institutional_code") or existing.get("school_code")
+    if inst_code is not None:
+        data["institutional_code"] = inst_code
+        data["school_code"] = existing.get("school_code", inst_code)
 
     redis_client.set(key, json.dumps(data))
     return {"message": "Student updated successfully"}
@@ -479,6 +497,11 @@ def update_job(job_code: str, updated: dict, token_data: dict = Depends(get_curr
     if token_data.get("role") != "admin" and token_data.get("sub") != job.get("posted_by"):
         raise HTTPException(status_code=403, detail="Not authorized to edit this job")
 
+    if "min_pay" in updated or "max_pay" in updated:
+        min_pay = float(updated.get("min_pay", job.get("min_pay", 0)))
+        max_pay = float(updated.get("max_pay", job.get("max_pay", 0)))
+        if min_pay <= 0 or max_pay <= 0 or min_pay > max_pay:
+            raise HTTPException(status_code=400, detail="Invalid pay range")
     job.update(updated)
     redis_client.set(key, json.dumps(job))
     print(f"✏️ Updated job {job_code}")
@@ -1101,7 +1124,8 @@ def get_all_students(current_user: dict = Depends(get_current_user)):
                 "job_code": job.get("job_code"),
                 "job_title": job.get("job_title"),
                 "source": job.get("source"),
-                "rate_of_pay_range": job.get("rate_of_pay_range"),
+                "min_pay": job.get("min_pay"),
+                "max_pay": job.get("max_pay"),
                 "job_description": job.get("job_description"),
             }
             for job in all_jobs
@@ -1179,7 +1203,8 @@ def students_by_school(current_user: dict = Depends(get_current_user)):
                 "job_code": job.get("job_code"),
                 "job_title": job.get("job_title"),
                 "source": job.get("source"),
-                "rate_of_pay_range": job.get("rate_of_pay_range"),
+                "min_pay": job.get("min_pay"),
+                "max_pay": job.get("max_pay"),
                 "job_description": job.get("job_description"),
             }
             for job in all_jobs
