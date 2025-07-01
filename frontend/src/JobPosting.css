@@ -409,21 +409,22 @@
 .tab-bar {
   display: flex;
   align-items: flex-end;
-  padding-left: 0.5rem;
-  background: none;
-  border-bottom: 3px solid #E9ECEF;
+  border-bottom: 3px solid #032c4d;
+  margin-bottom: 0;
+  background: #032c4d;
+  border-radius: 1.2rem 1.2rem 0 0;
 }
 
 .tab {
   background: #E9ECEF;
   color: #032c4d;
-  border: 1.5px solid #E9ECEF;
+  border: none;
   border-bottom: none;
   border-radius: 1.2rem 1.2rem 0 0;
-  padding: 0.75rem 2.5rem 0.85rem 2.5rem;
+  padding: 1rem 2.5rem 1.2rem 2.5rem;
   margin-right: 0.25rem;
   font-weight: 600;
-  font-size: 1.08rem;
+  font-size: 1.1rem;
   cursor: pointer;
   transition: background 0.2s, color 0.2s;
 }
@@ -431,9 +432,8 @@
 .tab.active {
   background: #032c4d;
   color: #fff;
-  border: 2.5px solid #032c4d;
-  border-bottom: none;
-  position: relative;
+  border: none;
+  border-bottom: 3px solid #fff;
   z-index: 2;
 }
 
@@ -445,7 +445,7 @@
 .tab-content {
   background: #fff;
   border-radius: 0 0 1rem 1rem;
-  margin-top: -2px;
+  margin-top: 0;
   padding: 1.5rem 1.5rem 2rem 1.5rem;
   min-height: 420px;
   box-shadow: none;
