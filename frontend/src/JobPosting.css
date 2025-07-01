@@ -32,8 +32,9 @@
 }
 
 .post-job-panel {
-  flex: 0 0 30%;
-  max-width: 400px;
+  flex: 1;
+  min-width: 300px;
+  max-width: 600px;
   background-color: #04345e;
   padding: 1.5rem;
   border-radius: 8px;
@@ -152,6 +153,11 @@
 .matches-table td {
   background-color: white;
   color: black;
+}
+
+.job-table tbody tr:nth-child(even) td,
+.matches-table tbody tr:nth-child(even) td {
+  background-color: #f0f0f0;
 }
 
 .admin-menu {
