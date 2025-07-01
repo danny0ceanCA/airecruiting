@@ -10,6 +10,15 @@
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.07);
 }
 
+/* Make the whole area under your navbar navy */
+.job-matching-module {
+  background: #032c4d;
+  border-radius: 1.25rem;
+  padding: 1.5rem;
+  max-width: 98vw;
+  margin: 2rem auto 0 auto;
+}
+
 .highlight-cell {
   background-color: #e9f2ff;
   transition: background-color 0.2s ease-in-out;
@@ -409,20 +418,20 @@
 .tab-bar {
   display: flex;
   align-items: flex-end;
-  border-bottom: 3px solid #032c4d;
-  margin-bottom: 0;
   background: #032c4d;
-  border-radius: 1.2rem 1.2rem 0 0;
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-left: 0.5rem;
 }
 
 .tab {
-  background: #E9ECEF;
+  background: #e9ecef;
   color: #032c4d;
   border: none;
   border-bottom: none;
   border-radius: 1.2rem 1.2rem 0 0;
   padding: 1rem 2.5rem 1.2rem 2.5rem;
-  margin-right: 0.25rem;
+  margin-right: 0.3rem;
   font-weight: 600;
   font-size: 1.1rem;
   cursor: pointer;
@@ -433,7 +442,7 @@
   background: #032c4d;
   color: #fff;
   border: none;
-  border-bottom: 3px solid #fff;
+  border-bottom: none;
   z-index: 2;
 }
 
@@ -445,8 +454,8 @@
 .tab-content {
   background: #fff;
   border-radius: 0 0 1rem 1rem;
-  margin-top: 0;
-  padding: 1.5rem 1.5rem 2rem 1.5rem;
+  margin-top: -2px;
+  padding: 1.5rem;
   min-height: 420px;
   box-shadow: none;
 }
