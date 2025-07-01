@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from './api';
-import { Link, useNavigate } from 'react-router-dom';
+
+import AdminMenu from './AdminMenu';
 import jwt_decode from 'jwt-decode';
 import './StudentProfiles.css';
 
@@ -23,14 +24,17 @@ function StudentProfiles() {
   const [isSaving, setIsSaving] = useState(false);
 
   const [schoolStudents, setSchoolStudents] = useState([]);
+  const [firstNameFilter, setFirstNameFilter] = useState('');
+  const [lastNameFilter, setLastNameFilter] = useState('');
+  const [emailFilter, setEmailFilter] = useState('');
+  const [codeFilter, setCodeFilter] = useState('');
+  const [placementFilter, setPlacementFilter] = useState('');
   const [isEditing, setIsEditing] = useState(false);
   const [editingEmail, setEditingEmail] = useState('');
 
   const [jobDescriptionStatus, setJobDescriptionStatus] = useState({});
 
-  const [menuOpen, setMenuOpen] = useState(false);
   const [expandedRows, setExpandedRows] = useState({});
-  const navigate = useNavigate();
 
   const token = localStorage.getItem('token');
   const decoded = token ? jwt_decode(token) : {};
@@ -232,46 +236,56 @@ function StudentProfiles() {
     setResumeFile(e.target.files[0] || null);
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    navigate('/login');
-  };
+
+  const filteredStudents = schoolStudents.filter((s) => {
+    const firstMatch = s.first_name
+      ?.toLowerCase()
+      .includes(firstNameFilter.toLowerCase());
+    const lastMatch = s.last_name
+      ?.toLowerCase()
+      .includes(lastNameFilter.toLowerCase());
+    const emailMatch = s.email
+      ?.toLowerCase()
+      .includes(emailFilter.toLowerCase());
+    const codeMatch =
+      userRole !== 'admin'
+        ? true
+        : (s.institutional_code || '')
+            .toLowerCase()
+            .includes(codeFilter.toLowerCase());
+    const placed = Array.isArray(s.placed_jobs)
+      ? s.placed_jobs.length
+      : s.placed_jobs || 0;
+    let placementMatch = true;
+    if (placementFilter === '✅') placementMatch = placed > 0;
+    if (placementFilter === '❌') placementMatch = placed === 0;
+    return firstMatch && lastMatch && emailMatch && codeMatch && placementMatch;
+  });
 
   return (
     <div className="profiles-container">
-      <div className="admin-menu">
-        <button className="menu-button" onClick={() => setMenuOpen((o) => !o)}>
-          Admin Menu
-        </button>
-        {menuOpen && (
-          <div className="dropdown-menu">
-            <Link to="/dashboard">Dashboard</Link>
-            <Link to="/admin/pending">Pending Approvals</Link>
-            <button onClick={() => navigate('/admin/jobs')}>Job Matching</button>
-            {userRole === 'admin' && (
-              <button
-                className="admin-reset-button"
-                onClick={async () => {
-                  if (window.confirm('Are you sure you want to delete ALL jobs and match data?')) {
-                    try {
-                      const resp = await api.delete('/admin/reset-jobs', {
-                        headers: { Authorization: `Bearer ${token}` },
-                      });
-                      alert(resp.data.message);
-                    } catch (err) {
-                      console.error('Reset failed:', err);
-                      alert('Failed to reset jobs.');
-                    }
-                  }
-                }}
-              >
-                🧨 Reset All Jobs
-              </button>
-            )}
-            <button onClick={handleLogout}>Logout</button>
-          </div>
+      <AdminMenu>
+        {userRole === 'admin' && (
+          <button
+            className="admin-reset-button"
+            onClick={async () => {
+              if (window.confirm('Are you sure you want to delete ALL jobs and match data?')) {
+                try {
+                  const resp = await api.delete('/admin/reset-jobs', {
+                    headers: { Authorization: `Bearer ${token}` },
+                  });
+                  alert(resp.data.message);
+                } catch (err) {
+                  console.error('Reset failed:', err);
+                  alert('Failed to reset jobs.');
+                }
+              }
+            }}
+          >
+            🧨 Reset All Jobs
+          </button>
         )}
-      </div>
+      </AdminMenu>
 
       {toast && <div className="toast">{toast}</div>}
 
@@ -347,16 +361,73 @@ function StudentProfiles() {
                 <thead>
                   <tr>
                     <th></th>
-                    <th>Name</th>
+                    <th>First Name</th>
+                    <th>Last Name</th>
+                    <th>Email</th>
                     {userRole === 'admin' && <th>School</th>}
                     <th>Edit</th>
                     <th>Assigned Jobs</th>
                     <th>Placement Status</th>
                     <th>Placement Controls</th>
                   </tr>
+                  <tr className="filter-row">
+                    <th></th>
+                    <th>
+                      <input
+                        className="column-filter"
+                        type="text"
+                        value={firstNameFilter}
+                        onChange={(e) => setFirstNameFilter(e.target.value)}
+                        placeholder="Filter"
+                      />
+                    </th>
+                    <th>
+                      <input
+                        className="column-filter"
+                        type="text"
+                        value={lastNameFilter}
+                        onChange={(e) => setLastNameFilter(e.target.value)}
+                        placeholder="Filter"
+                      />
+                    </th>
+                    <th>
+                      <input
+                        className="column-filter"
+                        type="text"
+                        value={emailFilter}
+                        onChange={(e) => setEmailFilter(e.target.value)}
+                        placeholder="Filter"
+                      />
+                    </th>
+                    {userRole === 'admin' && (
+                      <th>
+                        <input
+                          className="column-filter"
+                          type="text"
+                          value={codeFilter}
+                          onChange={(e) => setCodeFilter(e.target.value)}
+                          placeholder="Filter"
+                        />
+                      </th>
+                    )}
+                    <th></th>
+                    <th></th>
+                    <th>
+                      <select
+                        className="column-filter"
+                        value={placementFilter}
+                        onChange={(e) => setPlacementFilter(e.target.value)}
+                      >
+                        <option value="">All</option>
+                        <option value="✅">✅</option>
+                        <option value="❌">❌</option>
+                      </select>
+                    </th>
+                    <th></th>
+                  </tr>
                 </thead>
                 <tbody>
-                  {schoolStudents.map((s) => {
+                  {filteredStudents.map((s) => {
                     const assigned = Array.isArray(s.assigned_jobs) ? s.assigned_jobs.length : s.assigned_jobs || 0;
                     const placed = Array.isArray(s.placed_jobs) ? s.placed_jobs.length : s.placed_jobs || 0;
                     return (
@@ -371,7 +442,9 @@ function StudentProfiles() {
                               {expandedRows[s.email] ? '–' : '+'}
                             </span>
                           </td>
-                          <td>{s.first_name} {s.last_name}</td>
+                          <td>{s.first_name}</td>
+                          <td>{s.last_name}</td>
+                          <td>{s.email}</td>
                           {userRole === 'admin' && <td>{s.institutional_code}</td>}
                           <td>
                             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>

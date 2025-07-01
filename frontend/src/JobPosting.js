@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useNavigate, Navigate } from 'react-router-dom';
+import { Navigate } from 'react-router-dom';
 import jwtDecode from 'jwt-decode';
 import jsPDF from 'jspdf';
 import api from './api';
+import AdminMenu from './AdminMenu';
 import './JobPosting.css';
 
 function JobPosting() {
@@ -29,8 +30,6 @@ function JobPosting() {
   const [editedJobs, setEditedJobs] = useState({});
   const [generatingResumes, setGeneratingResumes] = useState({});
   const [generatedResumes, setGeneratedResumes] = useState({});
-  const [menuOpen, setMenuOpen] = useState(false);
-  const navigate = useNavigate();
 
   const token = localStorage.getItem('token');
   const decoded = token ? jwtDecode(token) : {};
@@ -283,6 +282,26 @@ if (shouldRedirect) {
     }
   };
 
+  const handleDeleteJob = async (jobCode) => {
+    if (
+      !window.confirm(
+        `Are you sure you want to delete job ${jobCode}? This cannot be undone.`
+      )
+    )
+      return;
+
+    try {
+      await api.delete(`/jobs/${jobCode}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      alert("Job deleted successfully.");
+      fetchJobs();
+    } catch (err) {
+      console.error("Failed to delete job", err);
+      alert("Failed to delete the job.");
+    }
+  };
+
   const generateResume = async (email, jobCode) => {
     const key = `${jobCode}:${email}`;
     if (generatedResumes[key]) return;
@@ -342,10 +361,6 @@ if (shouldRedirect) {
     }
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    navigate('/login');
-  };
 
   const renderMatches = (job) => {
     const matchList = matches[job.job_code] || [];
@@ -512,44 +527,33 @@ if (shouldRedirect) {
 
   return (
     <div className="job-posting-container">
-      <div className="admin-menu">
-        <button className="menu-button" onClick={() => setMenuOpen((o) => !o)}>
-          Admin Menu
-        </button>
-        {menuOpen && (
-          <div className="dropdown-menu">
-            <Link to="/dashboard">Dashboard</Link>
-            <Link to="/admin/pending">Pending Approvals</Link>
-            <Link to="/students">Student Profiles</Link>
-            {userRole === "admin" && (
-              <button
-                className="admin-reset-button"
-                onClick={async () => {
-                  if (
-                    window.confirm(
-                      "Are you sure you want to delete ALL jobs and match data?"
-                    )
-                  ) {
-                    try {
-                      const resp = await api.delete("/admin/reset-jobs", {
-                        headers: { Authorization: `Bearer ${token}` },
-                      });
-                      alert(resp.data.message);
-                      fetchJobs();
-                    } catch (err) {
-                      console.error("Reset failed:", err);
-                      alert("Failed to reset jobs.");
-                    }
-                  }
-                }}
-              >
-                🧨 Reset All Jobs
-              </button>
-            )}
-            <button onClick={handleLogout}>Logout</button>
-          </div>
+      <AdminMenu>
+        {userRole === "admin" && (
+          <button
+            className="admin-reset-button"
+            onClick={async () => {
+              if (
+                window.confirm(
+                  "Are you sure you want to delete ALL jobs and match data?"
+                )
+              ) {
+                try {
+                  const resp = await api.delete("/admin/reset-jobs", {
+                    headers: { Authorization: `Bearer ${token}` },
+                  });
+                  alert(resp.data.message);
+                  fetchJobs();
+                } catch (err) {
+                  console.error("Reset failed:", err);
+                  alert("Failed to reset jobs.");
+                }
+              }
+            }}
+          >
+            🧨 Reset All Jobs
+          </button>
         )}
-      </div>
+      </AdminMenu>
       <div className="job-matching-layout">
         <div className="post-job-panel">
           <form onSubmit={handleSubmit} className="post-job-form">
@@ -850,6 +854,23 @@ if (shouldRedirect) {
                         {activeSubtab[job.job_code] === 'matches' && renderMatches(job)}
                         {activeSubtab[job.job_code] === 'assigned' && renderAssigned(job)}
                         {activeSubtab[job.job_code] === 'placed' && renderPlaced(job)}
+                        {userRole === 'admin' && (
+                          <div style={{ marginTop: '12px' }}>
+                            <button
+                              onClick={() => handleDeleteJob(job.job_code)}
+                              style={{
+                                backgroundColor: 'transparent',
+                                border: '1px solid red',
+                                color: 'red',
+                                padding: '6px 12px',
+                                cursor: 'pointer',
+                                borderRadius: '4px'
+                              }}
+                            >
+                              🗑️ Delete Job
+                            </button>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   )
