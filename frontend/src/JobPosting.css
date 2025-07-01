@@ -2,11 +2,11 @@
   background: #032c4d;
   color: white;
   min-height: 100vh;
-  padding: 1rem 1.5rem 2rem 1.5rem;
+  padding: 0 1.5rem 2rem 1.5rem;
   position: relative;
   border-radius: 1.25rem;
   max-width: 98vw;
-  margin: 2rem auto 0 auto;
+  margin: 0 auto;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.07);
 }
 
@@ -16,7 +16,7 @@
   border-radius: 1.25rem;
   padding: 1.5rem;
   max-width: 98vw;
-  margin: 2rem auto 0 auto;
+  margin: 0 auto;
 }
 
 .highlight-cell {
@@ -87,8 +87,7 @@
   margin-top: 0.5rem;
 }
 
-.post-job-panel h2,
-.posted-jobs-panel h2 {
+.post-job-panel h2 {
   font-size: 1.5rem;
   margin: 0 !important;
   margin-top: 0 !important;
@@ -114,12 +113,12 @@
   width: 100%;
   border-collapse: collapse;
   margin-top: 0 !important;
-  border-top: none !important;
+  border: none !important;
 }
 
 .job-table th,
 .job-table td {
-  border: 1px solid #ccc;
+  border: none !important;
   padding: 0.5rem;
 }
 
@@ -136,11 +135,12 @@
   width: 100%;
   border-collapse: collapse;
   margin-top: 0.5rem;
+  border: none !important;
 }
 
 .matches-table th,
 .matches-table td {
-  border: 1px solid #ccc;
+  border: none !important;
   padding: 0.4rem;
 }
 
@@ -430,8 +430,8 @@
 
 /* Active/inactive tab colors */
 .tab {
-  background: #e9ecef !important;
-  color: #032c4d !important;
+  background: #032c4d !important;
+  color: #fff !important;
   border: none !important;
   border-bottom: none !important;
   border-radius: 1.2rem 1.2rem 0 0 !important;
@@ -443,9 +443,9 @@
 }
 
 .tab.active {
-  background: #032c4d !important;
-  color: #fff !important;
-  border: none !important;
+  background: #fff !important;
+  color: #032c4d !important;
+  border: 1px solid #032c4d !important;
   border-bottom: none !important;
 }
 
@@ -457,16 +457,12 @@
 /* Remove all margin and border above the jobs table */
 .tab-content,
 .posted-jobs-panel {
-  background: #fff !important;
-  border-top-left-radius: 0 !important;
-  border-top-right-radius: 0 !important;
-  border-bottom-left-radius: 1rem !important;
-  border-bottom-right-radius: 1rem !important;
+  background: transparent !important;
   margin-top: 0 !important;
-  padding: 0 1.5rem 1.5rem 1.5rem;
-  padding-top: 0 !important;
-  border-top: none !important;
-  box-shadow: none;
+  padding: 0 !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
 }
 
 /* Ensure no spacing above the jobs table */
@@ -485,14 +481,13 @@
   margin-top: 0 !important;
   padding-top: 0 !important;
   border-top: none !important;
-  background: #fff !important;
+  background: transparent !important;
 }
 
 .tab-content h1,
 .tab-content h2,
 .tab-content h3,
 .posted-jobs-panel h1,
-.posted-jobs-panel h2,
 .posted-jobs-panel h3 {
   margin-top: 0 !important;
   padding-top: 0 !important;
@@ -503,9 +498,7 @@
   padding-top: 0 !important;
 }
 
-.posted-jobs-panel h2 {
-  margin-bottom: 0.5rem !important;
-}
+
 
 
 @media (max-width: 900px) {
