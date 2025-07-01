@@ -18,7 +18,7 @@ function AdminMenu({ children }) {
   return (
     <div className="admin-menu">
       <button className="menu-button" onClick={() => setMenuOpen((o) => !o)}>
-        Admin Menu
+        Menu
       </button>
       {menuOpen && (
         <div className="dropdown-menu">
