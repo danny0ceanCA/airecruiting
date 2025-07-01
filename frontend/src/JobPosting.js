@@ -631,8 +631,7 @@ if (shouldRedirect) {
 
         {activeTab === 'jobs' && (
           <div className="posted-jobs-panel">
-            <h2>Jobs</h2>
-          <table className="job-table">
+            <table className="job-table">
             <thead>
               <tr>
                 <th></th>
