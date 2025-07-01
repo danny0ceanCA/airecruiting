@@ -843,22 +843,6 @@ if (shouldRedirect) {
                                   Edit
                                 </button>
                               )}
-                              {userRole === 'admin' && (
-                                <button
-                                  onClick={() => handleDeleteJob(job.job_code)}
-                                  style={{
-                                    backgroundColor: 'transparent',
-                                    border: '1px solid red',
-                                    color: 'red',
-                                    padding: '6px 12px',
-                                    cursor: 'pointer',
-                                    marginTop: '8px',
-                                    borderRadius: '4px',
-                                  }}
-                                >
-                                  🗑️ Delete Job
-                                </button>
-                              )}
                             </>
                           )}
                         </div>
@@ -870,6 +854,23 @@ if (shouldRedirect) {
                         {activeSubtab[job.job_code] === 'matches' && renderMatches(job)}
                         {activeSubtab[job.job_code] === 'assigned' && renderAssigned(job)}
                         {activeSubtab[job.job_code] === 'placed' && renderPlaced(job)}
+                        {userRole === 'admin' && (
+                          <div style={{ marginTop: '12px' }}>
+                            <button
+                              onClick={() => handleDeleteJob(job.job_code)}
+                              style={{
+                                backgroundColor: 'transparent',
+                                border: '1px solid red',
+                                color: 'red',
+                                padding: '6px 12px',
+                                cursor: 'pointer',
+                                borderRadius: '4px'
+                              }}
+                            >
+                              🗑️ Delete Job
+                            </button>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   )
