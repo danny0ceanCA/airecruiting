@@ -2,11 +2,11 @@
   background: #032c4d;
   color: white;
   min-height: 100vh;
-  padding: 1rem 1.5rem 2rem 1.5rem;
+  padding: 0 1.5rem 2rem 1.5rem;
   position: relative;
   border-radius: 1.25rem;
   max-width: 98vw;
-  margin: 2rem auto 0 auto;
+  margin: 0 auto;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.07);
 }
 
@@ -16,7 +16,7 @@
   border-radius: 1.25rem;
   padding: 1.5rem;
   max-width: 98vw;
-  margin: 2rem auto 0 auto;
+  margin: 0 auto;
 }
 
 .highlight-cell {
