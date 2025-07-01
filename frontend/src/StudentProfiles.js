@@ -513,7 +513,11 @@ function StudentProfiles() {
                                     s.assigned_jobs.map((job, index) => (
                                       <tr key={index}>
                                         <td>{job.job_title}</td>
-                                        <td>{job.rate_of_pay_range || 'N/A'}</td>
+                                        <td>
+                                          {job.min_pay && job.max_pay
+                                            ? `${job.min_pay} - ${job.max_pay}`
+                                            : 'N/A'}
+                                        </td>
                                         <td>{job.source || 'N/A'}</td>
                                         <td style={{ textAlign: 'center' }}>
                                           {loadingJobDescriptions[job.job_code] ? (

@@ -12,7 +12,8 @@ function JobPosting() {
     job_description: '',
     desired_skills: '',
     source: '',
-    rate_of_pay_range: ''
+    min_pay: '',
+    max_pay: ''
   });
   const [message, setMessage] = useState('');
   const [jobs, setJobs] = useState([]);
@@ -108,19 +109,30 @@ if (shouldRedirect) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setMessage('');
+    const min = parseFloat(formData.min_pay);
+    const max = parseFloat(formData.max_pay);
+    if (isNaN(min) || isNaN(max) || min <= 0 || max <= 0) {
+      setMessage('Pay must be positive numbers');
+      return;
+    }
+    if (min > max) {
+      setMessage('Minimum pay cannot exceed maximum pay');
+      return;
+    }
     try {
       const resp = await api.post('/jobs', {
         job_title: formData.job_title,
         job_description: formData.job_description,
         desired_skills: formData.desired_skills.split(',').map((s) => s.trim()).filter(Boolean),
         source: formData.source,
-        rate_of_pay_range: formData.rate_of_pay_range
+        min_pay: min,
+        max_pay: max
       }, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setMessage(`Job posted successfully! Job code: ${resp.data.job_code}`);
       setFormData({
-        job_title: '', job_description: '', desired_skills: '', source: '', rate_of_pay_range: ''
+        job_title: '', job_description: '', desired_skills: '', source: '', min_pay: '', max_pay: ''
       });
       fetchJobs();
     } catch (err) {
@@ -614,12 +626,22 @@ if (shouldRedirect) {
                 />
               </div>
               <div className="form-field">
-                <label htmlFor="rate_of_pay_range">Rate of Pay Range</label>
+                <label htmlFor="min_pay">Minimum Pay</label>
                 <input
-                  id="rate_of_pay_range"
-                  name="rate_of_pay_range"
-                  type="text"
-                  value={formData.rate_of_pay_range}
+                  id="min_pay"
+                  name="min_pay"
+                  type="number"
+                  value={formData.min_pay}
+                  onChange={handleChange}
+                />
+              </div>
+              <div className="form-field">
+                <label htmlFor="max_pay">Maximum Pay</label>
+                <input
+                  id="max_pay"
+                  name="max_pay"
+                  type="number"
+                  value={formData.max_pay}
                   onChange={handleChange}
                 />
               </div>
@@ -638,7 +660,7 @@ if (shouldRedirect) {
                 <th>Job Code</th>
               <th>Title</th>
               <th>Source</th>
-              <th>Rate</th>
+              <th>Pay Range</th>
               <th>Assigned</th>
               {!isRecruiter && <th>Placed</th>}
               <th>Action</th>
@@ -692,7 +714,11 @@ if (shouldRedirect) {
                     </span>
                   </td>
                   <td>{job.source}</td>
-                  <td>{job.rate_of_pay_range}</td>
+                  <td>
+                    {job.min_pay !== undefined && job.max_pay !== undefined
+                      ? `${job.min_pay} - ${job.max_pay}`
+                      : ''}
+                  </td>
                   <td className="status-cell">
                     {job.assigned_students?.length > 0 && (
                       <span
@@ -818,16 +844,32 @@ if (shouldRedirect) {
                                 />
                               </div>
                               <div className="form-row">
-                                <label>Rate of Pay</label>
+                                <label>Minimum Pay</label>
                                 <input
-                                  type="text"
-                                  value={editedJobs[job.job_code]?.rate_of_pay_range || job.rate_of_pay_range}
+                                  type="number"
+                                  value={editedJobs[job.job_code]?.min_pay ?? job.min_pay}
                                   onChange={(e) =>
                                     setEditedJobs((prev) => ({
                                       ...prev,
                                       [job.job_code]: {
                                         ...prev[job.job_code],
-                                        rate_of_pay_range: e.target.value,
+                                        min_pay: e.target.value,
+                                      },
+                                    }))
+                                  }
+                                />
+                              </div>
+                              <div className="form-row">
+                                <label>Maximum Pay</label>
+                                <input
+                                  type="number"
+                                  value={editedJobs[job.job_code]?.max_pay ?? job.max_pay}
+                                  onChange={(e) =>
+                                    setEditedJobs((prev) => ({
+                                      ...prev,
+                                      [job.job_code]: {
+                                        ...prev[job.job_code],
+                                        max_pay: e.target.value,
                                       },
                                     }))
                                   }
@@ -847,7 +889,9 @@ if (shouldRedirect) {
                                 </p>
                               )}
                               <p>Source: {job.source}</p>
-                              <p>Rate of Pay: {job.rate_of_pay_range}</p>
+                              <p>
+                                Pay Range: {job.min_pay} - {job.max_pay}
+                              </p>
                               {(userRole === 'admin' || job.posted_by === email) && (
                                 <button
                                   onClick={() =>

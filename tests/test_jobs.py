@@ -127,7 +127,8 @@ def test_create_job_and_match(monkeypatch):
         "desired_skills": ["python"],
         "job_code": "ABC123",
         "source": "test",
-        "rate_of_pay_range": "$1-$2",
+        "min_pay": 1.0,
+        "max_pay": 2.0,
     }
 
     resp = client.post("/jobs", json=job, headers={"Authorization": f"Bearer {token}"})
