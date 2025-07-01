@@ -1,9 +1,13 @@
 .job-posting-container {
-  background-color: #001f3f;
+  background: #032c4d;
   color: white;
   min-height: 100vh;
-  padding: 2rem;
+  padding: 1rem 1.5rem 2rem 1.5rem;
   position: relative;
+  border-radius: 1.25rem;
+  max-width: 98vw;
+  margin: 2rem auto 0 auto;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.07);
 }
 
 .highlight-cell {
@@ -404,34 +408,55 @@
 
 .tab-bar {
   display: flex;
-  border-bottom: 2px solid #ececec;
-  margin-bottom: 1rem;
+  align-items: flex-end;
+  padding-left: 0.5rem;
+  background: none;
+  border-bottom: 3px solid #E9ECEF;
 }
+
 .tab {
-  background: #f8f4ec;
-  border: 1px solid #ececec;
+  background: #E9ECEF;
+  color: #032c4d;
+  border: 1.5px solid #E9ECEF;
   border-bottom: none;
-  padding: 0.75rem 2rem;
-  margin-right: 0.5rem;
-  border-radius: 0.75rem 0.75rem 0 0;
+  border-radius: 1.2rem 1.2rem 0 0;
+  padding: 0.75rem 2.5rem 0.85rem 2.5rem;
+  margin-right: 0.25rem;
   font-weight: 600;
+  font-size: 1.08rem;
   cursor: pointer;
-  color: #444;
-  transition: background 0.2s;
+  transition: background 0.2s, color 0.2s;
 }
+
 .tab.active {
-  background: #ffe4b2;
-  color: #1a1a1a;
-  border-bottom: 2px solid #ffe4b2;
-  z-index: 1;
+  background: #032c4d;
+  color: #fff;
+  border: 2.5px solid #032c4d;
+  border-bottom: none;
+  position: relative;
+  z-index: 2;
 }
+
 .tab:not(.active):hover {
-  background: #fff5dd;
+  background: #c3c9d0;
+  color: #032c4d;
 }
+
 .tab-content {
   background: #fff;
-  border: 1px solid #ececec;
-  border-radius: 0 0 1.5rem 1.5rem;
-  padding: 2rem;
+  border-radius: 0 0 1rem 1rem;
+  margin-top: -2px;
+  padding: 1.5rem 1.5rem 2rem 1.5rem;
+  min-height: 420px;
+  box-shadow: none;
+}
+
+@media (max-width: 900px) {
+  .job-posting-container {
+    padding: 0.5rem;
+  }
+  .tab-content {
+    padding: 1rem 0.5rem 1.5rem 0.5rem;
+  }
 }
 
