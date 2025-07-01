@@ -32,6 +32,8 @@ function StudentProfiles() {
   const [isEditing, setIsEditing] = useState(false);
   const [editingEmail, setEditingEmail] = useState('');
 
+  const [activeTab, setActiveTab] = useState('students');
+
   const [jobDescriptionStatus, setJobDescriptionStatus] = useState({});
 
   const [expandedRows, setExpandedRows] = useState({});
@@ -94,6 +96,7 @@ function StudentProfiles() {
       });
       setIsEditing(true);
       setEditingEmail(student.email);
+      setActiveTab('new');
     }
   };
 
@@ -289,20 +292,26 @@ function StudentProfiles() {
 
       {toast && <div className="toast">{toast}</div>}
 
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'row',
-          alignItems: 'flex-start',
-          justifyContent: 'space-between',
-          width: '100%',
-          minHeight: '100vh',
-          gap: '2rem',
-        }}
-      >
-        <div style={{ flex: 1, maxWidth: '600px' }}>
-          <h2>{isEditing ? 'Edit Student Profile' : 'New Student Profile'}</h2>
-          <form className="profile-form" onSubmit={handleSubmit}>
+      <div className="tab-bar">
+        <button
+          className={`tab ${activeTab === 'students' ? 'active' : ''}`}
+          onClick={() => setActiveTab('students')}
+        >
+          Students
+        </button>
+        <button
+          className={`tab ${activeTab === 'new' ? 'active' : ''}`}
+          onClick={() => setActiveTab('new')}
+        >
+          New Student Profile
+        </button>
+      </div>
+
+      <div className="tab-content">
+        {activeTab === 'new' && (
+          <div className="form-panel">
+            <h2>{isEditing ? 'Edit Student Profile' : 'New Student Profile'}</h2>
+            <form className="profile-form" onSubmit={handleSubmit}>
             {['first_name', 'last_name', 'email', 'phone', 'education_level', 'skills', 'experience_summary', 'interests'].map((field) => (
               <React.Fragment key={field}>
                 <label htmlFor={field}>{field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</label>
@@ -338,9 +347,10 @@ function StudentProfiles() {
             {formError && <p className="error">{formError}</p>}
           </form>
         </div>
-
+        )}
+        {activeTab === 'students' && (
         <div
-          className="rightColumn"
+          className="students-panel"
           style={{
             flex: 1,
             minWidth: '600px',
@@ -562,6 +572,7 @@ function StudentProfiles() {
             )}
           </div>
         </div>
+        )}
       </div>
     </div>
   );
