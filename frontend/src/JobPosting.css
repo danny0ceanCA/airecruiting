@@ -87,8 +87,7 @@
   margin-top: 0.5rem;
 }
 
-.post-job-panel h2,
-.posted-jobs-panel h2 {
+.post-job-panel h2 {
   font-size: 1.5rem;
   margin: 0 !important;
   margin-top: 0 !important;
@@ -489,7 +488,6 @@
 .tab-content h2,
 .tab-content h3,
 .posted-jobs-panel h1,
-.posted-jobs-panel h2,
 .posted-jobs-panel h3 {
   margin-top: 0 !important;
   padding-top: 0 !important;
@@ -500,9 +498,7 @@
   padding-top: 0 !important;
 }
 
-.posted-jobs-panel h2 {
-  margin-bottom: 0.5rem !important;
-}
+
 
 
 @media (max-width: 900px) {
