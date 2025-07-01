@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import api from './api';
 
 import AdminMenu from './AdminMenu';
@@ -14,7 +14,12 @@ function StudentProfiles() {
     education_level: '',
     skills: '',
     experience_summary: '',
-    interests: ''
+    interests: '',
+    city: '',
+    state: '',
+    lat: '',
+    lng: '',
+    max_travel: ''
   });
   const [formError, setFormError] = useState('');
   const [resumeFile, setResumeFile] = useState(null);
@@ -37,6 +42,35 @@ function StudentProfiles() {
   const [jobDescriptionStatus, setJobDescriptionStatus] = useState({});
 
   const [expandedRows, setExpandedRows] = useState({});
+
+  const cityRef = useRef(null);
+
+  const initAutocomplete = () => {
+    if (cityRef.current && window.google) {
+      const ac = new window.google.maps.places.Autocomplete(cityRef.current, { types: ['(cities)'] });
+      ac.addListener('place_changed', () => {
+        const place = ac.getPlace();
+        const comps = place.address_components || [];
+        const city = comps.find(c => c.types.includes('locality'))?.long_name || '';
+        const state = comps.find(c => c.types.includes('administrative_area_level_1'))?.short_name || '';
+        const lat = place.geometry.location.lat();
+        const lng = place.geometry.location.lng();
+        setFormData(prev => ({ ...prev, city, state, lat, lng }));
+      });
+    }
+  };
+
+  useEffect(() => {
+    if (!window.google) {
+      const script = document.createElement('script');
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.REACT_APP_GOOGLE_KEY}&libraries=places`;
+      script.async = true;
+      script.onload = initAutocomplete;
+      document.body.appendChild(script);
+    } else {
+      initAutocomplete();
+    }
+  }, []);
 
   const token = localStorage.getItem('token');
   const decoded = token ? jwt_decode(token) : {};
@@ -93,6 +127,11 @@ function StudentProfiles() {
         interests: Array.isArray(student.interests)
           ? student.interests.join(', ')
           : student.interests || '',
+        city: student.city || '',
+        state: student.state || '',
+        lat: student.lat || '',
+        lng: student.lng || '',
+        max_travel: student.max_travel || '',
       });
       setIsEditing(true);
       setEditingEmail(student.email);
@@ -200,6 +239,11 @@ function StudentProfiles() {
       skills: formData.skills.split(',').map((s) => s.trim()),
       experience_summary: formData.experience_summary,
       interests: formData.interests.trim(),
+      city: formData.city,
+      state: formData.state,
+      lat: parseFloat(formData.lat || 0),
+      lng: parseFloat(formData.lng || 0),
+      max_travel: parseFloat(formData.max_travel || 0),
     };
     try {
       const method = isEditing ? 'put' : 'post';
@@ -221,7 +265,12 @@ function StudentProfiles() {
         education_level: '',
         skills: '',
         experience_summary: '',
-        interests: ''
+        interests: '',
+        city: '',
+        state: '',
+        lat: '',
+        lng: '',
+        max_travel: ''
       });
       setResumeFile(null);
       setIsEditing(false);
@@ -312,7 +361,7 @@ function StudentProfiles() {
           <div className="form-panel">
             <h2>{isEditing ? 'Edit Student Profile' : 'New Student Profile'}</h2>
             <form className="profile-form" onSubmit={handleSubmit}>
-            {['first_name', 'last_name', 'email', 'phone', 'education_level', 'skills', 'experience_summary', 'interests'].map((field) => (
+            {['first_name', 'last_name', 'email', 'phone', 'education_level', 'skills', 'experience_summary', 'interests', 'city', 'state', 'lat', 'lng', 'max_travel'].map((field) => (
               <React.Fragment key={field}>
                 <label htmlFor={field}>{field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</label>
                 {field === 'experience_summary' ? (
@@ -326,9 +375,11 @@ function StudentProfiles() {
                   <input
                     id={field}
                     name={field}
-                    type="text"
+                    type={field === 'max_travel' ? 'number' : 'text'}
                     value={formData[field]}
                     onChange={handleChange}
+                    readOnly={['lat','lng','state'].includes(field)}
+                    ref={field === 'city' ? cityRef : null}
                   />
                 )}
               </React.Fragment>

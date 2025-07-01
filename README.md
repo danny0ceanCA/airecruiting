@@ -29,10 +29,22 @@ Tests use `pytest`. Run them with:
 pytest
 ```
 
+## Environment Variables
+
+Create a `.env` file with these example values:
+
+```
+REACT_APP_API_URL=http://127.0.0.1:8000
+REACT_APP_GOOGLE_KEY=frontend_key
+GOOGLE_KEY=backend_key
+```
+
 ## Students Endpoint
 
 Authenticated users can submit student information using `POST /students`.
-The request fields are `first_name`, `last_name`, `email`, `phone`,
-`education_level`, `skills` (list of strings), `experience_summary`, and
-`interests`. The endpoint combines these details, generates an OpenAI embedding
-and stores the result in Redis keyed by the email address.
+Required fields now include location and travel distance:
+`first_name`, `last_name`, `email`, `phone`, `education_level`, `skills`
+(list of strings), `experience_summary`, `interests`, `city`, `state`, `lat`,
+`lng`, and `max_travel` (in miles). The endpoint combines these details,
+generates an OpenAI embedding and stores the result in Redis keyed by the
+email address.
