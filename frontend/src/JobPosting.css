@@ -91,7 +91,8 @@
 .posted-jobs-panel h2 {
   font-size: 1.5rem;
   margin: 0 !important;
-  padding-top: 0;
+  margin-top: 0 !important;
+  padding-top: 0 !important;
 }
 
 .posted-jobs-panel {
@@ -112,6 +113,8 @@
 .job-table {
   width: 100%;
   border-collapse: collapse;
+  margin-top: 0 !important;
+  border-top: none !important;
 }
 
 .job-table th,
@@ -415,15 +418,17 @@
   }
 }
 
+/* Make tab bar and content connect directly */
 .tab-bar {
   display: flex;
   align-items: flex-end;
   background: #032c4d !important;
-  border-bottom: none !important;
   margin-bottom: 0 !important;
+  border-bottom: none !important;
   padding-left: 0.5rem;
 }
 
+/* Active/inactive tab colors */
 .tab {
   background: #e9ecef !important;
   color: #032c4d !important;
@@ -435,7 +440,6 @@
   font-weight: 600 !important;
   font-size: 1.1rem !important;
   cursor: pointer;
-  transition: background 0.2s, color 0.2s;
 }
 
 .tab.active {
@@ -443,8 +447,6 @@
   color: #fff !important;
   border: none !important;
   border-bottom: none !important;
-  margin-bottom: -1px;
-  z-index: 2 !important;
 }
 
 .tab:not(.active):hover {
@@ -452,44 +454,18 @@
   color: #032c4d !important;
 }
 
-.tab-content {
-  background: #fff;
+/* Remove all margin and border above the jobs table */
+.tab-content,
+.posted-jobs-panel {
+  background: #fff !important;
   border-radius: 0 0 1rem 1rem;
   margin-top: 0 !important;
   padding: 0 1.5rem 1.5rem 1.5rem;
-  min-height: 420px;
+  padding-top: 0 !important;
+  border-top: none !important;
   box-shadow: none;
-  border-top: none !important;
 }
 
-/* Remove ALL margins, paddings, and borders above the jobs table */
-.tab-bar + *,
-.tab-bar + * > *,
-.tab-bar + * > * > *,
-.tab-bar + * > * > * > * {
-  margin-top: 0 !important;
-  padding-top: 0 !important;
-  border-top: none !important;
-  background: transparent !important;
-}
-
-/* Also target common table wrapper classes */
-.MuiPaper-root,
-.table-container,
-.jobs-table-container,
-.MuiTableContainer-root {
-  margin-top: 0 !important;
-  padding-top: 0 !important;
-  border-top: none !important;
-  background: #fff !important;
-}
-
-/* Universal selector to ensure nothing adds a gap */
-.job-matching-module * {
-  margin-top: 0 !important;
-  padding-top: 0 !important;
-  border-top: none !important;
-}
 
 @media (max-width: 900px) {
   .job-posting-container {
