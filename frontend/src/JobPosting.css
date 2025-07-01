@@ -458,16 +458,12 @@
 /* Remove all margin and border above the jobs table */
 .tab-content,
 .posted-jobs-panel {
-  background: #fff !important;
-  border-top-left-radius: 0 !important;
-  border-top-right-radius: 0 !important;
-  border-bottom-left-radius: 1rem !important;
-  border-bottom-right-radius: 1rem !important;
+  background: transparent !important;
   margin-top: 0 !important;
-  padding: 0 1.5rem 1.5rem 1.5rem;
-  padding-top: 0 !important;
-  border-top: none !important;
-  box-shadow: none;
+  padding: 0 !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
 }
 
 /* Ensure no spacing above the jobs table */
@@ -486,7 +482,7 @@
   margin-top: 0 !important;
   padding-top: 0 !important;
   border-top: none !important;
-  background: #fff !important;
+  background: transparent !important;
 }
 
 .tab-content h1,
