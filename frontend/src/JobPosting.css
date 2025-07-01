@@ -401,3 +401,37 @@
     overflow-x: auto;
   }
 }
+
+.tab-bar {
+  display: flex;
+  border-bottom: 2px solid #ececec;
+  margin-bottom: 1rem;
+}
+.tab {
+  background: #f8f4ec;
+  border: 1px solid #ececec;
+  border-bottom: none;
+  padding: 0.75rem 2rem;
+  margin-right: 0.5rem;
+  border-radius: 0.75rem 0.75rem 0 0;
+  font-weight: 600;
+  cursor: pointer;
+  color: #444;
+  transition: background 0.2s;
+}
+.tab.active {
+  background: #ffe4b2;
+  color: #1a1a1a;
+  border-bottom: 2px solid #ffe4b2;
+  z-index: 1;
+}
+.tab:not(.active):hover {
+  background: #fff5dd;
+}
+.tab-content {
+  background: #fff;
+  border: 1px solid #ececec;
+  border-radius: 0 0 1.5rem 1.5rem;
+  padding: 2rem;
+}
+
