@@ -41,6 +41,22 @@ if not redis_url:
 # Redis connection
 redis_client = redis.Redis.from_url(redis_url, decode_responses=True)
 
+def get_driving_distance_miles(orig_lat: float, orig_lng: float, dest_lat: float, dest_lng: float) -> float:
+    """Return driving distance in miles between two coordinates using Google Distance Matrix."""
+    key = os.getenv("GOOGLE_KEY")
+    if not key:
+        raise RuntimeError("Missing GOOGLE_KEY")
+    params = {
+        "origins": f"{orig_lat},{orig_lng}",
+        "destinations": f"{dest_lat},{dest_lng}",
+        "units": "imperial",
+        "key": key,
+    }
+    resp = httpx.get("https://maps.googleapis.com/maps/api/distancematrix/json", params=params)
+    data = resp.json()
+    value_meters = data["rows"][0]["elements"][0]["distance"]["value"]
+    return value_meters / 1609.34
+
 JWT_SECRET = "secret"
 ALGORITHM = "HS256"
 
@@ -144,6 +160,18 @@ class StudentRequest(BaseModel):
     skills: list[str]
     experience_summary: str
     interests: str
+    city: str
+    state: str
+    lat: float
+    lng: float
+    max_travel: float
+
+    @field_validator("max_travel")
+    @classmethod
+    def check_travel(cls, v):
+        if v <= 0:
+            raise ValueError("max_travel must be positive")
+        return v
 
 class JobRequest(BaseModel):
     job_title: str
@@ -153,6 +181,10 @@ class JobRequest(BaseModel):
     source: str
     min_pay: float
     max_pay: float
+    city: str
+    state: str
+    lat: float
+    lng: float
 
     @field_validator("min_pay", "max_pay")
     @classmethod
@@ -305,6 +337,11 @@ async def create_student(request: Request, current_user: dict = Depends(get_curr
             skills=[s.strip() for s in skills_field.split(",") if s.strip()],
             experience_summary=form.get("experience_summary"),
             interests=form.get("interests"),
+            city=form.get("city"),
+            state=form.get("state"),
+            lat=float(form.get("lat")),
+            lng=float(form.get("lng")),
+            max_travel=float(form.get("max_travel")),
         )
     else:
         body = await request.json()
@@ -437,6 +474,11 @@ def upload_students(file: UploadFile = File(...), current_user: dict = Depends(g
                 skills=skills,
                 experience_summary=row["experience_summary"],
                 interests=row["interests"],
+                city=row["city"],
+                state=row["state"],
+                lat=float(row["lat"]),
+                lng=float(row["lng"]),
+                max_travel=float(row["max_travel"]),
             )
         except KeyError:
             continue
@@ -555,6 +597,28 @@ def match_job(req: JobCodeRequest, current_user: dict = Depends(get_current_user
             m["status"] = "assigned"
         else:
             m["status"] = None
+
+    # Location-based filtering using Google Distance Matrix
+    filtered = []
+    for m in top_matches:
+        student_raw = redis_client.get(f"student:{m['email']}")
+        if not student_raw:
+            continue
+        try:
+            student = json.loads(student_raw)
+            dist = get_driving_distance_miles(
+                student.get("lat"),
+                student.get("lng"),
+                job.get("lat"),
+                job.get("lng"),
+            )
+            m["distance_miles"] = round(dist, 1)
+            if dist <= float(student.get("max_travel", 0)):
+                filtered.append(m)
+        except Exception:
+            continue
+
+    top_matches = filtered
 
     redis_client.set(
         f"match_results:{req.job_code}", json.dumps(top_matches)

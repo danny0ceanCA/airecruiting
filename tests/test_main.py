@@ -1,6 +1,7 @@
 import os
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 os.environ.setdefault("OPENAI_API_KEY", "test")
+os.environ.setdefault("GOOGLE_KEY", "test")
 
 from fastapi.testclient import TestClient
 from jose import jwt
@@ -319,9 +320,9 @@ def test_upload_students(monkeypatch):
     monkeypatch.setattr(main_app.redis_client, "exists", lambda key: False)
 
     csv_data = (
-        "first_name,last_name,email,phone,education_level,skills,experience_summary,interests\n"
-        "John,Doe,john@example.com,123,College,python,summary,coding\n"
-        "Jane,Smith,jane@example.com,456,College,sql,summary2,data\n"
+        "first_name,last_name,email,phone,education_level,skills,experience_summary,interests,city,state,lat,lng,max_travel\n"
+        "John,Doe,john@example.com,123,College,python,summary,coding,City,ST,0,0,100\n"
+        "Jane,Smith,jane@example.com,456,College,sql,summary2,data,City,ST,0,0,100\n"
     )
     files = {"file": ("students.csv", csv_data, "text/csv")}
     resp = client.post("/students/upload", files=files, headers={"Authorization": f"Bearer {token}"})
@@ -472,6 +473,11 @@ def test_update_student(monkeypatch):
         "skills": ["c"],
         "experience_summary": "old",
         "interests": "old",
+        "city": "City",
+        "state": "ST",
+        "lat": 0.0,
+        "lng": 0.0,
+        "max_travel": 100.0,
         "embedding": [0.0, 0.0],
         "school_code": "SC1",
     }
@@ -495,6 +501,11 @@ def test_update_student(monkeypatch):
         "skills": ["python"],
         "experience_summary": "new summary",
         "interests": "coding",
+        "city": "City",
+        "state": "ST",
+        "lat": 0.0,
+        "lng": 0.0,
+        "max_travel": 100.0,
     }
 
     resp = client.put(

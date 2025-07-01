@@ -1,6 +1,7 @@
 import os
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 os.environ.setdefault("OPENAI_API_KEY", "test")
+os.environ.setdefault("GOOGLE_KEY", "test")
 
 from fastapi.testclient import TestClient
 import json
@@ -94,6 +95,8 @@ def test_create_job_and_match(monkeypatch):
             return FakeResp([0.0, 1.0])
         return FakeResp([0.5, 0.5])
 
+    monkeypatch.setattr(main_app, "get_driving_distance_miles", lambda *a, **k: 10.0)
+
     monkeypatch.setattr(main_app.client.embeddings, "create", fake_create)
 
     # create two students
@@ -106,6 +109,11 @@ def test_create_job_and_match(monkeypatch):
         "skills": ["python"],
         "experience_summary": "summary1",
         "interests": "A",
+        "city": "City",
+        "state": "ST",
+        "lat": 0.0,
+        "lng": 0.0,
+        "max_travel": 100.0,
     }
     s2 = {
         "first_name": "Jane",
@@ -116,6 +124,11 @@ def test_create_job_and_match(monkeypatch):
         "skills": ["java"],
         "experience_summary": "summary2",
         "interests": "B",
+        "city": "City",
+        "state": "ST",
+        "lat": 0.0,
+        "lng": 0.0,
+        "max_travel": 100.0,
     }
 
     client.post("/students", json=s1, headers={"Authorization": f"Bearer {token}"})
@@ -129,6 +142,10 @@ def test_create_job_and_match(monkeypatch):
         "source": "test",
         "min_pay": 1.0,
         "max_pay": 2.0,
+        "city": "City",
+        "state": "ST",
+        "lat": 0.0,
+        "lng": 0.0,
     }
 
     resp = client.post("/jobs", json=job, headers={"Authorization": f"Bearer {token}"})
