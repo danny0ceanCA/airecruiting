@@ -217,3 +217,96 @@ def test_get_match_results_status_placed(monkeypatch):
     assert resp.status_code == 200
     data = resp.json()["matches"][0]
     assert data["status"] == "placed"
+
+
+def test_match_respects_travel_distance(monkeypatch):
+    token = login_admin()
+
+    store = {}
+
+    def fake_set(key, value):
+        store[key] = value
+
+    def fake_get(key):
+        return store.get(key)
+
+    def fake_exists(key):
+        return key in store
+
+    def fake_scan_iter(pattern="*"):
+        for k in list(store.keys()):
+            yield k
+
+    monkeypatch.setattr(main_app.redis_client, "set", fake_set)
+    monkeypatch.setattr(main_app.redis_client, "get", fake_get)
+    monkeypatch.setattr(main_app.redis_client, "exists", fake_exists)
+    monkeypatch.setattr(main_app.redis_client, "scan_iter", fake_scan_iter)
+
+    class FakeResp:
+        def __init__(self, emb):
+            self.data = [type("obj", (), {"embedding": emb})]
+
+    def fake_create(input, model):
+        return FakeResp([1.0, 0.0])
+
+    monkeypatch.setattr(main_app.client.embeddings, "create", fake_create)
+
+    # distance always 150 miles
+    monkeypatch.setattr(main_app, "get_driving_distance_miles", lambda *a, **k: 150.0)
+
+    s1 = {
+        "first_name": "John",
+        "last_name": "Doe",
+        "email": "john@example.com",
+        "phone": "123",
+        "education_level": "College",
+        "skills": ["python"],
+        "experience_summary": "summary1",
+        "interests": "A",
+        "city": "City",
+        "state": "ST",
+        "lat": 0.0,
+        "lng": 0.0,
+        "max_travel": 200.0,
+    }
+
+    s2 = {
+        "first_name": "Jane",
+        "last_name": "Roe",
+        "email": "jane@example.com",
+        "phone": "456",
+        "education_level": "College",
+        "skills": ["java"],
+        "experience_summary": "summary2",
+        "interests": "B",
+        "city": "City",
+        "state": "ST",
+        "lat": 0.0,
+        "lng": 0.0,
+        "max_travel": 100.0,
+    }
+
+    client.post("/students", json=s1, headers={"Authorization": f"Bearer {token}"})
+    client.post("/students", json=s2, headers={"Authorization": f"Bearer {token}"})
+
+    job = {
+        "job_title": "Dev",
+        "job_description": "Need python dev",
+        "desired_skills": ["python"],
+        "job_code": "ABC123",
+        "source": "test",
+        "min_pay": 1.0,
+        "max_pay": 2.0,
+        "city": "City",
+        "state": "ST",
+        "lat": 0.0,
+        "lng": 0.0,
+    }
+
+    resp = client.post("/jobs", json=job, headers={"Authorization": f"Bearer {token}"})
+    job_code = resp.json()["job_code"]
+
+    match_resp = client.post("/match", json={"job_code": job_code}, headers={"Authorization": f"Bearer {token}"})
+    data = match_resp.json()["matches"]
+    assert len(data) == 1
+    assert data[0]["email"] == "john@example.com"

@@ -576,11 +576,20 @@ def match_job(req: JobCodeRequest, current_user: dict = Depends(get_current_user
             emb = student.get("embedding")
             if not emb:
                 continue
+            dist = get_driving_distance_miles(
+                student.get("lat"),
+                student.get("lng"),
+                job.get("lat"),
+                job.get("lng"),
+            )
+            if dist > float(student.get("max_travel", 0)):
+                continue
             score = sum(a * b for a, b in zip(job_emb, emb))
             matches.append({
                 "name": f"{student.get('first_name', '')} {student.get('last_name', '')}",
                 "email": student.get("email"),
                 "score": score,
+                "distance_miles": round(dist, 1),
             })
         except Exception:
             continue
@@ -598,27 +607,7 @@ def match_job(req: JobCodeRequest, current_user: dict = Depends(get_current_user
         else:
             m["status"] = None
 
-    # Location-based filtering using Google Distance Matrix
-    filtered = []
-    for m in top_matches:
-        student_raw = redis_client.get(f"student:{m['email']}")
-        if not student_raw:
-            continue
-        try:
-            student = json.loads(student_raw)
-            dist = get_driving_distance_miles(
-                student.get("lat"),
-                student.get("lng"),
-                job.get("lat"),
-                job.get("lng"),
-            )
-            m["distance_miles"] = round(dist, 1)
-            if dist <= float(student.get("max_travel", 0)):
-                filtered.append(m)
-        except Exception:
-            continue
 
-    top_matches = filtered
 
     redis_client.set(
         f"match_results:{req.job_code}", json.dumps(top_matches)
