@@ -379,8 +379,13 @@ function StudentProfiles() {
             ))}
             <input type="hidden" id="lat" name="lat" value={formData.lat} readOnly />
             <input type="hidden" id="lng" name="lng" value={formData.lng} readOnly />
-            <label htmlFor="resume">Upload Resume (PDF or DOCX)</label>
-            <input id="resume" name="resume" type="file" onChange={handleResumeChange} />
+            {/* Uploading documents is temporarily disabled */}
+            {false && (
+              <>
+                <label htmlFor="resume">Upload Resume (PDF or DOCX)</label>
+                <input id="resume" name="resume" type="file" onChange={handleResumeChange} />
+              </>
+            )}
             <button type="submit" disabled={isSaving}>
               {isSaving ? (
                 <>
