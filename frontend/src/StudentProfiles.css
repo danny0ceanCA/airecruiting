@@ -18,6 +18,19 @@
   box-sizing: border-box;
 }
 
+/* Match the job posting panel width and styling */
+.form-panel {
+  flex: 1;
+  min-width: 300px;
+  max-width: 600px;
+  background-color: #04345e;
+  padding: 1.5rem;
+  border-radius: 8px;
+  color: white;
+  display: flex;
+  flex-direction: column;
+}
+
 .form-section {
   background-color: #003366;
   padding: 1rem 2rem;
