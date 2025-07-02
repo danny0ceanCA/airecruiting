@@ -9,6 +9,7 @@ function AdminMenu({ children }) {
   const token = localStorage.getItem('token');
   const decoded = token ? jwt_decode(token) : {};
   const userRole = decoded?.role;
+  const careerLabel = process.env.REACT_APP_CAREER_BTN_TEXT || "Career Staff";
 
   const handleLogout = () => {
     localStorage.removeItem('token');
@@ -17,6 +18,11 @@ function AdminMenu({ children }) {
 
   return (
     <div className="admin-menu">
+      {userRole === "career" && (
+        <Link className="career-button" to="/career-info">
+          {careerLabel}
+        </Link>
+      )}
       <button className="menu-button" onClick={() => setMenuOpen((o) => !o)}>
         Menu
       </button>

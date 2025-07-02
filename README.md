@@ -37,6 +37,8 @@ Create a `.env` file with these example values:
 REACT_APP_API_URL=http://127.0.0.1:8000
 REACT_APP_GOOGLE_KEY=frontend_key
 GOOGLE_KEY=backend_key
+REACT_APP_CAREER_BTN_TEXT="Learn the TalentMatch API"
+REACT_APP_CAREER_INFO_HTML="<h2>Welcome career staff</h2><p>Here is how to use the API...</p>"
 ```
 
 ## Students Endpoint

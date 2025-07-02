@@ -122,6 +122,17 @@
   cursor: pointer;
 }
 
+.career-button {
+  background-color: #2ecc40;
+  color: white;
+  border: none;
+  padding: 0.4rem 0.8rem;
+  border-radius: 5px;
+  cursor: pointer;
+  margin-right: 0.5rem;
+  text-decoration: none;
+}
+
 .dropdown-menu {
   position: absolute;
   right: 0;

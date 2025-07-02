@@ -9,6 +9,7 @@ import AdminPending from './AdminPending';
 import StudentProfiles from './StudentProfiles';
 import JobPosting from './JobPosting';
 import Metrics from './Metrics';
+import CareerInfo from './CareerInfo';
 
 function App() {
   return (
@@ -58,6 +59,14 @@ function App() {
                 </ProtectedRoute>
               }
             />
+          <Route
+            path="/career-info"
+            element={
+              <ProtectedRoute>
+                <CareerInfo />
+              </ProtectedRoute>
+            }
+          />
           <Route
             path="/metrics"
             element={
