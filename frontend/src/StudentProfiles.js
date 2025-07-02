@@ -354,7 +354,7 @@ function StudentProfiles() {
           <div className="form-panel">
             <h2>{isEditing ? 'Edit Student Profile' : 'New Student Profile'}</h2>
             <form className="profile-form" onSubmit={handleSubmit}>
-            {['first_name', 'last_name', 'email', 'phone', 'education_level', 'skills', 'experience_summary', 'interests', 'city', 'state', 'lat', 'lng', 'max_travel'].map((field) => (
+            {['first_name', 'last_name', 'email', 'phone', 'education_level', 'skills', 'experience_summary', 'interests', 'city', 'state', 'max_travel'].map((field) => (
               <React.Fragment key={field}>
                 <label htmlFor={field}>{field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</label>
                 {field === 'experience_summary' ? (
@@ -371,12 +371,14 @@ function StudentProfiles() {
                     type={field === 'max_travel' ? 'number' : 'text'}
                     value={formData[field]}
                     onChange={handleChange}
-                    readOnly={['lat','lng','state'].includes(field)}
+                    readOnly={['state'].includes(field)}
                     ref={field === 'city' ? cityRef : null}
                   />
                 )}
               </React.Fragment>
             ))}
+            <input type="hidden" id="lat" name="lat" value={formData.lat} readOnly />
+            <input type="hidden" id="lng" name="lng" value={formData.lng} readOnly />
             <label htmlFor="resume">Upload Resume (PDF or DOCX)</label>
             <input id="resume" name="resume" type="file" onChange={handleResumeChange} />
             <button type="submit" disabled={isSaving}>
