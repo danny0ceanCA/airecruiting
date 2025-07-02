@@ -57,7 +57,7 @@ function JobPosting() {
 
   useEffect(() => {
     loadGoogleMaps(initLocationAutocomplete);
-  }, []);
+  }, [activeTab]);
 
   const token = localStorage.getItem('token');
   const decoded = token ? jwtDecode(token) : {};
@@ -676,7 +676,7 @@ if (shouldRedirect) {
                 />
               </div>
               <div className="form-field">
-                <label htmlFor="city">Job Location</label>
+                <label htmlFor="city">City</label>
                 <input
                   id="city"
                   name="city"
@@ -685,9 +685,39 @@ if (shouldRedirect) {
                   onChange={handleChange}
                   ref={locationRef}
                 />
-                <input type="hidden" name="state" value={formData.state} />
-                <input type="hidden" name="lat" value={formData.lat} />
-                <input type="hidden" name="lng" value={formData.lng} />
+              </div>
+              <div className="form-field">
+                <label htmlFor="state">State</label>
+                <input
+                  id="state"
+                  name="state"
+                  type="text"
+                  value={formData.state}
+                  onChange={handleChange}
+                  readOnly
+                />
+              </div>
+              <div className="form-field">
+                <label htmlFor="lat">Latitude</label>
+                <input
+                  id="lat"
+                  name="lat"
+                  type="text"
+                  value={formData.lat}
+                  onChange={handleChange}
+                  readOnly
+                />
+              </div>
+              <div className="form-field">
+                <label htmlFor="lng">Longitude</label>
+                <input
+                  id="lng"
+                  name="lng"
+                  type="text"
+                  value={formData.lng}
+                  onChange={handleChange}
+                  readOnly
+                />
               </div>
               <button type="submit">Submit</button>
               {message && <p className="message">{message}</p>}
