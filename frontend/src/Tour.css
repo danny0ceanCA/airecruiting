@@ -1,0 +1,46 @@
+.react-joyride__tooltip {
+  background-color: rgba(0, 0, 0, 0.85);
+  color: white;
+  border-radius: 8px;
+  max-width: 320px;
+}
+
+.react-joyride__button--primary {
+  background-color: #0074d9;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-right: 0.5rem;
+}
+
+.react-joyride__button--primary:hover {
+  background-color: #005fa3;
+}
+
+.react-joyride__button--skip {
+  background: none;
+  color: #ccc;
+  border: none;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.react-joyride__spotlight {
+  border-radius: 8px;
+}
+
+.tour-trigger {
+  background-color: #003366;
+  color: white;
+  border: none;
+  padding: 0.4rem 0.8rem;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-bottom: 0.5rem;
+}
+
+.tour-trigger:hover {
+  background-color: #004080;
+}

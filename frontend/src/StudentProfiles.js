@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
+import Joyride from 'react-joyride';
 import api from './api';
 import loadGoogleMaps from './utils/loadGoogleMaps';
 
 import AdminMenu from './AdminMenu';
 import jwt_decode from 'jwt-decode';
 import './StudentProfiles.css';
+import './Tour.css';
 
 function StudentProfiles() {
   const [formData, setFormData] = useState({
@@ -26,6 +28,19 @@ function StudentProfiles() {
   const [resumeFile, setResumeFile] = useState(null);
   const [toast, setToast] = useState('');
 
+  const [showTour, setShowTour] = useState(
+    localStorage.getItem('studentTourSeen') !== 'true'
+  );
+
+  const tourSteps = [
+    {
+      target: '.tab-bar',
+      content: 'Switch between the student list and creating a new profile.'
+    },
+    { target: '.profile-form', content: 'Enter student details here.' },
+    { target: '.school-table', content: 'View and manage existing profiles.' }
+  ];
+
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -43,6 +58,14 @@ function StudentProfiles() {
   const [jobDescriptionStatus, setJobDescriptionStatus] = useState({});
 
   const [expandedRows, setExpandedRows] = useState({});
+
+  const handleTourCallback = (data) => {
+    const { status, type } = data;
+    if (status === 'finished' || status === 'skipped') {
+      localStorage.setItem('studentTourSeen', 'true');
+      setShowTour(false);
+    }
+  };
 
   const cityRef = useRef(null);
 
@@ -309,6 +332,16 @@ function StudentProfiles() {
 
   return (
     <div className="profiles-container">
+      {showTour && (
+        <Joyride
+          steps={tourSteps}
+          continuous
+          showSkipButton
+          showProgress
+          callback={handleTourCallback}
+          styles={{ options: { zIndex: 10000 } }}
+        />
+      )}
       <AdminMenu>
         {userRole === 'admin' && (
           <button
@@ -331,6 +364,12 @@ function StudentProfiles() {
           </button>
         )}
       </AdminMenu>
+
+      {!showTour && (
+        <button className="tour-trigger" onClick={() => setShowTour(true)}>
+          Take a Tour
+        </button>
+      )}
 
       {toast && <div className="toast">{toast}</div>}
 

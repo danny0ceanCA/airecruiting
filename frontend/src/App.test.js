@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import App from './App';
 import Metrics from './Metrics';
+import { BrowserRouter } from 'react-router-dom';
 import api from './api';
 import axios from 'axios';
 
@@ -41,7 +42,11 @@ test('admin metrics shows placement rate', async () => {
   const payload = { role: 'admin', exp: Math.floor(Date.now() / 1000) + 1000 };
   const token = `header.${btoa(JSON.stringify(payload))}.sig`;
   localStorage.setItem('token', token);
-  render(<Metrics />);
+  render(
+    <BrowserRouter>
+      <Metrics />
+    </BrowserRouter>
+  );
   expect(await screen.findByText(/Placement Rate/i)).toBeInTheDocument();
   localStorage.clear();
 });
