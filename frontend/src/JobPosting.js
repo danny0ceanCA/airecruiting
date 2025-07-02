@@ -4,6 +4,7 @@ import jwtDecode from 'jwt-decode';
 import jsPDF from 'jspdf';
 import api from './api';
 import AdminMenu from './AdminMenu';
+import loadGoogleMaps from './utils/loadGoogleMaps';
 import './JobPosting.css';
 
 function JobPosting() {
@@ -55,15 +56,7 @@ function JobPosting() {
   };
 
   useEffect(() => {
-    if (!window.google) {
-      const script = document.createElement('script');
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.REACT_APP_GOOGLE_KEY}&libraries=places`;
-      script.async = true;
-      script.onload = initLocationAutocomplete;
-      document.body.appendChild(script);
-    } else {
-      initLocationAutocomplete();
-    }
+    loadGoogleMaps(initLocationAutocomplete);
   }, []);
 
   const token = localStorage.getItem('token');
