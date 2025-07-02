@@ -63,7 +63,7 @@ function StudentProfiles() {
 
   useEffect(() => {
     loadGoogleMaps(initAutocomplete);
-  }, []);
+  }, [activeTab, isEditing]);
 
   const token = localStorage.getItem('token');
   const decoded = token ? jwt_decode(token) : {};
