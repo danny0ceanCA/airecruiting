@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Navigate } from 'react-router-dom';
 import jwtDecode from 'jwt-decode';
 import jsPDF from 'jspdf';
 import api from './api';
 import AdminMenu from './AdminMenu';
+import loadGoogleMaps from './utils/loadGoogleMaps';
 import './JobPosting.css';
 
 function JobPosting() {
@@ -13,7 +14,11 @@ function JobPosting() {
     desired_skills: '',
     source: '',
     min_pay: '',
-    max_pay: ''
+    max_pay: '',
+    city: '',
+    state: '',
+    lat: '',
+    lng: ''
   });
   const [message, setMessage] = useState('');
   const [jobs, setJobs] = useState([]);
@@ -32,6 +37,27 @@ function JobPosting() {
   const [generatingResumes, setGeneratingResumes] = useState({});
   const [generatedResumes, setGeneratedResumes] = useState({});
   const [activeTab, setActiveTab] = useState('jobs');
+
+  const locationRef = useRef(null);
+
+  const initLocationAutocomplete = () => {
+    if (locationRef.current && window.google) {
+      const ac = new window.google.maps.places.Autocomplete(locationRef.current, { types: ['(cities)'] });
+      ac.addListener('place_changed', () => {
+        const place = ac.getPlace();
+        const comps = place.address_components || [];
+        const city = comps.find(c => c.types.includes('locality'))?.long_name || '';
+        const state = comps.find(c => c.types.includes('administrative_area_level_1'))?.short_name || '';
+        const lat = place.geometry.location.lat();
+        const lng = place.geometry.location.lng();
+        setFormData(prev => ({ ...prev, city, state, lat, lng }));
+      });
+    }
+  };
+
+  useEffect(() => {
+    loadGoogleMaps(initLocationAutocomplete);
+  }, [activeTab]);
 
   const token = localStorage.getItem('token');
   const decoded = token ? jwtDecode(token) : {};
@@ -126,13 +152,17 @@ if (shouldRedirect) {
         desired_skills: formData.desired_skills.split(',').map((s) => s.trim()).filter(Boolean),
         source: formData.source,
         min_pay: min,
-        max_pay: max
+        max_pay: max,
+        city: formData.city,
+        state: formData.state,
+        lat: parseFloat(formData.lat || 0),
+        lng: parseFloat(formData.lng || 0)
       }, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setMessage(`Job posted successfully! Job code: ${resp.data.job_code}`);
       setFormData({
-        job_title: '', job_description: '', desired_skills: '', source: '', min_pay: '', max_pay: ''
+        job_title: '', job_description: '', desired_skills: '', source: '', min_pay: '', max_pay: '', city: '', state: '', lat: '', lng: ''
       });
       fetchJobs();
     } catch (err) {
@@ -645,6 +675,30 @@ if (shouldRedirect) {
                   onChange={handleChange}
                 />
               </div>
+              <div className="form-field">
+                <label htmlFor="city">City</label>
+                <input
+                  id="city"
+                  name="city"
+                  type="text"
+                  value={formData.city}
+                  onChange={handleChange}
+                  ref={locationRef}
+                />
+              </div>
+              <div className="form-field">
+                <label htmlFor="state">State</label>
+                <input
+                  id="state"
+                  name="state"
+                  type="text"
+                  value={formData.state}
+                  onChange={handleChange}
+                  readOnly
+                />
+              </div>
+              <input type="hidden" id="lat" name="lat" value={formData.lat} readOnly />
+              <input type="hidden" id="lng" name="lng" value={formData.lng} readOnly />
               <button type="submit">Submit</button>
               {message && <p className="message">{message}</p>}
             </form>
