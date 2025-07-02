@@ -283,7 +283,6 @@
 .tab-bar {
   display: flex;
   align-items: flex-end;
-  background: #032c4d !important;
   margin-bottom: 0 !important;
   border-bottom: none !important;
   padding-left: 0.5rem;
