@@ -697,28 +697,8 @@ if (shouldRedirect) {
                   readOnly
                 />
               </div>
-              <div className="form-field">
-                <label htmlFor="lat">Latitude</label>
-                <input
-                  id="lat"
-                  name="lat"
-                  type="text"
-                  value={formData.lat}
-                  onChange={handleChange}
-                  readOnly
-                />
-              </div>
-              <div className="form-field">
-                <label htmlFor="lng">Longitude</label>
-                <input
-                  id="lng"
-                  name="lng"
-                  type="text"
-                  value={formData.lng}
-                  onChange={handleChange}
-                  readOnly
-                />
-              </div>
+              <input type="hidden" id="lat" name="lat" value={formData.lat} readOnly />
+              <input type="hidden" id="lng" name="lng" value={formData.lng} readOnly />
               <button type="submit">Submit</button>
               {message && <p className="message">{message}</p>}
             </form>
