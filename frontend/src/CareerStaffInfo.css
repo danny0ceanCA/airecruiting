@@ -28,11 +28,13 @@
   animation: fadeSlide 0.6s ease forwards;
 }
 
+
 .career-info-container strong {
   color: #ffdc5e;
   font-weight: 700;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
 }
+
 
 .career-info-container p:nth-of-type(1) {
   animation-delay: 0.2s;
