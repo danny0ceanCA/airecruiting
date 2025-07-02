@@ -35,10 +35,43 @@ function StudentProfiles() {
   const tourSteps = [
     {
       target: '.tab-bar',
-      content: 'Switch between the student list and creating a new profile.'
+      content: 'Use these tabs to switch between the student list and adding a new profile.'
     },
-    { target: '.profile-form', content: 'Enter student details here.' },
-    { target: '.school-table', content: 'View and manage existing profiles.' }
+    {
+      target: '.new-tab',
+      content: "Click 'New Student Profile' when you need to add a student."
+    },
+    {
+      target: '.profile-form',
+      content:
+        "Fill in the student's contact info, skills, and travel range here."
+    },
+    {
+      target: '.filter-row',
+      content:
+        'Filter the list by name, email or school code to quickly find students.'
+    },
+    {
+      target: '.expand-toggle',
+      content:
+        'Click the plus sign to see all jobs assigned to that student and view details.'
+    },
+    {
+      target: '.edit-col',
+      content: 'Use the pencil to edit or the trash can to remove a profile.'
+    },
+    {
+      target: '.assigned-col',
+      content: 'Shows how many jobs are assigned to each student.'
+    },
+    {
+      target: '.placement-status-col',
+      content: 'A check means placed. An X means still looking.'
+    },
+    {
+      target: '.placement-controls-col',
+      content: 'Mark a student as placed when they accept a job.'
+    }
   ];
 
   const [isLoading, setIsLoading] = useState(true);
@@ -375,13 +408,13 @@ function StudentProfiles() {
 
       <div className="tab-bar">
         <button
-          className={`tab ${activeTab === 'students' ? 'active' : ''}`}
+          className={`tab students-tab ${activeTab === 'students' ? 'active' : ''}`}
           onClick={() => setActiveTab('students')}
         >
           Students
         </button>
         <button
-          className={`tab ${activeTab === 'new' ? 'active' : ''}`}
+          className={`tab new-tab ${activeTab === 'new' ? 'active' : ''}`}
           onClick={() => setActiveTab('new')}
         >
           New Student Profile
@@ -464,10 +497,10 @@ function StudentProfiles() {
                     <th>Last Name</th>
                     <th>Email</th>
                     {userRole === 'admin' && <th>School</th>}
-                    <th>Edit</th>
-                    <th>Assigned Jobs</th>
-                    <th>Placement Status</th>
-                    <th>Placement Controls</th>
+                    <th className="edit-col">Edit</th>
+                    <th className="assigned-col">Assigned Jobs</th>
+                    <th className="placement-status-col">Placement Status</th>
+                    <th className="placement-controls-col">Placement Controls</th>
                   </tr>
                   <tr className="filter-row">
                     <th></th>
@@ -545,7 +578,7 @@ function StudentProfiles() {
                           <td>{s.last_name}</td>
                           <td>{s.email}</td>
                           {userRole === 'admin' && <td>{s.institutional_code}</td>}
-                          <td>
+                          <td className="edit-col">
                             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                               <button
                                 onClick={() => handleEdit(s.email)}
@@ -576,9 +609,9 @@ function StudentProfiles() {
                               )}
                             </div>
                           </td>
-                          <td>{assigned}</td>
-                          <td>{placed > 0 ? '✅' : '❌'}</td>
-                          <td>
+                          <td className="assigned-col">{assigned}</td>
+                          <td className="placement-status-col">{placed > 0 ? '✅' : '❌'}</td>
+                          <td className="placement-controls-col">
                             {assigned > 0 && placed === 0 && userRole !== 'admin' && (
                               <button onClick={() => handleMarkPlaced(s)}>
                                 Mark as Placed
