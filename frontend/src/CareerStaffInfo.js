@@ -23,26 +23,22 @@ function CareerStaffInfo() {
       <AdminMenu />
       <h2>Welcome Career Services Team!</h2>
       <p>
-        <strong>TalentMatch AI</strong> helps you track student profiles and match
-        them with great job opportunities. Use the Student Profiles and Job
-        Matching tools to quickly see recommended positions for each student.
+        <strong>TalentMatch AI</strong> is more than a tool — it’s a platform built to empower career services teams. From student intake to confirmed placement, we streamline every step of the employment journey so you can focus on outcomes, not overhead.
       </p>
       <p>
-        <strong>AI-driven matching</strong> surfaces personalized recommendations
-        so every student is presented with openings that fit their unique
-        skills.
+        <strong>Smart matching begins at profile creation.</strong> TalentMatch AI instantly surfaces job opportunities that align with each student's skills, certifications, and geographic preferences — eliminating hours of manual search.
       </p>
       <p>
-        <strong>Real-time analytics</strong> highlight placement rates and
-        licensing progress so you can focus your efforts where they matter most.
+        <strong>AI-generated, job-specific resumes</strong> are automatically crafted for each match, helping students shine professionally without the burden of revising their resumes for every application.
       </p>
       <p>
-        <strong>Automated outreach</strong> keeps students engaged while ensuring
-        employers see the very best from your talent pipeline.
+        <strong>Transparent placement tracking</strong> keeps your team in control. Instantly see where students are assigned, which employers are engaged, and generate rich job summaries including strengths, growth areas, and coaching strategies.
       </p>
       <p>
-        We hope these features make connecting your students with employers a
-        breeze. Thanks for helping them launch amazing careers!
+        <strong>Built-in placement confirmation and analytics</strong> make documentation effortless. With the Metrics Module, you can track progress, measure success, and generate the insights your institution needs — all in one place.
+      </p>
+      <p>
+        TalentMatch AI is your strategic partner in student success — intuitive, powerful, and purpose-built for career services.
       </p>
     </div>
   );
