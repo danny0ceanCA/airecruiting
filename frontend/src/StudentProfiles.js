@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import api from './api';
+import loadGoogleMaps from './utils/loadGoogleMaps';
 
 import AdminMenu from './AdminMenu';
 import jwt_decode from 'jwt-decode';
@@ -61,15 +62,7 @@ function StudentProfiles() {
   };
 
   useEffect(() => {
-    if (!window.google) {
-      const script = document.createElement('script');
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.REACT_APP_GOOGLE_KEY}&libraries=places`;
-      script.async = true;
-      script.onload = initAutocomplete;
-      document.body.appendChild(script);
-    } else {
-      initAutocomplete();
-    }
+    loadGoogleMaps(initAutocomplete);
   }, []);
 
   const token = localStorage.getItem('token');
