@@ -2,12 +2,33 @@
   background-color: #001f3f;
   min-height: 100vh;
   color: white;
-  padding: 2rem;
+  /*
+    Add top padding so the spacing between the browser URL bar and the tab
+    bar matches the Job Matching module layout.
+  */
+  padding: 1.5rem 1.5rem 2rem;
+  position: relative;
+  border-radius: 1.25rem;
+  max-width: 98vw;
+  margin: 0 auto;
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 2rem;
   align-items: flex-start;
   box-sizing: border-box;
+}
+
+/* Match the job posting panel width and styling */
+.form-panel {
+  flex: 1;
+  min-width: 300px;
+  max-width: 600px;
+  background-color: #04345e;
+  padding: 1.5rem;
+  border-radius: 8px;
+  color: white;
+  display: flex;
+  flex-direction: column;
 }
 
 .form-section {
@@ -281,5 +302,60 @@
   cursor: pointer;
   border-radius: 4px;
   font-size: 0.85rem;
+}
+
+
+/* Ensure the students table sits directly under the tab bar */
+.students-panel {
+  margin-top: 0 !important;
+  padding-top: 0 !important;
+  border-top: none !important;
+  background: transparent !important;
+  width: 100%;
+}
+
+/* Tab styles copied from JobPosting */
+.tab-bar {
+  display: flex;
+  align-items: flex-end;
+  background: #032c4d !important;
+  margin-bottom: 0 !important;
+  border-bottom: none !important;
+  padding-left: 0.5rem;
+}
+
+.tab {
+  background: #032c4d !important;
+  color: #fff !important;
+  border: none !important;
+  border-bottom: none !important;
+  border-radius: 1.2rem 1.2rem 0 0 !important;
+  padding: 1rem 2.5rem 1.2rem 2.5rem !important;
+  margin-right: 0.3rem !important;
+  font-weight: 600 !important;
+  font-size: 1.1rem !important;
+  cursor: pointer;
+}
+
+.tab.active {
+  background: #fff !important;
+  color: #032c4d !important;
+  border: 1px solid #032c4d !important;
+  border-bottom: none !important;
+}
+
+.tab:not(.active):hover {
+  background: #c3c9d0 !important;
+  color: #032c4d !important;
+}
+
+.tab-content {
+  background: transparent !important;
+  margin-top: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  width: 100%;
 }
 

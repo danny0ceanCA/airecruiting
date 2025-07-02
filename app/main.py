@@ -15,7 +15,7 @@ from fastapi import (
 )
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field, ConfigDict, field_validator, model_validator
 from jose import jwt, JWTError
 from dotenv import load_dotenv
 import bcrypt
@@ -40,6 +40,22 @@ if not redis_url:
 
 # Redis connection
 redis_client = redis.Redis.from_url(redis_url, decode_responses=True)
+
+def get_driving_distance_miles(orig_lat: float, orig_lng: float, dest_lat: float, dest_lng: float) -> float:
+    """Return driving distance in miles between two coordinates using Google Distance Matrix."""
+    key = os.getenv("GOOGLE_KEY")
+    if not key:
+        raise RuntimeError("Missing GOOGLE_KEY")
+    params = {
+        "origins": f"{orig_lat},{orig_lng}",
+        "destinations": f"{dest_lat},{dest_lng}",
+        "units": "imperial",
+        "key": key,
+    }
+    resp = httpx.get("https://maps.googleapis.com/maps/api/distancematrix/json", params=params)
+    data = resp.json()
+    value_meters = data["rows"][0]["elements"][0]["distance"]["value"]
+    return value_meters / 1609.34
 
 JWT_SECRET = "secret"
 ALGORITHM = "HS256"
@@ -119,8 +135,10 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     first_name: str
     last_name: str
-    institutional_code: str
+    institutional_code: str = Field(alias="school_code")
     password: str
+
+    model_config = ConfigDict(populate_by_name=True)
 
 class LoginRequest(BaseModel):
     email: EmailStr
@@ -142,6 +160,18 @@ class StudentRequest(BaseModel):
     skills: list[str]
     experience_summary: str
     interests: str
+    city: str
+    state: str
+    lat: float
+    lng: float
+    max_travel: float
+
+    @field_validator("max_travel")
+    @classmethod
+    def check_travel(cls, v):
+        if v <= 0:
+            raise ValueError("max_travel must be positive")
+        return v
 
 class JobRequest(BaseModel):
     job_title: str
@@ -149,7 +179,25 @@ class JobRequest(BaseModel):
     desired_skills: list[str]
     job_code: Optional[str] = None
     source: str
-    rate_of_pay_range: str
+    min_pay: float
+    max_pay: float
+    city: str
+    state: str
+    lat: float
+    lng: float
+
+    @field_validator("min_pay", "max_pay")
+    @classmethod
+    def check_positive(cls, v):
+        if v <= 0:
+            raise ValueError("Pay must be positive")
+        return v
+
+    @model_validator(mode="after")
+    def validate_range(self):
+        if self.min_pay > self.max_pay:
+            raise ValueError("Minimum pay cannot exceed maximum pay")
+        return self
 
 class JobCodeRequest(BaseModel):
     job_code: str
@@ -289,6 +337,11 @@ async def create_student(request: Request, current_user: dict = Depends(get_curr
             skills=[s.strip() for s in skills_field.split(",") if s.strip()],
             experience_summary=form.get("experience_summary"),
             interests=form.get("interests"),
+            city=form.get("city"),
+            state=form.get("state"),
+            lat=float(form.get("lat")),
+            lng=float(form.get("lng")),
+            max_travel=float(form.get("max_travel")),
         )
     else:
         body = await request.json()
@@ -396,8 +449,10 @@ def update_student(
     data = updated.model_dump()
     data["email"] = email
     data["embedding"] = embedding
-    if existing.get("institutional_code") is not None:
-        data["institutional_code"] = existing.get("institutional_code")
+    inst_code = existing.get("institutional_code") or existing.get("school_code")
+    if inst_code is not None:
+        data["institutional_code"] = inst_code
+        data["school_code"] = existing.get("school_code", inst_code)
 
     redis_client.set(key, json.dumps(data))
     return {"message": "Student updated successfully"}
@@ -419,6 +474,11 @@ def upload_students(file: UploadFile = File(...), current_user: dict = Depends(g
                 skills=skills,
                 experience_summary=row["experience_summary"],
                 interests=row["interests"],
+                city=row["city"],
+                state=row["state"],
+                lat=float(row["lat"]),
+                lng=float(row["lng"]),
+                max_travel=float(row["max_travel"]),
             )
         except KeyError:
             continue
@@ -479,6 +539,11 @@ def update_job(job_code: str, updated: dict, token_data: dict = Depends(get_curr
     if token_data.get("role") != "admin" and token_data.get("sub") != job.get("posted_by"):
         raise HTTPException(status_code=403, detail="Not authorized to edit this job")
 
+    if "min_pay" in updated or "max_pay" in updated:
+        min_pay = float(updated.get("min_pay", job.get("min_pay", 0)))
+        max_pay = float(updated.get("max_pay", job.get("max_pay", 0)))
+        if min_pay <= 0 or max_pay <= 0 or min_pay > max_pay:
+            raise HTTPException(status_code=400, detail="Invalid pay range")
     job.update(updated)
     redis_client.set(key, json.dumps(job))
     print(f"✏️ Updated job {job_code}")
@@ -511,11 +576,20 @@ def match_job(req: JobCodeRequest, current_user: dict = Depends(get_current_user
             emb = student.get("embedding")
             if not emb:
                 continue
+            dist = get_driving_distance_miles(
+                student.get("lat"),
+                student.get("lng"),
+                job.get("lat"),
+                job.get("lng"),
+            )
+            if dist > float(student.get("max_travel", 0)):
+                continue
             score = sum(a * b for a, b in zip(job_emb, emb))
             matches.append({
                 "name": f"{student.get('first_name', '')} {student.get('last_name', '')}",
                 "email": student.get("email"),
                 "score": score,
+                "distance_miles": round(dist, 1),
             })
         except Exception:
             continue
@@ -532,6 +606,8 @@ def match_job(req: JobCodeRequest, current_user: dict = Depends(get_current_user
             m["status"] = "assigned"
         else:
             m["status"] = None
+
+
 
     redis_client.set(
         f"match_results:{req.job_code}", json.dumps(top_matches)
@@ -1101,7 +1177,8 @@ def get_all_students(current_user: dict = Depends(get_current_user)):
                 "job_code": job.get("job_code"),
                 "job_title": job.get("job_title"),
                 "source": job.get("source"),
-                "rate_of_pay_range": job.get("rate_of_pay_range"),
+                "min_pay": job.get("min_pay"),
+                "max_pay": job.get("max_pay"),
                 "job_description": job.get("job_description"),
             }
             for job in all_jobs
@@ -1179,7 +1256,8 @@ def students_by_school(current_user: dict = Depends(get_current_user)):
                 "job_code": job.get("job_code"),
                 "job_title": job.get("job_title"),
                 "source": job.get("source"),
-                "rate_of_pay_range": job.get("rate_of_pay_range"),
+                "min_pay": job.get("min_pay"),
+                "max_pay": job.get("max_pay"),
                 "job_description": job.get("job_description"),
             }
             for job in all_jobs

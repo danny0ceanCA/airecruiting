@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Navigate } from 'react-router-dom';
 import jwtDecode from 'jwt-decode';
 import jsPDF from 'jspdf';
 import api from './api';
 import AdminMenu from './AdminMenu';
+import loadGoogleMaps from './utils/loadGoogleMaps';
 import './JobPosting.css';
 
 function JobPosting() {
@@ -12,7 +13,12 @@ function JobPosting() {
     job_description: '',
     desired_skills: '',
     source: '',
-    rate_of_pay_range: ''
+    min_pay: '',
+    max_pay: '',
+    city: '',
+    state: '',
+    lat: '',
+    lng: ''
   });
   const [message, setMessage] = useState('');
   const [jobs, setJobs] = useState([]);
@@ -30,6 +36,28 @@ function JobPosting() {
   const [editedJobs, setEditedJobs] = useState({});
   const [generatingResumes, setGeneratingResumes] = useState({});
   const [generatedResumes, setGeneratedResumes] = useState({});
+  const [activeTab, setActiveTab] = useState('jobs');
+
+  const locationRef = useRef(null);
+
+  const initLocationAutocomplete = () => {
+    if (locationRef.current && window.google) {
+      const ac = new window.google.maps.places.Autocomplete(locationRef.current, { types: ['(cities)'] });
+      ac.addListener('place_changed', () => {
+        const place = ac.getPlace();
+        const comps = place.address_components || [];
+        const city = comps.find(c => c.types.includes('locality'))?.long_name || '';
+        const state = comps.find(c => c.types.includes('administrative_area_level_1'))?.short_name || '';
+        const lat = place.geometry.location.lat();
+        const lng = place.geometry.location.lng();
+        setFormData(prev => ({ ...prev, city, state, lat, lng }));
+      });
+    }
+  };
+
+  useEffect(() => {
+    loadGoogleMaps(initLocationAutocomplete);
+  }, [activeTab]);
 
   const token = localStorage.getItem('token');
   const decoded = token ? jwtDecode(token) : {};
@@ -107,19 +135,34 @@ if (shouldRedirect) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setMessage('');
+    const min = parseFloat(formData.min_pay);
+    const max = parseFloat(formData.max_pay);
+    if (isNaN(min) || isNaN(max) || min <= 0 || max <= 0) {
+      setMessage('Pay must be positive numbers');
+      return;
+    }
+    if (min > max) {
+      setMessage('Minimum pay cannot exceed maximum pay');
+      return;
+    }
     try {
       const resp = await api.post('/jobs', {
         job_title: formData.job_title,
         job_description: formData.job_description,
         desired_skills: formData.desired_skills.split(',').map((s) => s.trim()).filter(Boolean),
         source: formData.source,
-        rate_of_pay_range: formData.rate_of_pay_range
+        min_pay: min,
+        max_pay: max,
+        city: formData.city,
+        state: formData.state,
+        lat: parseFloat(formData.lat || 0),
+        lng: parseFloat(formData.lng || 0)
       }, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setMessage(`Job posted successfully! Job code: ${resp.data.job_code}`);
       setFormData({
-        job_title: '', job_description: '', desired_skills: '', source: '', rate_of_pay_range: ''
+        job_title: '', job_description: '', desired_skills: '', source: '', min_pay: '', max_pay: '', city: '', state: '', lat: '', lng: ''
       });
       fetchJobs();
     } catch (err) {
@@ -526,7 +569,7 @@ if (shouldRedirect) {
   const filteredJobs = jobs.filter(matchFilter);
 
   return (
-    <div className="job-posting-container">
+    <div className="job-posting-container job-matching-module">
       <AdminMenu>
         {userRole === "admin" && (
           <button
@@ -554,74 +597,124 @@ if (shouldRedirect) {
           </button>
         )}
       </AdminMenu>
-      <div className="job-matching-layout">
-        <div className="post-job-panel">
-          <form onSubmit={handleSubmit} className="post-job-form">
-            <h2>Post a Job</h2>
-            <div className="form-field">
-              <label htmlFor="job_title">Job Title</label>
-              <input
-                id="job_title"
-                name="job_title"
-                type="text"
-                value={formData.job_title}
-                onChange={handleChange}
-              />
-            </div>
-            <div className="form-field">
-              <label htmlFor="job_description">Job Description</label>
-              <textarea
-                id="job_description"
-                name="job_description"
-                value={formData.job_description}
-                onChange={handleChange}
-              ></textarea>
-            </div>
-            <div className="form-field">
-              <label htmlFor="desired_skills">Desired Skills (comma separated)</label>
-              <input
-                id="desired_skills"
-                name="desired_skills"
-                type="text"
-                value={formData.desired_skills}
-                onChange={handleChange}
-              />
-            </div>
-            <div className="form-field">
-              <label htmlFor="source">Source</label>
-              <input
-                id="source"
-                name="source"
-                type="text"
-                value={formData.source}
-                onChange={handleChange}
-              />
-            </div>
-            <div className="form-field">
-              <label htmlFor="rate_of_pay_range">Rate of Pay Range</label>
-              <input
-                id="rate_of_pay_range"
-                name="rate_of_pay_range"
-                type="text"
-                value={formData.rate_of_pay_range}
-                onChange={handleChange}
-              />
-            </div>
-            <button type="submit">Submit</button>
-            {message && <p className="message">{message}</p>}
-          </form>
-        </div>
+      <div className="tab-bar">
+        <button
+          className={`tab ${activeTab === 'jobs' ? 'active' : ''}`}
+          onClick={() => setActiveTab('jobs')}
+        >
+          Jobs
+        </button>
+        <button
+          className={`tab ${activeTab === 'post' ? 'active' : ''}`}
+          onClick={() => setActiveTab('post')}
+        >
+          Post a Job
+        </button>
+      </div>
+      <div className="tab-content">
+        {activeTab === 'post' && (
+          <div className="post-job-panel">
+            <form onSubmit={handleSubmit} className="post-job-form">
+              <h2>Post a Job</h2>
+              <div className="form-field">
+                <label htmlFor="job_title">Job Title</label>
+                <input
+                  id="job_title"
+                  name="job_title"
+                  type="text"
+                  value={formData.job_title}
+                  onChange={handleChange}
+                />
+              </div>
+              <div className="form-field">
+                <label htmlFor="job_description">Job Description</label>
+                <textarea
+                  id="job_description"
+                  name="job_description"
+                  value={formData.job_description}
+                  onChange={handleChange}
+                ></textarea>
+              </div>
+              <div className="form-field">
+                <label htmlFor="desired_skills">Desired Skills (comma separated)</label>
+                <input
+                  id="desired_skills"
+                  name="desired_skills"
+                  type="text"
+                  value={formData.desired_skills}
+                  onChange={handleChange}
+                />
+              </div>
+              <div className="form-field">
+                <label htmlFor="source">Source</label>
+                <input
+                  id="source"
+                  name="source"
+                  type="text"
+                  value={formData.source}
+                  onChange={handleChange}
+                />
+              </div>
+              <div className="form-field">
+                <label htmlFor="min_pay">Minimum Pay</label>
+                <input
+                  id="min_pay"
+                  name="min_pay"
+                  type="number"
+                  value={formData.min_pay}
+                  onChange={handleChange}
+                />
+              </div>
+              <div className="form-field">
+                <label htmlFor="max_pay">Maximum Pay</label>
+                <input
+                  id="max_pay"
+                  name="max_pay"
+                  type="number"
+                  value={formData.max_pay}
+                  onChange={handleChange}
+                />
+              </div>
+              <div className="form-field">
+                <label htmlFor="city">City</label>
+                <input
+                  id="city"
+                  name="city"
+                  type="text"
+                  value={formData.city}
+                  onChange={handleChange}
+                  ref={locationRef}
+                />
+              </div>
+              <div className="form-field">
+                <label htmlFor="state">State</label>
+                <input
+                  id="state"
+                  name="state"
+                  type="text"
+                  value={formData.state}
+                  onChange={handleChange}
+                  readOnly
+                />
+              </div>
+              <input type="hidden" id="lat" name="lat" value={formData.lat} readOnly />
+              <input type="hidden" id="lng" name="lng" value={formData.lng} readOnly />
+              <button type="submit">Submit</button>
+              {message && <p className="message">{message}</p>}
+            </form>
+          </div>
+        )}
 
-        <div className="posted-jobs-panel">
-        <h2>Jobs</h2>
-        <table className="job-table">
-          <thead>
-            <tr>
-              <th></th>
-              <th>Job Code</th>
+        {activeTab === 'jobs' && (
+          <div className="posted-jobs-panel">
+            <table className="job-table">
+            <thead>
+              <tr>
+                <th></th>
+                <th>Job Code</th>
               <th>Title</th>
               <th>Source</th>
-              <th>Rate</th>
+              <th>Pay Range</th>
               <th>Assigned</th>
               {!isRecruiter && <th>Placed</th>}
               <th>Action</th>
@@ -675,7 +768,11 @@ if (shouldRedirect) {
                     </span>
                   </td>
                   <td>{job.source}</td>
-                  <td>{job.rate_of_pay_range}</td>
+                  <td>
+                    {job.min_pay !== undefined && job.max_pay !== undefined
+                      ? `${job.min_pay} - ${job.max_pay}`
+                      : ''}
+                  </td>
                   <td className="status-cell">
                     {job.assigned_students?.length > 0 && (
                       <span
@@ -801,16 +898,32 @@ if (shouldRedirect) {
                                 />
                               </div>
                               <div className="form-row">
-                                <label>Rate of Pay</label>
+                                <label>Minimum Pay</label>
                                 <input
-                                  type="text"
-                                  value={editedJobs[job.job_code]?.rate_of_pay_range || job.rate_of_pay_range}
+                                  type="number"
+                                  value={editedJobs[job.job_code]?.min_pay ?? job.min_pay}
                                   onChange={(e) =>
                                     setEditedJobs((prev) => ({
                                       ...prev,
                                       [job.job_code]: {
                                         ...prev[job.job_code],
-                                        rate_of_pay_range: e.target.value,
+                                        min_pay: e.target.value,
+                                      },
+                                    }))
+                                  }
+                                />
+                              </div>
+                              <div className="form-row">
+                                <label>Maximum Pay</label>
+                                <input
+                                  type="number"
+                                  value={editedJobs[job.job_code]?.max_pay ?? job.max_pay}
+                                  onChange={(e) =>
+                                    setEditedJobs((prev) => ({
+                                      ...prev,
+                                      [job.job_code]: {
+                                        ...prev[job.job_code],
+                                        max_pay: e.target.value,
                                       },
                                     }))
                                   }
@@ -830,7 +943,9 @@ if (shouldRedirect) {
                                 </p>
                               )}
                               <p>Source: {job.source}</p>
-                              <p>Rate of Pay: {job.rate_of_pay_range}</p>
+                              <p>
+                                Pay Range: {job.min_pay} - {job.max_pay}
+                              </p>
                               {(userRole === 'admin' || job.posted_by === email) && (
                                 <button
                                   onClick={() =>
@@ -876,10 +991,11 @@ if (shouldRedirect) {
                   )
                 )}
               </React.Fragment>
-            ))}
+              ))}
           </tbody>
         </table>
-      </div>
+          </div>
+        )}
       </div>
     </div>
   );

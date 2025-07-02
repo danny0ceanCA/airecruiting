@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import api from './api';
+import loadGoogleMaps from './utils/loadGoogleMaps';
 
 import AdminMenu from './AdminMenu';
 import jwt_decode from 'jwt-decode';
@@ -14,7 +15,12 @@ function StudentProfiles() {
     education_level: '',
     skills: '',
     experience_summary: '',
-    interests: ''
+    interests: '',
+    city: '',
+    state: '',
+    lat: '',
+    lng: '',
+    max_travel: ''
   });
   const [formError, setFormError] = useState('');
   const [resumeFile, setResumeFile] = useState(null);
@@ -32,9 +38,32 @@ function StudentProfiles() {
   const [isEditing, setIsEditing] = useState(false);
   const [editingEmail, setEditingEmail] = useState('');
 
+  const [activeTab, setActiveTab] = useState('students');
+
   const [jobDescriptionStatus, setJobDescriptionStatus] = useState({});
 
   const [expandedRows, setExpandedRows] = useState({});
+
+  const cityRef = useRef(null);
+
+  const initAutocomplete = () => {
+    if (cityRef.current && window.google) {
+      const ac = new window.google.maps.places.Autocomplete(cityRef.current, { types: ['(cities)'] });
+      ac.addListener('place_changed', () => {
+        const place = ac.getPlace();
+        const comps = place.address_components || [];
+        const city = comps.find(c => c.types.includes('locality'))?.long_name || '';
+        const state = comps.find(c => c.types.includes('administrative_area_level_1'))?.short_name || '';
+        const lat = place.geometry.location.lat();
+        const lng = place.geometry.location.lng();
+        setFormData(prev => ({ ...prev, city, state, lat, lng }));
+      });
+    }
+  };
+
+  useEffect(() => {
+    loadGoogleMaps(initAutocomplete);
+  }, [activeTab, isEditing]);
 
   const token = localStorage.getItem('token');
   const decoded = token ? jwt_decode(token) : {};
@@ -91,9 +120,15 @@ function StudentProfiles() {
         interests: Array.isArray(student.interests)
           ? student.interests.join(', ')
           : student.interests || '',
+        city: student.city || '',
+        state: student.state || '',
+        lat: student.lat || '',
+        lng: student.lng || '',
+        max_travel: student.max_travel || '',
       });
       setIsEditing(true);
       setEditingEmail(student.email);
+      setActiveTab('new');
     }
   };
 
@@ -197,6 +232,11 @@ function StudentProfiles() {
       skills: formData.skills.split(',').map((s) => s.trim()),
       experience_summary: formData.experience_summary,
       interests: formData.interests.trim(),
+      city: formData.city,
+      state: formData.state,
+      lat: parseFloat(formData.lat || 0),
+      lng: parseFloat(formData.lng || 0),
+      max_travel: parseFloat(formData.max_travel || 0),
     };
     try {
       const method = isEditing ? 'put' : 'post';
@@ -218,7 +258,12 @@ function StudentProfiles() {
         education_level: '',
         skills: '',
         experience_summary: '',
-        interests: ''
+        interests: '',
+        city: '',
+        state: '',
+        lat: '',
+        lng: '',
+        max_travel: ''
       });
       setResumeFile(null);
       setIsEditing(false);
@@ -289,21 +334,27 @@ function StudentProfiles() {
 
       {toast && <div className="toast">{toast}</div>}
 
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'row',
-          alignItems: 'flex-start',
-          justifyContent: 'space-between',
-          width: '100%',
-          minHeight: '100vh',
-          gap: '2rem',
-        }}
-      >
-        <div style={{ flex: 1, maxWidth: '600px' }}>
-          <h2>{isEditing ? 'Edit Student Profile' : 'New Student Profile'}</h2>
-          <form className="profile-form" onSubmit={handleSubmit}>
-            {['first_name', 'last_name', 'email', 'phone', 'education_level', 'skills', 'experience_summary', 'interests'].map((field) => (
+      <div className="tab-bar">
+        <button
+          className={`tab ${activeTab === 'students' ? 'active' : ''}`}
+          onClick={() => setActiveTab('students')}
+        >
+          Students
+        </button>
+        <button
+          className={`tab ${activeTab === 'new' ? 'active' : ''}`}
+          onClick={() => setActiveTab('new')}
+        >
+          New Student Profile
+        </button>
+      </div>
+
+      <div className="tab-content">
+        {activeTab === 'new' && (
+          <div className="form-panel">
+            <h2>{isEditing ? 'Edit Student Profile' : 'New Student Profile'}</h2>
+            <form className="profile-form" onSubmit={handleSubmit}>
+            {['first_name', 'last_name', 'email', 'phone', 'education_level', 'skills', 'experience_summary', 'interests', 'city', 'state', 'max_travel'].map((field) => (
               <React.Fragment key={field}>
                 <label htmlFor={field}>{field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</label>
                 {field === 'experience_summary' ? (
@@ -317,15 +368,24 @@ function StudentProfiles() {
                   <input
                     id={field}
                     name={field}
-                    type="text"
+                    type={field === 'max_travel' ? 'number' : 'text'}
                     value={formData[field]}
                     onChange={handleChange}
+                    readOnly={['state'].includes(field)}
+                    ref={field === 'city' ? cityRef : null}
                   />
                 )}
               </React.Fragment>
             ))}
-            <label htmlFor="resume">Upload Resume (PDF or DOCX)</label>
-            <input id="resume" name="resume" type="file" onChange={handleResumeChange} />
+            <input type="hidden" id="lat" name="lat" value={formData.lat} readOnly />
+            <input type="hidden" id="lng" name="lng" value={formData.lng} readOnly />
+            {/* Uploading documents is temporarily disabled */}
+            {false && (
+              <>
+                <label htmlFor="resume">Upload Resume (PDF or DOCX)</label>
+                <input id="resume" name="resume" type="file" onChange={handleResumeChange} />
+              </>
+            )}
             <button type="submit" disabled={isSaving}>
               {isSaving ? (
                 <>
@@ -338,9 +398,10 @@ function StudentProfiles() {
             {formError && <p className="error">{formError}</p>}
           </form>
         </div>
-
+        )}
+        {activeTab === 'students' && (
         <div
-          className="rightColumn"
+          className="students-panel"
           style={{
             flex: 1,
             minWidth: '600px',
@@ -349,8 +410,7 @@ function StudentProfiles() {
             justifyContent: 'flex-start',
           }}
         >
-          <div style={{ flexGrow: 1, minHeight: 0, marginTop: '3rem' }}>
-            <h2>Students from Your School</h2>
+          <div style={{ flexGrow: 1, minHeight: 0, marginTop: '0' }}>
             {isLoading ? (
               <div className="loading-container">
                 <span className="spinner" />
@@ -504,7 +564,11 @@ function StudentProfiles() {
                                     s.assigned_jobs.map((job, index) => (
                                       <tr key={index}>
                                         <td>{job.job_title}</td>
-                                        <td>{job.rate_of_pay_range || 'N/A'}</td>
+                                        <td>
+                                          {job.min_pay && job.max_pay
+                                            ? `${job.min_pay} - ${job.max_pay}`
+                                            : 'N/A'}
+                                        </td>
                                         <td>{job.source || 'N/A'}</td>
                                         <td style={{ textAlign: 'center' }}>
                                           {loadingJobDescriptions[job.job_code] ? (
@@ -562,6 +626,7 @@ function StudentProfiles() {
             )}
           </div>
         </div>
+        )}
       </div>
     </div>
   );
