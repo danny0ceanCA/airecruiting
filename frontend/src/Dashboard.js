@@ -24,6 +24,7 @@ function Dashboard() {
   return (
     <div className="dashboard-container">
       <AdminMenu />
+      <h2 className="dashboard-heading">Dashboard</h2>
       <div className="tile-grid">
         {role === 'admin' && (
           <>
