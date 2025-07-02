@@ -50,6 +50,7 @@ function Dashboard() {
           <>
             <Link to="/students" className="dashboard-tile">Student Profiles</Link>
             <Link to="/metrics" className="dashboard-tile">School Metrics</Link>
+            <Link to="/career-info" className="dashboard-tile">Career Staff Information</Link>
             <Link to="/admin/pending" className="dashboard-tile">Pending Registrations</Link>
           </>
         )}
@@ -58,6 +59,7 @@ function Dashboard() {
           <>
             <Link to="/students" className="dashboard-tile">Student Profiles</Link>
             <Link to="/metrics" className="dashboard-tile">School Metrics</Link>
+            <Link to="/career-info" className="dashboard-tile">Career Staff Information</Link>
           </>
         )}
 
