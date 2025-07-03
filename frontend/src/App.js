@@ -10,6 +10,7 @@ import StudentProfiles from './StudentProfiles';
 import JobPosting from './JobPosting';
 import Metrics from './Metrics';
 import CareerStaffInfo from './CareerStaffInfo';
+import ActivityLog from './ActivityLog';
 
 function App() {
   return (
@@ -48,6 +49,14 @@ function App() {
               element={
                 <ProtectedRoute>
                   <JobPosting />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/activity-log"
+              element={
+                <ProtectedRoute>
+                  <ActivityLog />
                 </ProtectedRoute>
               }
             />

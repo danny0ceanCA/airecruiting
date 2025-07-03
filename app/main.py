@@ -41,6 +41,9 @@ if not redis_url:
 # Redis connection
 redis_client = redis.Redis.from_url(redis_url, decode_responses=True)
 
+# Key used to store activity log entries
+ACTIVITY_LOG_KEY = "activity_logs"
+
 def get_driving_distance_miles(orig_lat: float, orig_lng: float, dest_lat: float, dest_lng: float) -> float:
     """Return driving distance in miles between two coordinates using Google Distance Matrix."""
     key = os.getenv("GOOGLE_KEY")
@@ -62,10 +65,31 @@ ALGORITHM = "HS256"
 
 app = FastAPI()
 
-# Simple request logging for debugging
+# Simple request logging and activity tracking
 @app.middleware("http")
 async def log_requests(request, call_next):
     print(f"Incoming {request.method} {request.url}")
+    user = None
+    auth = request.headers.get("Authorization")
+    if auth and auth.startswith("Bearer "):
+        token = auth.split(" ", 1)[1]
+        try:
+            payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM])
+            user = payload.get("sub")
+        except JWTError:
+            user = "invalid_token"
+
+    log_entry = {
+        "timestamp": datetime.utcnow().isoformat(),
+        "method": request.method,
+        "path": request.url.path,
+        "user": user,
+    }
+    try:
+        redis_client.rpush(ACTIVITY_LOG_KEY, json.dumps(log_entry))
+    except Exception as e:
+        print(f"Failed to store activity log: {e}")
+
     response = await call_next(request)
     print(f"Response status: {response.status_code}")
     return response
@@ -274,6 +298,19 @@ def login(req: LoginRequest):
     }
     token = jwt.encode(payload, JWT_SECRET, algorithm=ALGORITHM)
     print(f"Login successful for {req.email}")
+    try:
+        redis_client.rpush(
+            ACTIVITY_LOG_KEY,
+            json.dumps(
+                {
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "user": req.email,
+                    "action": "login",
+                }
+            ),
+        )
+    except Exception as e:
+        print(f"Failed to store login log: {e}")
     return {"token": token}
 
 @app.post("/approve")
@@ -1279,3 +1316,18 @@ def check_admin():
     if not raw:
         return {"exists": False}
     return json.loads(raw)
+
+
+@app.get("/activity-log")
+def activity_log(limit: int = 100, current_user: dict = Depends(get_current_user)):
+    """Return recent activity log entries."""
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+
+    try:
+        raw_entries = redis_client.lrange(ACTIVITY_LOG_KEY, -limit, -1) or []
+        entries = [json.loads(e) for e in raw_entries if e]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read activity log: {e}")
+
+    return {"entries": entries}

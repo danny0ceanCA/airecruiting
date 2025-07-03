@@ -30,6 +30,7 @@ function AdminMenu({ children }) {
               <Link to="/students">Student Profiles</Link>
               <Link to="/career-info">Career Staff Info</Link>
               <Link to="/admin/jobs">Job Matching</Link>
+              <Link to="/admin/activity-log">Activity Log</Link>
             </>
           )}
           {userRole === 'recruiter' && (
