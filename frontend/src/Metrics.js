@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import api from './api';
 import jwtDecode from 'jwt-decode';
+import AdminMenu from './AdminMenu';
 import {
   BarChart,
   Bar,
@@ -51,10 +52,20 @@ function Metrics() {
   }, []);
 
   if (loading) {
-    return <div className="metrics-container">Loading...</div>;
+    return (
+      <div className="metrics-container">
+        <AdminMenu />
+        Loading...
+      </div>
+    );
   }
   if (!metricsData) {
-    return <div className="metrics-container">Failed to load metrics</div>;
+    return (
+      <div className="metrics-container">
+        <AdminMenu />
+        Failed to load metrics
+      </div>
+    );
   }
 
   const highlight = [
@@ -94,6 +105,7 @@ function Metrics() {
 
   return (
     <div className="metrics-container">
+      <AdminMenu />
       <div className="metric-grid">
         {highlight.map((h) => (
           <div key={h.label} className="highlight-card">

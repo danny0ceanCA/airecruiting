@@ -1,18 +1,22 @@
 .job-posting-container {
-  background: #032c4d;
+  background: linear-gradient(135deg, #001f3f, #003366 50%, #004080);
   color: white;
   min-height: 100vh;
-  padding: 0 1.5rem 2rem 1.5rem;
+  padding: 1.5rem 1.5rem 2rem;
   position: relative;
   border-radius: 1.25rem;
   max-width: 98vw;
   margin: 0 auto;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.07);
+  box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  box-sizing: border-box;
 }
 
 /* Make the whole area under your navbar navy */
 .job-matching-module {
-  background: #032c4d;
+  background: linear-gradient(135deg, #001f3f, #003366 50%, #004080);
   border-radius: 1.25rem;
   padding: 1.5rem;
   max-width: 98vw;
@@ -35,14 +39,15 @@
   flex: 1;
   min-width: 300px;
   max-width: 600px;
-  background-color: #04345e;
+  background-color: rgba(255, 255, 255, 0.9);
   padding: 1.5rem;
-  border-radius: 8px;
-  color: white;
+  border-radius: 10px;
+  color: #002244;
   display: flex;
   flex-direction: column;
   margin-bottom: 0;
   align-self: flex-start;
+  box-shadow: 0 6px 15px rgba(0, 0, 0, 0.2);
 }
 
 .post-job-form {
@@ -64,8 +69,9 @@
 .post-job-panel textarea {
   padding: 0.5rem;
   border-radius: 5px;
-  border: none;
-  color: black;
+  border: 1px solid #ccc;
+  color: #002244;
+  background-color: #fff;
   width: 100%;
   max-width: 100%;
 }
@@ -77,6 +83,7 @@
   padding: 0.6rem 1rem;
   border-radius: 5px;
   cursor: pointer;
+  font-weight: 600;
 }
 
 .post-job-panel button:hover {
@@ -104,8 +111,9 @@
   margin-bottom: 1rem;
   padding: 0.5rem;
   border-radius: 5px;
-  border: none;
-  color: black;
+  border: 1px solid #ccc;
+  color: #002244;
+  background-color: #fff;
   width: 100%;
   max-width: 300px;
 }
@@ -125,6 +133,8 @@
 
 .job-table th {
   background-color: #003366;
+  color: white;
+  font-weight: 600;
 }
 
 .job-table td {
@@ -148,6 +158,7 @@
 .matches-table th {
   background-color: #003366;
   color: white;
+  font-weight: 600;
 }
 
 .matches-table td {
@@ -160,48 +171,6 @@
   background-color: #f0f0f0;
 }
 
-.admin-menu {
-  position: absolute;
-  top: 1rem;
-  right: 1rem;
-}
-
-.menu-button {
-  background-color: #0074d9;
-  color: white;
-  border: none;
-  padding: 0.4rem 0.8rem;
-  border-radius: 5px;
-  cursor: pointer;
-}
-
-.dropdown-menu {
-  position: absolute;
-  right: 0;
-  margin-top: 0.5rem;
-  background-color: #003366;
-  border-radius: 5px;
-  display: flex;
-  flex-direction: column;
-  min-width: 160px;
-  z-index: 10;
-}
-
-.dropdown-menu a,
-.dropdown-menu button {
-  color: white;
-  text-decoration: none;
-  padding: 0.5rem 1rem;
-  background: none;
-  border: none;
-  text-align: left;
-  cursor: pointer;
-}
-
-.dropdown-menu a:hover,
-.dropdown-menu button:hover {
-  background-color: #001f3f;
-}
 
 .filter-box {
   margin-bottom: 1rem;
@@ -428,7 +397,6 @@
 .tab-bar {
   display: flex;
   align-items: flex-end;
-  background: #032c4d !important;
   margin-bottom: 0 !important;
   border-bottom: none !important;
   padding-left: 0.5rem;

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import jwt_decode from 'jwt-decode';
+import './AdminMenu.css';
 
 function AdminMenu({ children }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -22,18 +23,24 @@ function AdminMenu({ children }) {
       </button>
       {menuOpen && (
         <div className="dropdown-menu">
+          <Link to="/dashboard">Dashboard</Link>
           {userRole === 'admin' && (
             <>
-              <Link to="/dashboard">Dashboard</Link>
               <Link to="/admin/pending">Pending Approvals</Link>
               <Link to="/students">Student Profiles</Link>
+              <Link to="/career-info">Career Staff Info</Link>
               <Link to="/admin/jobs">Job Matching</Link>
             </>
           )}
           {userRole === 'recruiter' && (
             <Link to="/recruiter/jobs">Job Matching</Link>
           )}
-          {userRole === 'career' && <Link to="/students">Student Profiles</Link>}
+          {userRole === 'career' && (
+            <>
+              <Link to="/students">Student Profiles</Link>
+              <Link to="/career-info">Career Staff Info</Link>
+            </>
+          )}
           {children}
           <button onClick={handleLogout}>Logout</button>
         </div>

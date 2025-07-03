@@ -1,16 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import jwtDecode from 'jwt-decode';
+import AdminMenu from './AdminMenu';
 import './Dashboard.css';
 
 function Dashboard() {
   const [role, setRole] = useState('');
-  const navigate = useNavigate();
-
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    navigate('/login');
-  };
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -28,28 +23,14 @@ function Dashboard() {
 
   return (
     <div className="dashboard-container">
-      <div style={{ position: 'absolute', top: '20px', right: '30px' }}>
-        <button
-          style={{
-            padding: '6px 14px',
-            border: 'none',
-            borderRadius: '6px',
-            backgroundColor: '#fff',
-            color: '#002244',
-            fontWeight: 'bold',
-            cursor: 'pointer',
-            boxShadow: '0 2px 6px rgba(0,0,0,0.2)'
-          }}
-          onClick={handleLogout}
-        >
-          Logout
-        </button>
-      </div>
+      <AdminMenu />
+      <h2 className="dashboard-heading">Dashboard</h2>
       <div className="tile-grid">
         {role === 'admin' && (
           <>
             <Link to="/students" className="dashboard-tile">Student Profiles</Link>
             <Link to="/metrics" className="dashboard-tile">School Metrics</Link>
+            <Link to="/career-info" className="dashboard-tile">Career Staff Information</Link>
             <Link to="/admin/pending" className="dashboard-tile">Pending Registrations</Link>
           </>
         )}
@@ -58,6 +39,7 @@ function Dashboard() {
           <>
             <Link to="/students" className="dashboard-tile">Student Profiles</Link>
             <Link to="/metrics" className="dashboard-tile">School Metrics</Link>
+            <Link to="/career-info" className="dashboard-tile">Career Staff Information</Link>
           </>
         )}
 
