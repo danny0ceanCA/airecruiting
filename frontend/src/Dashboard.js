@@ -32,6 +32,7 @@ function Dashboard() {
             <Link to="/metrics" className="dashboard-tile">School Metrics</Link>
             <Link to="/career-info" className="dashboard-tile">Career Staff Information</Link>
             <Link to="/admin/pending" className="dashboard-tile">Pending Registrations</Link>
+            <Link to="/admin/activity-log" className="dashboard-tile">Activity Log</Link>
           </>
         )}
 

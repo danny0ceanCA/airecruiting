@@ -1,0 +1,48 @@
+.activity-log-container {
+  background: linear-gradient(135deg, #001f3f, #003366 50%, #004080);
+  min-height: 100vh;
+  color: white;
+  padding: 2rem;
+  position: relative;
+  border-radius: 1.25rem;
+  max-width: 98vw;
+  margin: 0 auto;
+  box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.5);
+}
+
+.download-btn {
+  background-color: #0074d9;
+  color: white;
+  border: none;
+  padding: 0.4rem 0.8rem;
+  border-radius: 5px;
+  cursor: pointer;
+  font-weight: 600;
+  margin-bottom: 1rem;
+}
+
+.log-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.log-table th,
+.log-table td {
+  border: 1px solid #ccc;
+  padding: 0.5rem;
+}
+
+.log-table th {
+  background-color: #003366;
+  color: white;
+  font-weight: 600;
+}
+
+.log-table td {
+  background-color: white;
+  color: black;
+}
+
+.error {
+  color: #ff4136;
+}
