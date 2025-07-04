@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import api from './api';
 import jwtDecode from 'jwt-decode';
 import AdminMenu from './AdminMenu';
+import loadGoogleMaps from './utils/loadGoogleMaps';
 import './StudentProfiles.css';
 
 function ApplicantProfile() {
@@ -28,6 +29,27 @@ function ApplicantProfile() {
   const [isEditing, setIsEditing] = useState(false);
   const [jobDescriptionStatus, setJobDescriptionStatus] = useState({});
   const [loadingJobDescriptions, setLoadingJobDescriptions] = useState({});
+
+  const cityRef = useRef(null);
+
+  const initAutocomplete = () => {
+    if (cityRef.current && window.google) {
+      const ac = new window.google.maps.places.Autocomplete(cityRef.current, { types: ['(cities)'] });
+      ac.addListener('place_changed', () => {
+        const place = ac.getPlace();
+        const comps = place.address_components || [];
+        const city = comps.find(c => c.types.includes('locality'))?.long_name || '';
+        const state = comps.find(c => c.types.includes('administrative_area_level_1'))?.short_name || '';
+        const lat = place.geometry.location.lat();
+        const lng = place.geometry.location.lng();
+        setFormData(prev => ({ ...prev, city, state, lat, lng }));
+      });
+    }
+  };
+
+  useEffect(() => {
+    loadGoogleMaps(initAutocomplete);
+  }, []);
 
   useEffect(() => {
     if (token) {
@@ -137,6 +159,8 @@ function ApplicantProfile() {
               <label htmlFor={field}>{field.replace(/_/g, ' ').replace(/\b\w/g,l=>l.toUpperCase())}</label>
               {field === 'experience_summary' ? (
                 <textarea id={field} name={field} value={formData[field]} onChange={handleChange} />
+              ) : field === 'city' ? (
+                <input id={field} ref={cityRef} name={field} type="text" value={formData[field]} onChange={handleChange} />
               ) : (
                 <input id={field} name={field} type={field==='max_travel'?'number':'text'} value={formData[field]} onChange={handleChange} disabled={field==='email'} />
               )}
