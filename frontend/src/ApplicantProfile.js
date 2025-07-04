@@ -29,6 +29,8 @@ function ApplicantProfile() {
   const [isEditing, setIsEditing] = useState(false);
   const [jobDescriptionStatus, setJobDescriptionStatus] = useState({});
   const [loadingJobDescriptions, setLoadingJobDescriptions] = useState({});
+  const [toast, setToast] = useState('');
+  const [activeTab, setActiveTab] = useState('profile');
 
   const cityRef = useRef(null);
 
@@ -48,8 +50,10 @@ function ApplicantProfile() {
   };
 
   useEffect(() => {
-    loadGoogleMaps(initAutocomplete);
-  }, []);
+    if (activeTab === 'profile') {
+      loadGoogleMaps(initAutocomplete);
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     if (token) {
@@ -109,10 +113,13 @@ function ApplicantProfile() {
     try {
       if (isEditing) {
         await api.put(`/students/${email}`, payload, { headers: { Authorization: `Bearer ${token}` } });
+        setToast('Profile updated!');
       } else {
         await api.post('/students', payload, { headers: { Authorization: `Bearer ${token}` } });
         setIsEditing(true);
+        setToast('Profile created!');
       }
+      setTimeout(() => setToast(''), 3000);
       fetchProfile();
     } catch (err) {
       console.error('Save failed', err);
@@ -162,67 +169,90 @@ function ApplicantProfile() {
   return (
     <div className="profiles-container">
       <AdminMenu />
-      <div className="form-panel">
-        <h2>Applicant Profile</h2>
-        <form className="profile-form" onSubmit={handleSubmit}>
-          {['first_name','last_name','email','phone','education_level','skills','experience_summary','interests','city','state','max_travel'].map(field => (
-            <React.Fragment key={field}>
-              <label htmlFor={field}>{field.replace(/_/g, ' ').replace(/\b\w/g,l=>l.toUpperCase())}</label>
-              {field === 'experience_summary' ? (
-                <textarea id={field} name={field} value={formData[field]} onChange={handleChange} />
-              ) : (
-                <input
-                  id={field}
-                  name={field}
-                  type={field === 'max_travel' ? 'number' : 'text'}
-                  value={formData[field]}
-                  onChange={handleChange}
-                  disabled={field === 'email'}
-                  readOnly={['state'].includes(field)}
-                  ref={field === 'city' ? cityRef : null}
-                  required={['city', 'state', 'max_travel'].includes(field)}
-                />
-              )}
-            </React.Fragment>
-          ))}
-          <input type="hidden" id="lat" name="lat" value={formData.lat} readOnly />
-          <input type="hidden" id="lng" name="lng" value={formData.lng} readOnly />
-          <button type="submit">{isEditing ? 'Update Profile' : 'Save Profile'}</button>
-        </form>
+      {toast && <div className="toast">{toast}</div>}
+      <div className="tab-bar">
+        <button
+          className={`tab ${activeTab === 'profile' ? 'active' : ''}`}
+          onClick={() => setActiveTab('profile')}
+        >
+          Profile
+        </button>
+        <button
+          className={`tab ${activeTab === 'matches' ? 'active' : ''}`}
+          onClick={() => setActiveTab('matches')}
+        >
+          Matches
+        </button>
       </div>
-      {assignedJobs.length > 0 && (
-        <div style={{marginTop:'2rem'}}>
-          <h3>Matched Jobs</h3>
-          <table className="job-subtable">
-            <thead>
-              <tr>
-                <th>Job Title</th>
-                <th>Rate</th>
-                <th>Source</th>
-                <th>Job Description</th>
-              </tr>
-            </thead>
-            <tbody>
-              {assignedJobs.map((job, idx) => (
-                <tr key={idx}>
-                  <td>{job.job_title}</td>
-                  <td>{job.min_pay && job.max_pay ? `${job.min_pay} - ${job.max_pay}` : 'N/A'}</td>
-                  <td>{job.source || 'N/A'}</td>
-                  <td style={{textAlign:'center'}}>
-                    {loadingJobDescriptions[job.job_code] ? (
-                      <span>Generating...</span>
-                    ) : jobDescriptionStatus[job.job_code] === 'ready' ? (
-                      <button onClick={() => viewJobDescription(job.job_code)}>View</button>
-                    ) : (
-                      <button onClick={() => generateJobDescription(job.job_code)}>Generate</button>
-                    )}
-                  </td>
-                </tr>
+      <div className="tab-content">
+        {activeTab === 'profile' && (
+          <div className="form-panel">
+            <h2>Applicant Profile</h2>
+            <form className="profile-form" onSubmit={handleSubmit}>
+              {['first_name','last_name','email','phone','education_level','skills','experience_summary','interests','city','state','max_travel'].map(field => (
+                <React.Fragment key={field}>
+                  <label htmlFor={field}>{field.replace(/_/g, ' ').replace(/\b\w/g,l=>l.toUpperCase())}</label>
+                  {field === 'experience_summary' ? (
+                    <textarea id={field} name={field} value={formData[field]} onChange={handleChange} />
+                  ) : (
+                    <input
+                      id={field}
+                      name={field}
+                      type={field === 'max_travel' ? 'number' : 'text'}
+                      value={formData[field]}
+                      onChange={handleChange}
+                      disabled={field === 'email'}
+                      readOnly={['state'].includes(field)}
+                      ref={field === 'city' ? cityRef : null}
+                      required={['city', 'state', 'max_travel'].includes(field)}
+                    />
+                  )}
+                </React.Fragment>
               ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+              <input type="hidden" id="lat" name="lat" value={formData.lat} readOnly />
+              <input type="hidden" id="lng" name="lng" value={formData.lng} readOnly />
+              <button type="submit">{isEditing ? 'Update Profile' : 'Save Profile'}</button>
+            </form>
+          </div>
+        )}
+        {activeTab === 'matches' && (
+          <div className="form-panel">
+            <h2>Matched Jobs</h2>
+            {assignedJobs.length > 0 ? (
+              <table className="job-subtable">
+                <thead>
+                  <tr>
+                    <th>Job Title</th>
+                    <th>Rate</th>
+                    <th>Source</th>
+                    <th>Job Description</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {assignedJobs.map((job, idx) => (
+                    <tr key={idx}>
+                      <td>{job.job_title}</td>
+                      <td>{job.min_pay && job.max_pay ? `${job.min_pay} - ${job.max_pay}` : 'N/A'}</td>
+                      <td>{job.source || 'N/A'}</td>
+                      <td style={{textAlign:'center'}}>
+                        {loadingJobDescriptions[job.job_code] ? (
+                          <span>Generating...</span>
+                        ) : jobDescriptionStatus[job.job_code] === 'ready' ? (
+                          <button onClick={() => viewJobDescription(job.job_code)}>View</button>
+                        ) : (
+                          <button onClick={() => generateJobDescription(job.job_code)}>Generate</button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <p>No matches found.</p>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
