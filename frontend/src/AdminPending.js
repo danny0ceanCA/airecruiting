@@ -109,6 +109,7 @@ function AdminPending() {
                 >
                   <option value="career">Career Service Staff</option>
                   <option value="recruiter">Recruiter</option>
+                  <option value="applicant">Applicant</option>
                 </select>
                 <button className="approve-button" onClick={() => handleApprove(user.email)}>Approve</button>
                 <button className="reject-button" onClick={() => handleReject(user.email)}>Reject</button>

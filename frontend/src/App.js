@@ -7,6 +7,7 @@ import Dashboard from './Dashboard';
 import ProtectedRoute from './ProtectedRoute';
 import AdminPending from './AdminPending';
 import StudentProfiles from './StudentProfiles';
+import ApplicantProfile from './ApplicantProfile';
 import JobPosting from './JobPosting';
 import Metrics from './Metrics';
 import CareerStaffInfo from './CareerStaffInfo';
@@ -33,6 +34,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <StudentProfiles />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/applicant/profile"
+            element={
+              <ProtectedRoute>
+                <ApplicantProfile />
               </ProtectedRoute>
             }
           />

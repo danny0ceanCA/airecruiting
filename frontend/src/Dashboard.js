@@ -44,6 +44,10 @@ function Dashboard() {
           </>
         )}
 
+        {role === 'applicant' && (
+          <Link to="/applicant/profile" className="dashboard-tile">Applicant Profile</Link>
+        )}
+
         {role === 'admin' || role === 'recruiter' ? (
           <Link to={role === 'admin' ? '/admin/jobs' : '/recruiter/jobs'}>
             <div className="dashboard-tile">Job Matching</div>
