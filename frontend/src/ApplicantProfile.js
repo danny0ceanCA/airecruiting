@@ -47,9 +47,11 @@ function ApplicantProfile() {
     }
   };
 
+  // Ensure autocomplete is reinitialized when the editing state causes
+  // the input element to be re-rendered
   useEffect(() => {
     loadGoogleMaps(initAutocomplete);
-  }, []);
+  }, [isEditing]);
 
   useEffect(() => {
     if (token) {
