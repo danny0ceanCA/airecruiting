@@ -90,10 +90,21 @@ function ApplicantProfile() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!formData.city || !formData.state) {
+      alert('Please select a valid city and state.');
+      return;
+    }
+    if (!formData.max_travel || parseFloat(formData.max_travel) <= 0) {
+      alert('Please enter a travel distance greater than zero.');
+      return;
+    }
+
     const payload = {
       ...formData,
       skills: formData.skills.split(',').map(s => s.trim()),
-      max_travel: parseFloat(formData.max_travel || 0)
+      lat: parseFloat(formData.lat || 0),
+      lng: parseFloat(formData.lng || 0),
+      max_travel: parseFloat(formData.max_travel)
     };
     try {
       if (isEditing) {
@@ -169,6 +180,7 @@ function ApplicantProfile() {
                   disabled={field === 'email'}
                   readOnly={['state'].includes(field)}
                   ref={field === 'city' ? cityRef : null}
+                  required={['city', 'state', 'max_travel'].includes(field)}
                 />
               )}
             </React.Fragment>
