@@ -94,8 +94,10 @@ function ApplicantProfile() {
     e.preventDefault();
     const payload = {
       ...formData,
-      skills: formData.skills.split(',').map(s => s.trim()),
-      max_travel: parseFloat(formData.max_travel || 0)
+      skills: formData.skills.split(',').map((s) => s.trim()),
+      max_travel: parseFloat(formData.max_travel || 0),
+      lat: parseFloat(formData.lat || 0),
+      lng: parseFloat(formData.lng || 0),
     };
     try {
       if (isEditing) {
@@ -158,16 +160,30 @@ function ApplicantProfile() {
         <form className="profile-form" onSubmit={handleSubmit}>
           {['first_name','last_name','email','phone','education_level','skills','experience_summary','interests','city','state','max_travel'].map(field => (
             <React.Fragment key={field}>
-              <label htmlFor={field}>{field.replace(/_/g, ' ').replace(/\b\w/g,l=>l.toUpperCase())}</label>
+              <label htmlFor={field}>{field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</label>
               {field === 'experience_summary' ? (
-                <textarea id={field} name={field} value={formData[field]} onChange={handleChange} />
-              ) : field === 'city' ? (
-                <input id={field} ref={cityRef} name={field} type="text" value={formData[field]} onChange={handleChange} />
+                <textarea
+                  id={field}
+                  name={field}
+                  value={formData[field]}
+                  onChange={handleChange}
+                />
               ) : (
-                <input id={field} name={field} type={field==='max_travel'?'number':'text'} value={formData[field]} onChange={handleChange} disabled={field==='email'} />
+                <input
+                  id={field}
+                  name={field}
+                  type={field === 'max_travel' ? 'number' : 'text'}
+                  value={formData[field]}
+                  onChange={handleChange}
+                  readOnly={['state'].includes(field)}
+                  ref={field === 'city' ? cityRef : null}
+                  disabled={field === 'email'}
+                />
               )}
             </React.Fragment>
           ))}
+          <input type="hidden" id="lat" name="lat" value={formData.lat} readOnly />
+          <input type="hidden" id="lng" name="lng" value={formData.lng} readOnly />
           <button type="submit">{isEditing ? 'Update Profile' : 'Save Profile'}</button>
         </form>
       </div>
