@@ -42,6 +42,9 @@ function AdminMenu({ children }) {
               <Link to="/career-info">Career Staff Info</Link>
             </>
           )}
+          {userRole === 'applicant' && (
+            <Link to="/applicant/profile">My Profile</Link>
+          )}
           {children}
           <button onClick={handleLogout}>Logout</button>
         </div>

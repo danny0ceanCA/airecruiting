@@ -1,4 +1,5 @@
 import os
+
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 os.environ.setdefault("OPENAI_API_KEY", "test")
 os.environ.setdefault("GOOGLE_KEY", "test")
@@ -23,6 +24,7 @@ class DummyRedis:
 
     def scan_iter(self, pattern="*"):
         from fnmatch import fnmatch
+
         for k in list(self.store.keys()):
             if fnmatch(k, pattern):
                 yield k
@@ -56,7 +58,9 @@ def setup_module():
 
 
 def login_admin():
-    resp = client.post("/login", json={"email": "admin@example.com", "password": "admin123"})
+    resp = client.post(
+        "/login", json={"email": "admin@example.com", "password": "admin123"}
+    )
     return resp.json()["token"]
 
 
@@ -152,7 +156,11 @@ def test_create_job_and_match(monkeypatch):
     assert resp.status_code == 200
     job_code = resp.json()["job_code"]
 
-    match_resp = client.post("/match", json={"job_code": job_code}, headers={"Authorization": f"Bearer {token}"})
+    match_resp = client.post(
+        "/match",
+        json={"job_code": job_code},
+        headers={"Authorization": f"Bearer {token}"},
+    )
     assert match_resp.status_code == 200
     data = match_resp.json()["matches"]
     assert len(data) == 2
@@ -174,16 +182,20 @@ def test_get_match_results_status(monkeypatch):
     monkeypatch.setattr(main_app.redis_client, "set", fake_set)
 
     job_code = "XYZ"
-    store[f"match_results:{job_code}"] = json.dumps([
-        {"email": "a@example.com", "score": 1.0}
-    ])
-    store[f"job:{job_code}"] = json.dumps({
-        "job_code": job_code,
-        "assigned_students": ["a@example.com"],
-        "placed_students": []
-    })
+    store[f"match_results:{job_code}"] = json.dumps(
+        [{"email": "a@example.com", "score": 1.0}]
+    )
+    store[f"job:{job_code}"] = json.dumps(
+        {
+            "job_code": job_code,
+            "assigned_students": ["a@example.com"],
+            "placed_students": [],
+        }
+    )
 
-    resp = client.get(f"/match/{job_code}", headers={"Authorization": f"Bearer {token}"})
+    resp = client.get(
+        f"/match/{job_code}", headers={"Authorization": f"Bearer {token}"}
+    )
     assert resp.status_code == 200
     data = resp.json()["matches"][0]
     assert data["status"] == "assigned"
@@ -204,16 +216,20 @@ def test_get_match_results_status_placed(monkeypatch):
     monkeypatch.setattr(main_app.redis_client, "set", fake_set)
 
     job_code = "XYZ2"
-    store[f"match_results:{job_code}"] = json.dumps([
-        {"email": "b@example.com", "score": 1.0}
-    ])
-    store[f"job:{job_code}"] = json.dumps({
-        "job_code": job_code,
-        "assigned_students": [],
-        "placed_students": ["b@example.com"]
-    })
+    store[f"match_results:{job_code}"] = json.dumps(
+        [{"email": "b@example.com", "score": 1.0}]
+    )
+    store[f"job:{job_code}"] = json.dumps(
+        {
+            "job_code": job_code,
+            "assigned_students": [],
+            "placed_students": ["b@example.com"],
+        }
+    )
 
-    resp = client.get(f"/match/{job_code}", headers={"Authorization": f"Bearer {token}"})
+    resp = client.get(
+        f"/match/{job_code}", headers={"Authorization": f"Bearer {token}"}
+    )
     assert resp.status_code == 200
     data = resp.json()["matches"][0]
     assert data["status"] == "placed"
@@ -306,7 +322,118 @@ def test_match_respects_travel_distance(monkeypatch):
     resp = client.post("/jobs", json=job, headers={"Authorization": f"Bearer {token}"})
     job_code = resp.json()["job_code"]
 
-    match_resp = client.post("/match", json={"job_code": job_code}, headers={"Authorization": f"Bearer {token}"})
+    match_resp = client.post(
+        "/match",
+        json={"job_code": job_code},
+        headers={"Authorization": f"Bearer {token}"},
+    )
     data = match_resp.json()["matches"]
     assert len(data) == 1
     assert data[0]["email"] == "john@example.com"
+
+
+def test_match_respects_institution(monkeypatch):
+    token = login_admin()
+
+    store = {}
+
+    def fake_set(key, value):
+        store[key] = value
+
+    def fake_get(key):
+        return store.get(key)
+
+    def fake_exists(key):
+        return key in store
+
+    def fake_scan_iter(pattern="*"):
+        for k in list(store.keys()):
+            yield k
+
+    monkeypatch.setattr(main_app.redis_client, "set", fake_set)
+    monkeypatch.setattr(main_app.redis_client, "get", fake_get)
+    monkeypatch.setattr(main_app.redis_client, "exists", fake_exists)
+    monkeypatch.setattr(main_app.redis_client, "scan_iter", fake_scan_iter)
+
+    class FakeResp:
+        def __init__(self, emb):
+            self.data = [type("obj", (), {"embedding": emb})]
+
+    monkeypatch.setattr(main_app, "get_driving_distance_miles", lambda *a, **k: 5.0)
+    monkeypatch.setattr(
+        main_app.client.embeddings, "create", lambda *a, **k: FakeResp([1.0, 0.0])
+    )
+
+    admin_data = (
+        main_app.redis_client.store.get("user:admin@example.com")
+        if hasattr(main_app.redis_client, "store")
+        else None
+    )
+    if admin_data:
+        store["user:admin@example.com"] = admin_data
+
+    s1 = {
+        "first_name": "John",
+        "last_name": "Doe",
+        "email": "john@example.com",
+        "phone": "123",
+        "education_level": "College",
+        "skills": ["python"],
+        "experience_summary": "summary1",
+        "interests": "A",
+        "city": "City",
+        "state": "ST",
+        "lat": 0.0,
+        "lng": 0.0,
+        "max_travel": 100.0,
+    }
+
+    s2 = {
+        "first_name": "Jane",
+        "last_name": "Smith",
+        "email": "jane@example.com",
+        "phone": "555",
+        "education_level": "College",
+        "skills": ["python"],
+        "experience_summary": "summary2",
+        "interests": "B",
+        "city": "City",
+        "state": "ST",
+        "lat": 0.0,
+        "lng": 0.0,
+        "max_travel": 100.0,
+    }
+
+    client.post("/students", json=s1, headers={"Authorization": f"Bearer {token}"})
+    client.post("/students", json=s2, headers={"Authorization": f"Bearer {token}"})
+
+    # modify second student's institution
+    data = json.loads(store.get("student:jane@example.com"))
+    data["institutional_code"] = "Other"
+    store["student:jane@example.com"] = json.dumps(data)
+
+    job = {
+        "job_title": "Dev",
+        "job_description": "Need python dev",
+        "desired_skills": ["python"],
+        "source": "test",
+        "min_pay": 1.0,
+        "max_pay": 2.0,
+        "city": "City",
+        "state": "ST",
+        "lat": 0.0,
+        "lng": 0.0,
+    }
+
+    resp = client.post("/jobs", json=job, headers={"Authorization": f"Bearer {token}"})
+    job_code = resp.json()["job_code"]
+
+    match_resp = client.post(
+        "/match",
+        json={"job_code": job_code},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert match_resp.status_code == 200
+    matches = match_resp.json()["matches"]
+    assert len(matches) == 1
+    assert matches[0]["email"] == "john@example.com"

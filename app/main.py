@@ -15,10 +15,18 @@ from fastapi import (
 )
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, EmailStr, Field, ConfigDict, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    EmailStr,
+    Field,
+    ConfigDict,
+    field_validator,
+    model_validator,
+)
 from jose import jwt, JWTError
 from dotenv import load_dotenv
 import bcrypt
+
 for _p in ["http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY"]:
     os.environ.pop(_p, None)
 import httpx
@@ -44,7 +52,10 @@ redis_client = redis.Redis.from_url(redis_url, decode_responses=True)
 # Key used to store activity log entries
 ACTIVITY_LOG_KEY = "activity_logs"
 
-def get_driving_distance_miles(orig_lat: float, orig_lng: float, dest_lat: float, dest_lng: float) -> float:
+
+def get_driving_distance_miles(
+    orig_lat: float, orig_lng: float, dest_lat: float, dest_lng: float
+) -> float:
     """Return driving distance in miles between two coordinates using Google Distance Matrix."""
     key = os.getenv("GOOGLE_KEY")
     if not key:
@@ -55,15 +66,19 @@ def get_driving_distance_miles(orig_lat: float, orig_lng: float, dest_lat: float
         "units": "imperial",
         "key": key,
     }
-    resp = httpx.get("https://maps.googleapis.com/maps/api/distancematrix/json", params=params)
+    resp = httpx.get(
+        "https://maps.googleapis.com/maps/api/distancematrix/json", params=params
+    )
     data = resp.json()
     value_meters = data["rows"][0]["elements"][0]["distance"]["value"]
     return value_meters / 1609.34
+
 
 JWT_SECRET = "secret"
 ALGORITHM = "HS256"
 
 app = FastAPI()
+
 
 # Simple request logging and activity tracking
 @app.middleware("http")
@@ -94,9 +109,11 @@ async def log_requests(request, call_next):
     print(f"Response status: {response.status_code}")
     return response
 
+
 @app.get("/routes")
 def list_routes():
     return [route.path for route in app.routes]
+
 
 # Add CORS middleware BEFORE defining routes
 app.add_middleware(
@@ -107,19 +124,22 @@ app.add_middleware(
         "http://localhost:3002",
         "https://airecruiting-frontend.onrender.com",
         "https://talentmatch-frontend-nacw.onrender.com",
-        "https://talentmatch-ai.com"
+        "https://talentmatch-ai.com",
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+
 # Optional: Preflight catch-all
 @app.options("/{rest_of_path:path}")
 async def preflight_handler(rest_of_path: str):
     return {}
 
+
 # ----- User Utilities ----- #
+
 
 def init_default_admin():
     key = "user:admin@example.com"
@@ -141,6 +161,7 @@ def init_default_admin():
         )
         print("Default admin user created")
 
+
 @app.on_event("startup")
 def on_startup():
     # Verify Redis connection and seed the default admin
@@ -154,6 +175,7 @@ def on_startup():
     keys = redis_client.keys("match_results:*")
     print(f"🔎 Found {len(keys)} saved match sets at startup.")
 
+
 # -------- Models -------- #
 class RegisterRequest(BaseModel):
     email: EmailStr
@@ -164,16 +186,20 @@ class RegisterRequest(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
+
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
 
+
 class ApproveRequest(BaseModel):
     email: EmailStr
-    role: str  # "career" or "recruiter"
+    role: str  # "career", "recruiter", or "applicant"
+
 
 class RejectRequest(BaseModel):
     email: EmailStr
+
 
 class StudentRequest(BaseModel):
     first_name: str
@@ -196,6 +222,7 @@ class StudentRequest(BaseModel):
         if v <= 0:
             raise ValueError("max_travel must be positive")
         return v
+
 
 class JobRequest(BaseModel):
     job_title: str
@@ -223,8 +250,10 @@ class JobRequest(BaseModel):
             raise ValueError("Minimum pay cannot exceed maximum pay")
         return self
 
+
 class JobCodeRequest(BaseModel):
     job_code: str
+
 
 # -------- Auth -------- #
 def get_current_user(authorization: str = Header(..., alias="Authorization")):
@@ -237,10 +266,12 @@ def get_current_user(authorization: str = Header(..., alias="Authorization")):
         raise HTTPException(status_code=401, detail="Invalid token")
     return payload
 
+
 # -------- Routes -------- #
 @app.get("/")
 def read_root():
     return {"message": "Hello, World"}
+
 
 @app.post("/register")
 def register(req: RegisterRequest):
@@ -271,6 +302,7 @@ def register(req: RegisterRequest):
         ),
     )
     return {"message": "Registration submitted. Awaiting admin approval"}
+
 
 @app.post("/login")
 def login(req: LoginRequest):
@@ -313,6 +345,7 @@ def login(req: LoginRequest):
         print(f"Failed to store login log: {e}")
     return {"token": token}
 
+
 @app.post("/approve")
 def approve(req: ApproveRequest, current_user: dict = Depends(get_current_user)):
     if current_user.get("role") != "admin":
@@ -327,6 +360,7 @@ def approve(req: ApproveRequest, current_user: dict = Depends(get_current_user))
     redis_client.set(key, json.dumps(user))
     return {"message": f"{req.email} approved as {req.role}"}
 
+
 @app.post("/reject")
 def reject(req: RejectRequest, current_user: dict = Depends(get_current_user)):
     if current_user.get("role") != "admin":
@@ -339,6 +373,7 @@ def reject(req: RejectRequest, current_user: dict = Depends(get_current_user)):
     user["rejected"] = True
     redis_client.set(key, json.dumps(user))
     return {"message": f"{req.email} rejected"}
+
 
 @app.get("/pending-users")
 def pending_users(current_user: dict = Depends(get_current_user)):
@@ -353,11 +388,16 @@ def pending_users(current_user: dict = Depends(get_current_user)):
         if info.get("approved") or info.get("rejected"):
             continue
         email = key.split("user:", 1)[1]
-        pending.append({"email": email, **{k: v for k, v in info.items() if k != "password"}})
+        pending.append(
+            {"email": email, **{k: v for k, v in info.items() if k != "password"}}
+        )
     return pending
 
+
 @app.post("/students")
-async def create_student(request: Request, current_user: dict = Depends(get_current_user)):
+async def create_student(
+    request: Request, current_user: dict = Depends(get_current_user)
+):
     content_type = request.headers.get("content-type", "")
     resume_file: UploadFile | None = None
 
@@ -419,18 +459,22 @@ async def create_student(request: Request, current_user: dict = Depends(get_curr
             )
             completion = client.chat.completions.create(
                 model="gpt-4o",
-                messages=[{"role": "user", "content": f"{instructions}\n\n{resume_text}"}],
+                messages=[
+                    {"role": "user", "content": f"{instructions}\n\n{resume_text}"}
+                ],
                 temperature=0.0,
             )
             profile_json = json.loads(completion.choices[0].message.content)
         except Exception:
             profile_json = None
 
-    combined = " ".join([
-        ", ".join(student_data.skills),
-        student_data.experience_summary,
-        student_data.interests,
-    ])
+    combined = " ".join(
+        [
+            ", ".join(student_data.skills),
+            student_data.experience_summary,
+            student_data.interests,
+        ]
+    )
     try:
         resp = client.embeddings.create(input=combined, model="text-embedding-3-small")
         embedding = resp.data[0].embedding
@@ -453,7 +497,10 @@ async def create_student(request: Request, current_user: dict = Depends(get_curr
     redis_client.set(f"student:{student_data.email}", json.dumps(data))
 
     if profile_json is not None:
-        return {"message": "Resume parsed by GPT successfully.", "profile": profile_json}
+        return {
+            "message": "Resume parsed by GPT successfully.",
+            "profile": profile_json,
+        }
     else:
         return {"message": "Student profile submitted without GPT parsing."}
 
@@ -472,11 +519,13 @@ def update_student(
     except Exception:
         existing = {}
 
-    combined = " ".join([
-        ", ".join(updated.skills),
-        updated.experience_summary,
-        updated.interests,
-    ])
+    combined = " ".join(
+        [
+            ", ".join(updated.skills),
+            updated.experience_summary,
+            updated.interests,
+        ]
+    )
     try:
         resp = client.embeddings.create(input=combined, model="text-embedding-3-small")
         embedding = resp.data[0].embedding
@@ -494,8 +543,11 @@ def update_student(
     redis_client.set(key, json.dumps(data))
     return {"message": "Student updated successfully"}
 
+
 @app.post("/students/upload")
-def upload_students(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
+def upload_students(
+    file: UploadFile = File(...), current_user: dict = Depends(get_current_user)
+):
     content = file.file.read().decode("utf-8").splitlines()
     reader = csv.DictReader(content)
     count = 0
@@ -523,13 +575,13 @@ def upload_students(file: UploadFile = File(...), current_user: dict = Depends(g
         if redis_client.exists(student.email):
             redis_client.delete(student.email)
 
-        combined = " ".join([
-            ", ".join(student.skills),
-            student.experience_summary,
-            student.interests
-        ])
+        combined = " ".join(
+            [", ".join(student.skills), student.experience_summary, student.interests]
+        )
         try:
-            resp = client.embeddings.create(input=combined, model="text-embedding-3-small")
+            resp = client.embeddings.create(
+                input=combined, model="text-embedding-3-small"
+            )
             embedding = resp.data[0].embedding
         except Exception:
             continue
@@ -541,6 +593,7 @@ def upload_students(file: UploadFile = File(...), current_user: dict = Depends(g
         count += 1
 
     return {"message": f"Processed {count} students", "count": count}
+
 
 @app.post("/jobs")
 def create_job(job: JobRequest, current_user: dict = Depends(get_current_user)):
@@ -554,6 +607,14 @@ def create_job(job: JobRequest, current_user: dict = Depends(get_current_user)):
     data = job.model_dump()
     data["job_code"] = generated_code
     data["posted_by"] = current_user.get("sub")
+    user_raw = redis_client.get(f"user:{current_user.get('sub')}")
+    if user_raw:
+        try:
+            inst_code = json.loads(user_raw).get("institutional_code")
+        except Exception:
+            inst_code = None
+        if inst_code is not None:
+            data["institutional_code"] = inst_code
     data["timestamp"] = datetime.now().isoformat()
     data.setdefault("assigned_students", [])
     data.setdefault("placed_students", [])
@@ -564,7 +625,9 @@ def create_job(job: JobRequest, current_user: dict = Depends(get_current_user)):
 
 
 @app.put("/jobs/{job_code}")
-def update_job(job_code: str, updated: dict, token_data: dict = Depends(get_current_user)):
+def update_job(
+    job_code: str, updated: dict, token_data: dict = Depends(get_current_user)
+):
     key = f"job:{job_code}"
     raw = redis_client.get(key)
 
@@ -573,7 +636,9 @@ def update_job(job_code: str, updated: dict, token_data: dict = Depends(get_curr
 
     job = json.loads(raw)
 
-    if token_data.get("role") != "admin" and token_data.get("sub") != job.get("posted_by"):
+    if token_data.get("role") != "admin" and token_data.get("sub") != job.get(
+        "posted_by"
+    ):
         raise HTTPException(status_code=403, detail="Not authorized to edit this job")
 
     if "min_pay" in updated or "max_pay" in updated:
@@ -586,6 +651,7 @@ def update_job(job_code: str, updated: dict, token_data: dict = Depends(get_curr
     print(f"✏️ Updated job {job_code}")
     return {"message": "Job updated"}
 
+
 @app.post("/match")
 def match_job(req: JobCodeRequest, current_user: dict = Depends(get_current_user)):
     key = f"job:{req.job_code}"
@@ -593,8 +659,11 @@ def match_job(req: JobCodeRequest, current_user: dict = Depends(get_current_user
     if not raw:
         raise HTTPException(status_code=404, detail="Job not found")
     job = json.loads(raw)
+    job_code_institution = job.get("institutional_code")
 
-    combined = job.get("job_description", "") + " " + ", ".join(job.get("desired_skills", []))
+    combined = (
+        job.get("job_description", "") + " " + ", ".join(job.get("desired_skills", []))
+    )
     try:
         resp = client.embeddings.create(input=combined, model="text-embedding-3-small")
         job_emb = resp.data[0].embedding
@@ -610,6 +679,11 @@ def match_job(req: JobCodeRequest, current_user: dict = Depends(get_current_user
             continue
         try:
             student = json.loads(student_raw)
+            if (
+                job_code_institution
+                and student.get("institutional_code") != job_code_institution
+            ):
+                continue
             emb = student.get("embedding")
             if not emb:
                 continue
@@ -622,12 +696,14 @@ def match_job(req: JobCodeRequest, current_user: dict = Depends(get_current_user
             if dist > float(student.get("max_travel", 0)):
                 continue
             score = sum(a * b for a, b in zip(job_emb, emb))
-            matches.append({
-                "name": f"{student.get('first_name', '')} {student.get('last_name', '')}",
-                "email": student.get("email"),
-                "score": score,
-                "distance_miles": round(dist, 1),
-            })
+            matches.append(
+                {
+                    "name": f"{student.get('first_name', '')} {student.get('last_name', '')}",
+                    "email": student.get("email"),
+                    "score": score,
+                    "distance_miles": round(dist, 1),
+                }
+            )
         except Exception:
             continue
 
@@ -644,27 +720,15 @@ def match_job(req: JobCodeRequest, current_user: dict = Depends(get_current_user
         else:
             m["status"] = None
 
-
-
-    redis_client.set(
-        f"match_results:{req.job_code}", json.dumps(top_matches)
-    )
-    print(
-        f"✅ Stored {len(top_matches)} matches for job {req.job_code}"
-    )
+    redis_client.set(f"match_results:{req.job_code}", json.dumps(top_matches))
+    print(f"✅ Stored {len(top_matches)} matches for job {req.job_code}")
 
     # Metrics tracking
     try:
-        avg_score = (
-            sum(m["score"] for m in matches) / len(matches)
-            if matches
-            else 0.0
-        )
+        avg_score = sum(m["score"] for m in matches) / len(matches) if matches else 0.0
         redis_client.incr("metrics:total_matches")
         redis_client.incrbyfloat("metrics:total_match_score", avg_score)
-        redis_client.set(
-            "metrics:last_match_timestamp", datetime.now().isoformat()
-        )
+        redis_client.set("metrics:last_match_timestamp", datetime.now().isoformat())
     except Exception:
         pass
 
@@ -710,6 +774,7 @@ def get_match_results(job_code: str, current_user: dict = Depends(get_current_us
 def has_match_data(job_code: str):
     exists = redis_client.exists(f"match_results:{job_code}")
     return {"has_match": bool(exists)}
+
 
 @app.get("/jobs")
 def list_jobs(current_user: dict = Depends(get_current_user)):
@@ -765,8 +830,10 @@ def get_metrics(current_user: dict = Depends(get_current_user)):
     students = 0
     for key in redis_client.scan_iter("*"):
         skey = str(key)
-        if skey.startswith("user:") or skey.startswith("job:") or skey.startswith(
-            "metrics:"
+        if (
+            skey.startswith("user:")
+            or skey.startswith("job:")
+            or skey.startswith("metrics:")
         ):
             continue
         if redis_client.get(key):
@@ -799,21 +866,15 @@ def get_metrics(current_user: dict = Depends(get_current_user)):
     total_rematches = int(total_rematches or 0)
     sum_time_to_place = float(sum_time_to_place or 0.0)
 
-    avg_match_score = (
-        total_match_score / total_matches if total_matches else None
-    )
+    avg_match_score = total_match_score / total_matches if total_matches else None
     latest_match_timestamp = redis_client.get("metrics:last_match_timestamp")
 
-    placement_rate = (
-        total_placements / students if students else 0
-    )
+    placement_rate = total_placements / students if students else 0
     avg_time_to_place = (
         sum_time_to_place / total_placements if total_placements else 0.0
     )
     avg_time_to_place = round(avg_time_to_place, 1)
-    rematch_rate = (
-        total_rematches / total_placements if total_placements else 0
-    )
+    rematch_rate = total_rematches / total_placements if total_placements else 0
 
     license_counts: dict[str, int] = {}
     license_keys = list(redis_client.scan_iter("metrics:licensed:*"))
@@ -868,6 +929,7 @@ def place_student(data: dict, token_data: dict = Depends(get_current_user)):
     redis_client.set(key, json.dumps(job))
     return {"message": f"Placed {student_email}"}
 
+
 @app.post("/assign")
 def assign_student(data: dict, token_data: dict = Depends(get_current_user)):
     job_code = data["job_code"]
@@ -892,17 +954,19 @@ def generate_resume(req: ResumeRequest, current_user: dict = Depends(get_current
     Generates a text resume using OpenAI and stores it in Redis.
     Does not regenerate if it already exists.
     """
-    print(f"\U0001F4C4 Generating resume for {req.student_email} - {req.job_code}")
+    print(f"\U0001f4c4 Generating resume for {req.student_email} - {req.job_code}")
     resume_key = f"resume:{req.job_code}:{req.student_email}"
     existing = redis_client.get(resume_key)
     if existing:
-        print(f"\U0001F4C4 Resume already exists for {req.student_email} - {req.job_code}")
+        print(
+            f"\U0001f4c4 Resume already exists for {req.student_email} - {req.job_code}"
+        )
         return {"status": "exists"}
 
     job_raw = redis_client.get(f"job:{req.job_code}")
     student_raw = redis_client.get(f"student:{req.student_email}")
     if not job_raw or not student_raw:
-        print("\u274C Job or student not found")
+        print("\u274c Job or student not found")
         raise HTTPException(status_code=404, detail="Job or student not found")
 
     job = json.loads(job_raw)
@@ -916,13 +980,15 @@ def generate_resume(req: ResumeRequest, current_user: dict = Depends(get_current
 
 
 @app.post("/generate-description")
-def generate_description(req: DescriptionRequest, current_user: dict = Depends(get_current_user)):
+def generate_description(
+    req: DescriptionRequest, current_user: dict = Depends(get_current_user)
+):
     """Generate a short job description tailored to a student."""
-    print(f"\U0001F4DD Generating description for {req.student_email} - {req.job_code}")
+    print(f"\U0001f4dd Generating description for {req.student_email} - {req.job_code}")
     desc_key = f"description:{req.job_code}:{req.student_email}"
     existing = redis_client.get(desc_key)
     if existing:
-        print("\U0001F4DD Description already exists")
+        print("\U0001f4dd Description already exists")
         return {"status": "exists", "description": existing}
 
     job_raw = redis_client.get(f"job:{req.job_code}")
@@ -940,7 +1006,9 @@ def generate_description(req: DescriptionRequest, current_user: dict = Depends(g
 
 
 @app.post("/generate-job-description")
-def generate_job_description(req: ResumeRequest, current_user: dict = Depends(get_current_user)):
+def generate_job_description(
+    req: ResumeRequest, current_user: dict = Depends(get_current_user)
+):
     job_code = req.job_code
     student_email = req.student_email
     key = f"job_description:{job_code}:{student_email}"
@@ -1035,7 +1103,9 @@ Output only valid HTML.
 
 
 @app.get("/job-description/{job_code}/{student_email}")
-def get_job_description(job_code: str, student_email: str, current_user: dict = Depends(get_current_user)):
+def get_job_description(
+    job_code: str, student_email: str, current_user: dict = Depends(get_current_user)
+):
     key = f"job_description:{job_code}:{student_email}"
     description = redis_client.get(key)
     if not description:
@@ -1044,7 +1114,9 @@ def get_job_description(job_code: str, student_email: str, current_user: dict = 
 
 
 @app.get("/job-description-html/{job_code}/{student_email}")
-def get_job_description_html(job_code: str, student_email: str, current_user: dict = Depends(get_current_user)):
+def get_job_description_html(
+    job_code: str, student_email: str, current_user: dict = Depends(get_current_user)
+):
     key = f"jobdesc:{job_code}:{student_email}"
     html = redis_client.get(key)
     if not html:
@@ -1053,9 +1125,11 @@ def get_job_description_html(job_code: str, student_email: str, current_user: di
 
 
 @app.get("/resume/{job_code}/{student_email}")
-def get_resume(job_code: str, student_email: str, current_user: dict = Depends(get_current_user)):
+def get_resume(
+    job_code: str, student_email: str, current_user: dict = Depends(get_current_user)
+):
     key = f"resume:{job_code}:{student_email}"
-    print(f"\U0001F4E5 Download request for resume: {job_code} - {student_email}")
+    print(f"\U0001f4e5 Download request for resume: {job_code} - {student_email}")
     resume = redis_client.get(key)
 
     if not resume:
@@ -1070,14 +1144,8 @@ def get_resume(job_code: str, student_email: str, current_user: dict = Depends(g
     }
 
 
-
-
-
-
 @app.get("/placements/{student_email}")
-def get_placements(
-    student_email: str, current_user: dict = Depends(get_current_user)
-):
+def get_placements(student_email: str, current_user: dict = Depends(get_current_user)):
     if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin privileges required")
 
@@ -1165,6 +1233,7 @@ def delete_student(email: str, current_user: dict = Depends(get_current_user)):
 
     return {"message": f"Student {email} and related data deleted successfully"}
 
+
 @app.get("/students/all")
 def get_all_students(current_user: dict = Depends(get_current_user)):
     if current_user.get("role") != "admin":
@@ -1230,6 +1299,7 @@ def get_all_students(current_user: dict = Depends(get_current_user)):
         students.append(info)
 
     return {"students": students}
+
 
 @app.get("/students/by-school")
 def students_by_school(current_user: dict = Depends(get_current_user)):
@@ -1309,6 +1379,104 @@ def students_by_school(current_user: dict = Depends(get_current_user)):
         students.append(info)
 
     return {"students": students}
+
+
+@app.get("/students/me")
+def get_my_profile(current_user: dict = Depends(get_current_user)):
+    """Return the logged-in applicant's profile with job info."""
+    email = current_user.get("sub")
+    raw = redis_client.get(f"student:{email}")
+    if not raw:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    try:
+        student = json.loads(raw)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Corrupted profile")
+
+    assigned_jobs = []
+    placed_jobs = 0
+    for job_key in redis_client.scan_iter("job:*"):
+        job_raw = redis_client.get(job_key)
+        if not job_raw:
+            continue
+        try:
+            job = json.loads(job_raw)
+        except Exception:
+            continue
+        if email in job.get("assigned_students", []):
+            assigned_jobs.append(
+                {
+                    "job_code": job.get("job_code"),
+                    "job_title": job.get("job_title"),
+                    "source": job.get("source"),
+                    "min_pay": job.get("min_pay"),
+                    "max_pay": job.get("max_pay"),
+                    "job_description": job.get("job_description"),
+                }
+            )
+        if email in job.get("placed_students", []):
+            placed_jobs += 1
+
+    info = {
+        "first_name": student.get("first_name"),
+        "last_name": student.get("last_name"),
+        "email": email,
+        "phone": student.get("phone"),
+        "education_level": student.get("education_level"),
+        "skills": student.get("skills"),
+        "experience_summary": student.get("experience_summary"),
+        "interests": student.get("interests"),
+        "institutional_code": student.get("institutional_code"),
+        "assigned_jobs": assigned_jobs,
+        "placed_jobs": placed_jobs,
+        "assigned_job_code": assigned_jobs[0]["job_code"] if assigned_jobs else None,
+    }
+    return {"student": info}
+
+
+@app.get("/my-matches")
+def get_my_matches(current_user: dict = Depends(get_current_user)):
+    """Return any job matches stored for the logged-in applicant."""
+    email = current_user.get("sub")
+    matches = []
+    for key in redis_client.scan_iter("match_results:*"):
+        raw = redis_client.get(key)
+        if not raw:
+            continue
+        job_code = str(key).split("match_results:", 1)[1]
+        try:
+            job_matches = json.loads(raw)
+        except Exception:
+            continue
+        student_match = next((m for m in job_matches if m.get("email") == email), None)
+        if not student_match:
+            continue
+        job_raw = redis_client.get(f"job:{job_code}")
+        if not job_raw:
+            continue
+        try:
+            job = json.loads(job_raw)
+        except Exception:
+            continue
+        entry = dict(student_match)
+        entry["job_code"] = job_code
+        entry["job_title"] = job.get("job_title")
+        entry["source"] = job.get("source")
+        entry["min_pay"] = job.get("min_pay")
+        entry["max_pay"] = job.get("max_pay")
+        entry["job_description"] = job.get("job_description")
+        assigned = set(job.get("assigned_students", []))
+        placed = set(job.get("placed_students", []))
+        if email in placed:
+            entry["status"] = "placed"
+        elif email in assigned:
+            entry["status"] = "assigned"
+        else:
+            entry["status"] = None
+        matches.append(entry)
+
+    return {"matches": matches}
+
 
 @app.get("/dev/check-admin")
 def check_admin():

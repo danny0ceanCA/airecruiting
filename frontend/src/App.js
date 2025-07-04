@@ -11,6 +11,7 @@ import JobPosting from './JobPosting';
 import Metrics from './Metrics';
 import CareerStaffInfo from './CareerStaffInfo';
 import ActivityLog from './ActivityLog';
+import ApplicantProfile from './ApplicantProfile';
 
 function App() {
   return (
@@ -81,6 +82,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <CareerStaffInfo />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/applicant/profile"
+            element={
+              <ProtectedRoute>
+                <ApplicantProfile />
               </ProtectedRoute>
             }
           />

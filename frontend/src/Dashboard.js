@@ -49,6 +49,11 @@ function Dashboard() {
             <div className="dashboard-tile">Job Matching</div>
           </Link>
         ) : null}
+        {role === 'applicant' && (
+          <Link to="/applicant/profile" className="dashboard-tile">
+            My Profile
+          </Link>
+        )}
       </div>
     </div>
   );
