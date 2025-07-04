@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import api from './api';
 import jwtDecode from 'jwt-decode';
 import AdminMenu from './AdminMenu';
+import loadGoogleMaps from './utils/loadGoogleMaps';
 import './StudentProfiles.css';
 
 function ApplicantProfile() {
@@ -28,6 +29,27 @@ function ApplicantProfile() {
   const [isEditing, setIsEditing] = useState(false);
   const [jobDescriptionStatus, setJobDescriptionStatus] = useState({});
   const [loadingJobDescriptions, setLoadingJobDescriptions] = useState({});
+
+  const cityRef = useRef(null);
+
+  const initAutocomplete = () => {
+    if (cityRef.current && window.google) {
+      const ac = new window.google.maps.places.Autocomplete(cityRef.current, { types: ['(cities)'] });
+      ac.addListener('place_changed', () => {
+        const place = ac.getPlace();
+        const comps = place.address_components || [];
+        const city = comps.find(c => c.types.includes('locality'))?.long_name || '';
+        const state = comps.find(c => c.types.includes('administrative_area_level_1'))?.short_name || '';
+        const lat = place.geometry.location.lat();
+        const lng = place.geometry.location.lng();
+        setFormData(prev => ({ ...prev, city, state, lat, lng }));
+      });
+    }
+  };
+
+  useEffect(() => {
+    loadGoogleMaps(initAutocomplete);
+  }, []);
 
   useEffect(() => {
     if (token) {
@@ -138,10 +160,21 @@ function ApplicantProfile() {
               {field === 'experience_summary' ? (
                 <textarea id={field} name={field} value={formData[field]} onChange={handleChange} />
               ) : (
-                <input id={field} name={field} type={field==='max_travel'?'number':'text'} value={formData[field]} onChange={handleChange} disabled={field==='email'} />
+                <input
+                  id={field}
+                  name={field}
+                  type={field === 'max_travel' ? 'number' : 'text'}
+                  value={formData[field]}
+                  onChange={handleChange}
+                  disabled={field === 'email'}
+                  readOnly={['state'].includes(field)}
+                  ref={field === 'city' ? cityRef : null}
+                />
               )}
             </React.Fragment>
           ))}
+          <input type="hidden" id="lat" name="lat" value={formData.lat} readOnly />
+          <input type="hidden" id="lng" name="lng" value={formData.lng} readOnly />
           <button type="submit">{isEditing ? 'Update Profile' : 'Save Profile'}</button>
         </form>
       </div>
