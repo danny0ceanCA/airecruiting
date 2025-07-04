@@ -738,3 +738,56 @@ def test_recruiter_cannot_place_student():
     )
     assert resp.status_code == 403
 
+
+def test_students_me_endpoint(monkeypatch):
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    # create applicant user and profile
+    applicant = {
+        "email": "app@example.com",
+        "first_name": "App",
+        "last_name": "User",
+        "school_code": "1001",
+        "password": "pass",
+    }
+    client.post("/register", json=applicant)
+    key = f"user:{applicant['email']}"
+    data = json.loads(main_app.redis_client.get(key))
+    data["approved"] = True
+    data["role"] = "applicant"
+    main_app.redis_client.set(key, json.dumps(data))
+    login_resp = client.post("/login", json={"email": applicant["email"], "password": applicant["password"]})
+    token = login_resp.json()["token"]
+
+    profile = {
+        "first_name": "App",
+        "last_name": "User",
+        "email": applicant["email"],
+        "phone": "123",
+        "education_level": "College",
+        "skills": ["python"],
+        "experience_summary": "summary",
+        "interests": "dev",
+        "city": "City",
+        "state": "ST",
+        "lat": 0.0,
+        "lng": 0.0,
+        "max_travel": 50.0,
+    }
+
+    class FakeResp:
+        def __init__(self):
+            self.data = [type("obj", (), {"embedding": [0.0, 0.0]})]
+
+    def fake_create(input, model):
+        return FakeResp()
+
+    monkeypatch.setattr(main_app.client.embeddings, "create", fake_create)
+
+    client.post("/students", json=profile, headers={"Authorization": f"Bearer {token}"})
+
+    resp = client.get("/students/me", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200
+    assert resp.json()["email"] == applicant["email"]
+
