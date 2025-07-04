@@ -384,7 +384,10 @@ async def create_student(request: Request, current_user: dict = Depends(get_curr
         body = await request.json()
         student_data = StudentRequest(**body)
 
-    if redis_client.exists(student_data.email):
+    if current_user.get("role") == "applicant" and student_data.email != current_user.get("sub"):
+        raise HTTPException(status_code=403, detail="Applicants can only create their own profile")
+
+    if redis_client.exists(f"student:{student_data.email}"):
         raise HTTPException(status_code=400, detail="Student already exists")
 
     resume_text = ""
@@ -466,6 +469,9 @@ def update_student(
     raw = redis_client.get(key)
     if not raw:
         raise HTTPException(status_code=404, detail="Student not found")
+
+    if current_user.get("role") == "applicant" and email != current_user.get("sub"):
+        raise HTTPException(status_code=403, detail="Applicants can only edit their own profile")
 
     try:
         existing = json.loads(raw)
@@ -594,6 +600,14 @@ def match_job(req: JobCodeRequest, current_user: dict = Depends(get_current_user
         raise HTTPException(status_code=404, detail="Job not found")
     job = json.loads(raw)
 
+    poster_code = None
+    poster_raw = redis_client.get(f"user:{job.get('posted_by')}")
+    if poster_raw:
+        try:
+            poster_code = json.loads(poster_raw).get("institutional_code")
+        except Exception:
+            poster_code = None
+
     combined = job.get("job_description", "") + " " + ", ".join(job.get("desired_skills", []))
     try:
         resp = client.embeddings.create(input=combined, model="text-embedding-3-small")
@@ -613,6 +627,15 @@ def match_job(req: JobCodeRequest, current_user: dict = Depends(get_current_user
             emb = student.get("embedding")
             if not emb:
                 continue
+
+            student_user_raw = redis_client.get(f"user:{student.get('email')}")
+            if student_user_raw and poster_code:
+                try:
+                    su = json.loads(student_user_raw)
+                    if su.get("role") == "applicant" and su.get("institutional_code") != poster_code:
+                        continue
+                except Exception:
+                    pass
             dist = get_driving_distance_miles(
                 student.get("lat"),
                 student.get("lng"),
@@ -1309,6 +1332,62 @@ def students_by_school(current_user: dict = Depends(get_current_user)):
         students.append(info)
 
     return {"students": students}
+
+
+@app.get("/students/me")
+def student_me(current_user: dict = Depends(get_current_user)):
+    """Return the logged-in applicant's student profile."""
+    email = current_user.get("sub")
+    key = f"student:{email}"
+    raw = redis_client.get(key)
+    if not raw:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    try:
+        student = json.loads(raw)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Corrupted profile data")
+
+    # gather related job info
+    assigned_jobs = []
+    placed = 0
+    for job_key in redis_client.scan_iter("job:*"):
+        job_raw = redis_client.get(job_key)
+        if not job_raw:
+            continue
+        try:
+            job = json.loads(job_raw)
+        except Exception:
+            continue
+        if email in job.get("assigned_students", []):
+            assigned_jobs.append({
+                "job_code": job.get("job_code"),
+                "job_title": job.get("job_title"),
+                "source": job.get("source"),
+                "min_pay": job.get("min_pay"),
+                "max_pay": job.get("max_pay"),
+                "job_description": job.get("job_description"),
+            })
+        if email in job.get("placed_students", []):
+            placed += 1
+
+    info = {
+        **{k: student.get(k) for k in [
+            "first_name",
+            "last_name",
+            "email",
+            "phone",
+            "education_level",
+            "skills",
+            "experience_summary",
+            "interests",
+            "institutional_code",
+        ]},
+        "assigned_jobs": assigned_jobs,
+        "placed_jobs": placed,
+        "assigned_job_code": assigned_jobs[0]["job_code"] if assigned_jobs else None,
+    }
+    return info
 
 @app.get("/dev/check-admin")
 def check_admin():
