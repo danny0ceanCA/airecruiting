@@ -32,6 +32,35 @@ from backend.app.services.resume import generate_resume_text
 from backend.app.services.description import generate_description_text
 from backend.app.school_codes import SCHOOL_CODE_MAP
 
+
+def init_default_school_codes():
+    """Seed redis with default school codes if not present."""
+    for code, label in SCHOOL_CODE_MAP.items():
+        key = f"school_code:{code}"
+        if not redis_client.exists(key):
+            redis_client.set(key, label)
+
+
+def get_school_label(code: str) -> str | None:
+    """Return label for a school code from redis or defaults."""
+    label = redis_client.get(f"school_code:{code}")
+    if label:
+        return label
+    return SCHOOL_CODE_MAP.get(code)
+
+
+def all_school_codes() -> dict[str, str]:
+    """Return mapping of all known school codes."""
+    codes = {}
+    for key in redis_client.scan_iter("school_code:*"):
+        val = redis_client.get(key)
+        if val is not None:
+            c = key.split("school_code:", 1)[1]
+            codes[c] = val
+    for c, l in SCHOOL_CODE_MAP.items():
+        codes.setdefault(c, l)
+    return codes
+
 # Load environment variables
 load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"), http_client=httpx.Client())
@@ -151,8 +180,9 @@ async def preflight_handler(rest_of_path: str):
 @app.get("/school-codes")
 def school_codes():
     """Return available institutional codes."""
-    codes = [{"code": c, "label": l} for c, l in SCHOOL_CODE_MAP.items()]
+    codes = [{"code": c, "label": l} for c, l in all_school_codes().items()]
     return {"codes": codes}
+
 
 # ----- User Utilities ----- #
 
@@ -176,6 +206,7 @@ def init_default_admin():
             ),
         )
         print("Default admin user created")
+    init_default_school_codes()
 
 @app.on_event("startup")
 def on_startup():
@@ -187,6 +218,7 @@ def on_startup():
         print(f"Redis connection failed: {e}")
         raise
     init_default_admin()
+    init_default_school_codes()
     keys = redis_client.keys("match_results:*")
     print(f"🔎 Found {len(keys)} saved match sets at startup.")
 
@@ -289,7 +321,7 @@ def register(req: RegisterRequest):
     if redis_client.exists(key):
         raise HTTPException(status_code=400, detail="User already exists")
 
-    label = SCHOOL_CODE_MAP.get(req.institutional_code)
+    label = get_school_label(req.institutional_code)
     if not label:
         raise HTTPException(
             status_code=400,
@@ -429,12 +461,30 @@ def update_user(email: str, req: UpdateUserRequest, current_user: dict = Depends
     if req.role is not None:
         user["role"] = req.role
     if req.institutional_code is not None:
-        label = SCHOOL_CODE_MAP.get(req.institutional_code, req.institutional_code)
+        label = get_school_label(req.institutional_code) or req.institutional_code
         user["institutional_code"] = label
     if req.active is not None:
         user["active"] = req.active
     redis_client.set(key, json.dumps(user))
     return {"message": "User updated"}
+
+
+class SchoolCodeRequest(BaseModel):
+    code: str
+    label: str
+
+
+@app.post("/admin/school-codes")
+def add_school_code(
+    req: SchoolCodeRequest, current_user: dict = Depends(get_current_user)
+):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+    key = f"school_code:{req.code}"
+    if redis_client.exists(key):
+        raise HTTPException(status_code=400, detail="Code already exists")
+    redis_client.set(key, req.label)
+    return {"message": "School code added"}
 
 @app.post("/students")
 async def create_student(request: Request, current_user: dict = Depends(get_current_user)):
@@ -879,8 +929,11 @@ def get_metrics(current_user: dict = Depends(get_current_user)):
     students = 0
     for key in redis_client.scan_iter("*"):
         skey = str(key)
-        if skey.startswith("user:") or skey.startswith("job:") or skey.startswith(
-            "metrics:"
+        if (
+            skey.startswith("user:")
+            or skey.startswith("job:")
+            or skey.startswith("metrics:")
+            or skey.startswith("school_code:")
         ):
             continue
         if redis_client.get(key):
