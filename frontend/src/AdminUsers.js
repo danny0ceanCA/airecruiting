@@ -5,6 +5,7 @@ import './AdminUsers.css';
 
 function AdminUsers() {
   const [users, setUsers] = useState([]);
+  const [codes, setCodes] = useState([]);
   const [message, setMessage] = useState('');
   const token = localStorage.getItem('token');
 
@@ -19,14 +20,29 @@ function AdminUsers() {
     }
   };
 
+  const fetchCodes = async () => {
+    try {
+      const resp = await api.get('/school-codes');
+      setCodes(resp.data.codes || []);
+    } catch (err) {
+      console.error('Failed to fetch school codes', err);
+    }
+  };
+
   useEffect(() => {
     if (token) fetchUsers();
+    fetchCodes();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleChange = (email, field, value) => {
     setUsers((prev) =>
       prev.map((u) => (u.email === email ? { ...u, [field]: value } : u))
     );
+  };
+
+  const labelToCode = (label) => {
+    const found = codes.find((c) => c.label === label || c.code === label);
+    return found ? found.code : label;
   };
 
   const handleSave = async (user) => {
@@ -36,7 +52,7 @@ function AdminUsers() {
         `/admin/users/${user.email}`,
         {
           role: user.role,
-          school_code: user.institutional_code,
+          school_code: labelToCode(user.institutional_code),
           active: user.active
         },
         { headers: { Authorization: `Bearer ${token}` } }
@@ -76,13 +92,19 @@ function AdminUsers() {
               <td>{u.first_name}</td>
               <td>{u.last_name}</td>
               <td>
-                <input
-                  type="text"
-                  value={u.institutional_code || ''}
+                <select
+                  value={labelToCode(u.institutional_code || '')}
                   onChange={(e) =>
                     handleChange(u.email, 'institutional_code', e.target.value)
                   }
-                />
+                >
+                  <option value="">Select...</option>
+                  {codes.map((c) => (
+                    <option key={c.code} value={c.code}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
               </td>
               <td>
                 <select
