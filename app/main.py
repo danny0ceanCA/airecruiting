@@ -4,6 +4,8 @@ import csv
 import os
 import uuid
 from typing import Optional
+import smtplib
+from email.message import EmailMessage
 from fastapi import (
     FastAPI,
     HTTPException,
@@ -35,6 +37,13 @@ load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"), http_client=httpx.Client())
 redis_url = os.getenv("REDIS_URL")
 
+# Email configuration
+SMTP_HOST = os.getenv("SMTP_HOST")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER = os.getenv("SMTP_USER")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
+EMAIL_SENDER = os.getenv("EMAIL_SENDER")
+
 if not redis_url:
     raise RuntimeError("Missing REDIS_URL in .env")
 
@@ -43,6 +52,26 @@ redis_client = redis.Redis.from_url(redis_url, decode_responses=True)
 
 # Key used to store activity log entries
 ACTIVITY_LOG_KEY = "activity_logs"
+
+def send_email(recipient: str, subject: str, body: str) -> None:
+    """Send an email if SMTP configuration is available."""
+    if not SMTP_HOST or not EMAIL_SENDER:
+        print(f"[email] Skipping email to {recipient}; SMTP not configured")
+        return
+    try:
+        msg = EmailMessage()
+        msg["From"] = EMAIL_SENDER
+        msg["To"] = recipient
+        msg["Subject"] = subject
+        msg.set_content(body)
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as s:
+            if SMTP_USER and SMTP_PASSWORD:
+                s.starttls()
+                s.login(SMTP_USER, SMTP_PASSWORD)
+            s.send_message(msg)
+        print(f"[email] Sent notification to {recipient}")
+    except Exception as e:
+        print(f"[email] Failed to send email to {recipient}: {e}")
 
 def get_driving_distance_miles(orig_lat: float, orig_lng: float, dest_lat: float, dest_lng: float) -> float:
     """Return driving distance in miles between two coordinates using Google Distance Matrix."""
@@ -118,6 +147,12 @@ app.add_middleware(
 @app.options("/{rest_of_path:path}")
 async def preflight_handler(rest_of_path: str):
     return {}
+
+@app.get("/school-codes")
+def school_codes():
+    """Return available institutional codes."""
+    codes = [{"code": c, "label": l} for c, l in SCHOOL_CODE_MAP.items()]
+    return {"codes": codes}
 
 # ----- User Utilities ----- #
 
@@ -720,6 +755,17 @@ def match_job(req: JobCodeRequest, current_user: dict = Depends(get_current_user
     print(
         f"✅ Stored {len(top_matches)} matches for job {req.job_code}"
     )
+
+    for m in top_matches:
+        send_email(
+            m["email"],
+            f"New Job Match: {job.get('job_title')}",
+            (
+                f"Hello {m['name']},\n\n"
+                f"You have been matched with the job '{job.get('job_title')}'. "
+                "Log in to view details."
+            ),
+        )
 
     # Metrics tracking
     try:
