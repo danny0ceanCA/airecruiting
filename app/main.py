@@ -133,6 +133,7 @@ def init_default_admin():
                     "last_name": "User",
                     "institutional_code": "Admin School",
                     "password": hashed,
+                    "active": True,
                     "role": "admin",
                     "approved": True,
                     "rejected": False,
@@ -174,6 +175,11 @@ class ApproveRequest(BaseModel):
 
 class RejectRequest(BaseModel):
     email: EmailStr
+
+class UpdateUserRequest(BaseModel):
+    role: str | None = None
+    institutional_code: str | None = Field(default=None, alias="school_code")
+    active: bool | None = None
 
 class StudentRequest(BaseModel):
     first_name: str
@@ -264,6 +270,7 @@ def register(req: RegisterRequest):
                 "last_name": req.last_name,
                 "institutional_code": label,
                 "password": hashed,
+                "active": True,
                 "role": "user",
                 "approved": False,
                 "rejected": False,
@@ -290,6 +297,8 @@ def login(req: LoginRequest):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     if not user.get("approved"):
         raise HTTPException(status_code=403, detail="User not approved")
+    if not user.get("active", True):
+        raise HTTPException(status_code=403, detail="User deactivated")
 
     payload = {
         "sub": req.email,
@@ -355,6 +364,42 @@ def pending_users(current_user: dict = Depends(get_current_user)):
         email = key.split("user:", 1)[1]
         pending.append({"email": email, **{k: v for k, v in info.items() if k != "password"}})
     return pending
+
+
+@app.get("/admin/users")
+def list_users(current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+    users = []
+    for key in redis_client.scan_iter("user:*"):
+        raw = redis_client.get(key)
+        if not raw:
+            continue
+        data = json.loads(raw)
+        email = key.split("user:", 1)[1]
+        data.pop("password", None)
+        users.append({"email": email, **data})
+    return {"users": users}
+
+
+@app.put("/admin/users/{email}")
+def update_user(email: str, req: UpdateUserRequest, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+    key = f"user:{email}"
+    raw = redis_client.get(key)
+    if not raw:
+        raise HTTPException(status_code=404, detail="User not found")
+    user = json.loads(raw)
+    if req.role is not None:
+        user["role"] = req.role
+    if req.institutional_code is not None:
+        label = SCHOOL_CODE_MAP.get(req.institutional_code, req.institutional_code)
+        user["institutional_code"] = label
+    if req.active is not None:
+        user["active"] = req.active
+    redis_client.set(key, json.dumps(user))
+    return {"message": "User updated"}
 
 @app.post("/students")
 async def create_student(request: Request, current_user: dict = Depends(get_current_user)):
