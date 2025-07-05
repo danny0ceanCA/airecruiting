@@ -42,6 +42,7 @@ function AdminUsers() {
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setMessage('Saved!');
+      fetchUsers();
       setTimeout(() => setMessage(''), 2000);
     } catch (err) {
       console.error('Save failed', err);
@@ -51,7 +52,10 @@ function AdminUsers() {
   return (
     <div className="users-container">
       <AdminMenu />
-      <h2>Manage Users</h2>
+      <div className="users-header">
+        <h2>Manage Users</h2>
+        <button className="refresh-btn" onClick={fetchUsers}>Refresh</button>
+      </div>
       {message && <div className="toast">{message}</div>}
       <table className="users-table">
         <thead>
