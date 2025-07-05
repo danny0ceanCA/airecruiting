@@ -834,3 +834,11 @@ def test_admin_user_management_flow():
     )
     assert login.status_code == 403
 
+
+def test_school_codes_endpoint():
+    resp = client.get("/school-codes")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "codes" in data
+    assert any(c["code"] == "1001" for c in data["codes"])
+
