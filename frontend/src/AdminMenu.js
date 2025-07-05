@@ -31,6 +31,7 @@ function AdminMenu({ children }) {
               <Link to="/career-info">Career Staff Info</Link>
               <Link to="/admin/jobs">Job Matching</Link>
               <Link to="/admin/activity-log">Activity Log</Link>
+              <Link to="/admin/users">Manage Users</Link>
             </>
           )}
           {userRole === 'recruiter' && (

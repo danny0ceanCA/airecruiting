@@ -791,3 +791,46 @@ def test_students_me_endpoint(monkeypatch):
     assert resp.status_code == 200
     assert resp.json()["email"] == applicant["email"]
 
+
+def test_admin_user_management_flow():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    admin_token = client.post(
+        "/login", json={"email": "admin@example.com", "password": "admin123"}
+    ).json()["token"]
+
+    user = {
+        "email": "editme@example.com",
+        "first_name": "Ed",
+        "last_name": "It",
+        "school_code": "1001",
+        "password": "pass",
+    }
+    client.post("/register", json=user)
+    key = f"user:{user['email']}"
+    data = json.loads(main_app.redis_client.get(key))
+    data["approved"] = True
+    main_app.redis_client.set(key, json.dumps(data))
+
+    resp = client.get(
+        "/admin/users", headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    assert resp.status_code == 200
+    assert user["email"] in [u["email"] for u in resp.json()["users"]]
+
+    resp = client.put(
+        f"/admin/users/{user['email']}",
+        json={"role": "recruiter", "active": False, "school_code": "1001"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert resp.status_code == 200
+    stored = json.loads(main_app.redis_client.get(key))
+    assert stored["role"] == "recruiter"
+    assert stored["active"] is False
+
+    login = client.post(
+        "/login", json={"email": user["email"], "password": user["password"]}
+    )
+    assert login.status_code == 403
+
