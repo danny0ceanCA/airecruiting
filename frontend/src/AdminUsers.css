@@ -64,6 +64,14 @@
   font-weight: 600;
 }
 
+.add-code-form {
+  margin: 1rem 0;
+}
+.add-code-form input {
+  margin-right: 0.5rem;
+  padding: 0.25rem 0.5rem;
+}
+
 .toast {
   position: fixed;
   top: 1rem;
