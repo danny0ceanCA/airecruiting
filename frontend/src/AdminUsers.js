@@ -7,6 +7,8 @@ function AdminUsers() {
   const [users, setUsers] = useState([]);
   const [codes, setCodes] = useState([]);
   const [message, setMessage] = useState('');
+  const [newCode, setNewCode] = useState('');
+  const [newLabel, setNewLabel] = useState('');
   const token = localStorage.getItem('token');
 
   const fetchUsers = async () => {
@@ -65,12 +67,42 @@ function AdminUsers() {
     }
   };
 
+  const handleAddCode = async () => {
+    try {
+      await api.post(
+        '/admin/school-codes',
+        { code: newCode, label: newLabel },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setNewCode('');
+      setNewLabel('');
+      fetchCodes();
+    } catch (err) {
+      console.error('Failed to add code', err);
+    }
+  };
+
   return (
     <div className="users-container">
       <AdminMenu />
       <div className="users-header">
         <h2>Manage Users</h2>
         <button className="refresh-btn" onClick={fetchUsers}>Refresh</button>
+      </div>
+      <div className="add-code-form">
+        <input
+          type="text"
+          placeholder="Code"
+          value={newCode}
+          onChange={(e) => setNewCode(e.target.value)}
+        />
+        <input
+          type="text"
+          placeholder="Label"
+          value={newLabel}
+          onChange={(e) => setNewLabel(e.target.value)}
+        />
+        <button onClick={handleAddCode}>Add Code</button>
       </div>
       {message && <div className="toast">{message}</div>}
       <table className="users-table">

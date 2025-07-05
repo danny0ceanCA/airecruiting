@@ -842,3 +842,22 @@ def test_school_codes_endpoint():
     assert "codes" in data
     assert any(c["code"] == "1001" for c in data["codes"])
 
+
+def test_add_school_code():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+    login = client.post(
+        "/login", json={"email": "admin@example.com", "password": "admin123"}
+    )
+    token = login.json()["token"]
+
+    resp = client.post(
+        "/admin/school-codes",
+        json={"code": "SC1", "label": "School One"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+
+    codes = client.get("/school-codes").json()["codes"]
+    assert any(c["code"] == "SC1" for c in codes)
+
