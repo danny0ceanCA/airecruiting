@@ -12,6 +12,7 @@ import JobPosting from './JobPosting';
 import Metrics from './Metrics';
 import CareerStaffInfo from './CareerStaffInfo';
 import ActivityLog from './ActivityLog';
+import AdminUsers from './AdminUsers';
 
 function App() {
   return (
@@ -61,19 +62,27 @@ function App() {
                 </ProtectedRoute>
               }
             />
-            <Route
-              path="/admin/activity-log"
-              element={
-                <ProtectedRoute>
-                  <ActivityLog />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/recruiter/jobs"
-              element={
-                <ProtectedRoute>
-                  <JobPosting />
+          <Route
+            path="/admin/activity-log"
+            element={
+              <ProtectedRoute>
+                <ActivityLog />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/users"
+            element={
+              <ProtectedRoute>
+                <AdminUsers />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/recruiter/jobs"
+            element={
+              <ProtectedRoute>
+                <JobPosting />
                 </ProtectedRoute>
               }
             />
