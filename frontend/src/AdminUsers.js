@@ -13,6 +13,11 @@ function AdminUsers() {
   const [editLabels, setEditLabels] = useState({});
   const token = localStorage.getItem('token');
 
+  const showToast = (msg) => {
+    setMessage(msg);
+    setTimeout(() => setMessage(''), 2000);
+  };
+
   const fetchUsers = async () => {
     try {
       const resp = await api.get('/admin/users', {
@@ -61,9 +66,8 @@ function AdminUsers() {
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      setMessage('Saved!');
+      showToast('Saved!');
       fetchUsers();
-      setTimeout(() => setMessage(''), 2000);
     } catch (err) {
       console.error('Save failed', err);
     }
@@ -79,6 +83,7 @@ function AdminUsers() {
       setNewCode('');
       setNewLabel('');
       fetchCodes();
+      showToast('Code added!');
     } catch (err) {
       console.error('Failed to add code', err);
     }
@@ -92,6 +97,7 @@ function AdminUsers() {
         { headers: { Authorization: `Bearer ${token}` } }
       );
       fetchCodes();
+      showToast('Code updated!');
     } catch (err) {
       console.error('Failed to update code', err);
     }
@@ -104,6 +110,7 @@ function AdminUsers() {
         headers: { Authorization: `Bearer ${token}` }
       });
       fetchCodes();
+      showToast('Code deleted!');
     } catch (err) {
       console.error('Failed to delete code', err);
     }
@@ -124,6 +131,7 @@ function AdminUsers() {
   return (
     <div className="users-container">
       <AdminMenu />
+      {message && <div className="toast">{message}</div>}
       <div className="tab-bar">
         <button
           className={`tab ${activeTab === 'users' ? 'active' : ''}`}
@@ -145,7 +153,6 @@ function AdminUsers() {
               <h2>Manage Users</h2>
               <button className="refresh-btn" onClick={fetchUsers}>Refresh</button>
             </div>
-            {message && <div className="toast">{message}</div>}
             <table className="users-table">
               <thead>
                 <tr>
