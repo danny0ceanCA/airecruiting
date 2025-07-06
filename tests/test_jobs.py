@@ -310,3 +310,105 @@ def test_match_respects_travel_distance(monkeypatch):
     data = match_resp.json()["matches"]
     assert len(data) == 1
     assert data[0]["email"] == "john@example.com"
+
+
+def test_match_ignores_label_changes(monkeypatch):
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    class FakeResp:
+        def __init__(self, emb):
+            self.data = [type("obj", (), {"embedding": emb})]
+
+    def fake_create(input, model):
+        return FakeResp([1.0])
+
+    monkeypatch.setattr(main_app.client.embeddings, "create", fake_create)
+    monkeypatch.setattr(main_app, "get_driving_distance_miles", lambda *a, **k: 1.0)
+
+    # register career user
+    career = {
+        "email": "career@example.com",
+        "first_name": "Car",
+        "last_name": "Eer",
+        "school_code": "1001",
+        "password": "pw",
+    }
+    client.post("/register", json=career)
+    ck = f"user:{career['email']}"
+    cdata = json.loads(main_app.redis_client.get(ck))
+    cdata["approved"] = True
+    cdata["role"] = "career"
+    main_app.redis_client.set(ck, json.dumps(cdata))
+    career_token = client.post(
+        "/login", json={"email": career["email"], "password": career["password"]}
+    ).json()["token"]
+
+    # register applicant user
+    applicant = {
+        "email": "app@example.com",
+        "first_name": "App",
+        "last_name": "L",
+        "school_code": "1001",
+        "password": "pw",
+    }
+    client.post("/register", json=applicant)
+    ak = f"user:{applicant['email']}"
+    adata = json.loads(main_app.redis_client.get(ak))
+    adata["approved"] = True
+    adata["role"] = "applicant"
+    main_app.redis_client.set(ak, json.dumps(adata))
+    applicant_token = client.post(
+        "/login", json={"email": applicant["email"], "password": applicant["password"]}
+    ).json()["token"]
+
+    # change school label
+    admin_token = login_admin()
+    client.put(
+        "/admin/school-codes/1001",
+        json={"label": "New Label"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+
+    student_profile = {
+        "first_name": "Stu",
+        "last_name": "D",
+        "email": applicant["email"],
+        "phone": "123",
+        "education_level": "College",
+        "skills": ["python"],
+        "experience_summary": "exp",
+        "interests": "int",
+        "city": "C",
+        "state": "ST",
+        "lat": 0.0,
+        "lng": 0.0,
+        "max_travel": 50.0,
+    }
+    client.post(
+        "/students",
+        json=student_profile,
+        headers={"Authorization": f"Bearer {applicant_token}"},
+    )
+
+    job = {
+        "job_title": "Dev",
+        "job_description": "Need python",
+        "desired_skills": ["python"],
+        "source": "x",
+        "min_pay": 1.0,
+        "max_pay": 2.0,
+        "city": "C",
+        "state": "ST",
+        "lat": 0.0,
+        "lng": 0.0,
+    }
+    resp = client.post("/jobs", json=job, headers={"Authorization": f"Bearer {career_token}"})
+    job_code = resp.json()["job_code"]
+
+    match_resp = client.post(
+        "/match", json={"job_code": job_code}, headers={"Authorization": f"Bearer {career_token}"}
+    )
+    assert match_resp.status_code == 200
+    emails = [m["email"] for m in match_resp.json()["matches"]]
+    assert applicant["email"] in emails
