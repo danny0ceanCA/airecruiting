@@ -862,6 +862,37 @@ def test_add_school_code():
     assert any(c["code"] == "SC1" for c in codes)
 
 
+def test_update_and_delete_school_code():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+    token = client.post(
+        "/login", json={"email": "admin@example.com", "password": "admin123"}
+    ).json()["token"]
+
+    client.post(
+        "/admin/school-codes",
+        json={"code": "SC2", "label": "School Two"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    resp = client.put(
+        "/admin/school-codes/SC2",
+        json={"label": "Updated Two"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    codes = client.get("/school-codes").json()["codes"]
+    assert any(c["code"] == "SC2" and c["label"] == "Updated Two" for c in codes)
+
+    resp = client.delete(
+        "/admin/school-codes/SC2",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    codes = client.get("/school-codes").json()["codes"]
+    assert not any(c["code"] == "SC2" for c in codes)
+
+
 def test_init_default_school_codes_updates_label():
     main_app.redis_client.flushdb()
     main_app.redis_client.set("school_code:1002", "1002-Unitek-Old")

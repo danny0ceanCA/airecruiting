@@ -9,6 +9,8 @@ function AdminUsers() {
   const [message, setMessage] = useState('');
   const [newCode, setNewCode] = useState('');
   const [newLabel, setNewLabel] = useState('');
+  const [activeTab, setActiveTab] = useState('users');
+  const [editLabels, setEditLabels] = useState({});
   const token = localStorage.getItem('token');
 
   const fetchUsers = async () => {
@@ -82,6 +84,31 @@ function AdminUsers() {
     }
   };
 
+  const handleUpdateCode = async (code) => {
+    try {
+      await api.put(
+        `/admin/school-codes/${code}`,
+        { label: editLabels[code] },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      fetchCodes();
+    } catch (err) {
+      console.error('Failed to update code', err);
+    }
+  };
+
+  const handleDeleteCode = async (code) => {
+    if (!window.confirm(`Delete code ${code}?`)) return;
+    try {
+      await api.delete(`/admin/school-codes/${code}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      fetchCodes();
+    } catch (err) {
+      console.error('Failed to delete code', err);
+    }
+  };
+
   const handleDelete = async (email) => {
     if (!window.confirm(`Delete user ${email}?`)) return;
     try {
@@ -97,87 +124,152 @@ function AdminUsers() {
   return (
     <div className="users-container">
       <AdminMenu />
-      <div className="users-header">
-        <h2>Manage Users</h2>
-        <button className="refresh-btn" onClick={fetchUsers}>Refresh</button>
+      <div className="tab-bar">
+        <button
+          className={`tab ${activeTab === 'users' ? 'active' : ''}`}
+          onClick={() => setActiveTab('users')}
+        >
+          Manage Users
+        </button>
+        <button
+          className={`tab ${activeTab === 'codes' ? 'active' : ''}`}
+          onClick={() => setActiveTab('codes')}
+        >
+          Institutional Codes
+        </button>
       </div>
-      <div className="add-code-form">
-        <input
-          type="text"
-          placeholder="Code"
-          value={newCode}
-          onChange={(e) => setNewCode(e.target.value)}
-        />
-        <input
-          type="text"
-          placeholder="Label"
-          value={newLabel}
-          onChange={(e) => setNewLabel(e.target.value)}
-        />
-        <button onClick={handleAddCode}>Add Code</button>
+      <div className="tab-content">
+        {activeTab === 'users' && (
+          <>
+            <div className="users-header">
+              <h2>Manage Users</h2>
+              <button className="refresh-btn" onClick={fetchUsers}>Refresh</button>
+            </div>
+            {message && <div className="toast">{message}</div>}
+            <table className="users-table">
+              <thead>
+                <tr>
+                  <th>Email</th>
+                  <th>First Name</th>
+                  <th>Last Name</th>
+                  <th>School</th>
+                  <th>Role</th>
+                  <th>Active</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.map((u) => (
+                  <tr key={u.email}>
+                    <td>{u.email}</td>
+                    <td>{u.first_name}</td>
+                    <td>{u.last_name}</td>
+                    <td>
+                      <select
+                        value={labelToCode(u.institutional_code || '')}
+                        onChange={(e) =>
+                          handleChange(u.email, 'institutional_code', e.target.value)
+                        }
+                      >
+                        <option value="">Select...</option>
+                        {codes.map((c) => (
+                          <option key={c.code} value={c.code}>
+                            {c.label}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td>
+                      <select
+                        value={u.role}
+                        onChange={(e) => handleChange(u.email, 'role', e.target.value)}
+                      >
+                        <option value="admin">Admin</option>
+                        <option value="career">Career</option>
+                        <option value="recruiter">Recruiter</option>
+                        <option value="applicant">Applicant</option>
+                      </select>
+                    </td>
+                    <td>
+                      <input
+                        type="checkbox"
+                        checked={u.active !== false}
+                        onChange={(e) =>
+                          handleChange(u.email, 'active', e.target.checked)
+                        }
+                      />
+                    </td>
+                    <td>
+                      <button onClick={() => handleSave(u)}>Save</button>
+                      <button
+                        className="delete-button"
+                        onClick={() => handleDelete(u.email)}
+                        style={{ marginLeft: '0.5rem' }}
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        )}
+        {activeTab === 'codes' && (
+          <div>
+            <div className="add-code-form">
+              <input
+                type="text"
+                placeholder="Code"
+                value={newCode}
+                onChange={(e) => setNewCode(e.target.value)}
+              />
+              <input
+                type="text"
+                placeholder="Label"
+                value={newLabel}
+                onChange={(e) => setNewLabel(e.target.value)}
+              />
+              <button onClick={handleAddCode}>Add Code</button>
+            </div>
+            <table className="users-table">
+              <thead>
+                <tr>
+                  <th>Code</th>
+                  <th>Label</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {codes.map((c) => (
+                  <tr key={c.code}>
+                    <td>{c.code}</td>
+                    <td>
+                      <input
+                        type="text"
+                        value={editLabels[c.code] ?? c.label}
+                        onChange={(e) =>
+                          setEditLabels((prev) => ({ ...prev, [c.code]: e.target.value }))
+                        }
+                      />
+                    </td>
+                    <td>
+                      <button onClick={() => handleUpdateCode(c.code)}>Save</button>
+                      <button
+                        className="delete-button"
+                        onClick={() => handleDeleteCode(c.code)}
+                        style={{ marginLeft: '0.5rem' }}
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
-      {message && <div className="toast">{message}</div>}
-      <table className="users-table">
-        <thead>
-          <tr>
-            <th>Email</th>
-            <th>First Name</th>
-            <th>Last Name</th>
-            <th>School</th>
-            <th>Role</th>
-            <th>Active</th>
-            <th>Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          {users.map((u) => (
-            <tr key={u.email}>
-              <td>{u.email}</td>
-              <td>{u.first_name}</td>
-              <td>{u.last_name}</td>
-              <td>
-                <select
-                  value={labelToCode(u.institutional_code || '')}
-                  onChange={(e) =>
-                    handleChange(u.email, 'institutional_code', e.target.value)
-                  }
-                >
-                  <option value="">Select...</option>
-                  {codes.map((c) => (
-                    <option key={c.code} value={c.code}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
-              </td>
-              <td>
-                <select
-                  value={u.role}
-                  onChange={(e) => handleChange(u.email, 'role', e.target.value)}
-                >
-                  <option value="admin">Admin</option>
-                  <option value="career">Career</option>
-                  <option value="recruiter">Recruiter</option>
-                  <option value="applicant">Applicant</option>
-                </select>
-              </td>
-              <td>
-                <input
-                  type="checkbox"
-                  checked={u.active !== false}
-                  onChange={(e) =>
-                    handleChange(u.email, 'active', e.target.checked)
-                  }
-                />
-              </td>
-              <td>
-                <button onClick={() => handleSave(u)}>Save</button>
-                <button className="delete-button" onClick={() => handleDelete(u.email)} style={{marginLeft: '0.5rem'}}>Delete</button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
     </div>
   );
 }
