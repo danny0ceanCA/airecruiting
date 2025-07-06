@@ -488,6 +488,9 @@ class SchoolCodeRequest(BaseModel):
     code: str
     label: str
 
+class UpdateSchoolCodeRequest(BaseModel):
+    label: str
+
 
 @app.post("/admin/school-codes")
 def add_school_code(
@@ -500,6 +503,32 @@ def add_school_code(
         raise HTTPException(status_code=400, detail="Code already exists")
     redis_client.set(key, req.label)
     return {"message": "School code added"}
+
+
+@app.put("/admin/school-codes/{code}")
+def update_school_code(
+    code: str, req: UpdateSchoolCodeRequest, current_user: dict = Depends(get_current_user)
+):
+    """Update the label for an existing school code."""
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+    key = f"school_code:{code}"
+    if not redis_client.exists(key):
+        raise HTTPException(status_code=404, detail="Code not found")
+    redis_client.set(key, req.label)
+    return {"message": "School code updated"}
+
+
+@app.delete("/admin/school-codes/{code}")
+def delete_school_code(code: str, current_user: dict = Depends(get_current_user)):
+    """Delete a school code."""
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+    key = f"school_code:{code}"
+    if not redis_client.exists(key):
+        raise HTTPException(status_code=404, detail="Code not found")
+    redis_client.delete(key)
+    return {"message": "School code deleted"}
 
 @app.post("/students")
 async def create_student(request: Request, current_user: dict = Depends(get_current_user)):

@@ -83,10 +83,53 @@
 
 .toast {
   position: fixed;
-  top: 1rem;
+  top: 4rem;
   right: 1rem;
   background-color: #2ecc40;
   color: white;
   padding: 0.5rem 1rem;
   border-radius: 5px;
+}
+
+/* Tab styles reused from StudentProfiles */
+.tab-bar {
+  display: flex;
+  align-items: flex-end;
+  margin-bottom: 0;
+  border-bottom: none;
+  padding-left: 0.5rem;
+}
+
+.tab {
+  background: #032c4d;
+  color: #fff;
+  border: none;
+  border-bottom: none;
+  border-radius: 1.2rem 1.2rem 0 0;
+  padding: 1rem 2.5rem 1.2rem 2.5rem;
+  margin-right: 0.3rem;
+  font-weight: 600;
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+
+.tab.active {
+  background: #fff;
+  color: #032c4d;
+  border: 1px solid #032c4d;
+  border-bottom: none;
+}
+
+.tab:not(.active):hover {
+  background: #c3c9d0;
+  color: #032c4d;
+}
+
+.tab-content {
+  background: transparent;
+  margin-top: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
 }
