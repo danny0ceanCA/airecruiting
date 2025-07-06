@@ -470,6 +470,20 @@ def update_user(email: str, req: UpdateUserRequest, current_user: dict = Depends
     return {"message": "User updated"}
 
 
+@app.delete("/admin/users/{email}")
+def delete_user(email: str, current_user: dict = Depends(get_current_user)):
+    """Delete a user account."""
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+
+    key = f"user:{email}"
+    if not redis_client.exists(key):
+        raise HTTPException(status_code=404, detail="User not found")
+
+    redis_client.delete(key)
+    return {"message": f"Deleted {email}"}
+
+
 class SchoolCodeRequest(BaseModel):
     code: str
     label: str

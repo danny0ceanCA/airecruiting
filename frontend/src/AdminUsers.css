@@ -64,6 +64,15 @@
   font-weight: 600;
 }
 
+.users-table button.delete-button {
+  background-color: #ff4136;
+  margin-left: 0.5rem;
+}
+
+.users-table button.delete-button:hover {
+  background-color: #e61900;
+}
+
 .add-code-form {
   margin: 1rem 0;
 }
