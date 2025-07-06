@@ -53,3 +53,8 @@ Required fields now include location and travel distance:
 `lng`, and `max_travel` (in miles). The endpoint combines these details,
 generates an OpenAI embedding and stores the result in Redis keyed by the
 email address.
+
+## Admin User Management
+
+Administrators can manage user accounts. Use `DELETE /admin/users/{email}` to
+remove a user from the system.

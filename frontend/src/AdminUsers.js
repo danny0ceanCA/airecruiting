@@ -82,6 +82,18 @@ function AdminUsers() {
     }
   };
 
+  const handleDelete = async (email) => {
+    if (!window.confirm(`Delete user ${email}?`)) return;
+    try {
+      await api.delete(`/admin/users/${email}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      fetchUsers();
+    } catch (err) {
+      console.error('Delete failed', err);
+    }
+  };
+
   return (
     <div className="users-container">
       <AdminMenu />
@@ -160,6 +172,7 @@ function AdminUsers() {
               </td>
               <td>
                 <button onClick={() => handleSave(u)}>Save</button>
+                <button className="delete-button" onClick={() => handleDelete(u.email)} style={{marginLeft: '0.5rem'}}>Delete</button>
               </td>
             </tr>
           ))}

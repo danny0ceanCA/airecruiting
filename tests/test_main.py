@@ -870,3 +870,73 @@ def test_init_default_school_codes_updates_label():
         main_app.redis_client.get("school_code:1002") == "1002-Unitek-SanJose"
     )
 
+
+def test_admin_delete_user():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    user = {
+        "email": "todelete@example.com",
+        "first_name": "To",
+        "last_name": "Delete",
+        "school_code": "1001",
+        "password": "pw",
+    }
+    client.post("/register", json=user)
+    key = f"user:{user['email']}"
+    data = json.loads(main_app.redis_client.get(key))
+    data["approved"] = True
+    main_app.redis_client.set(key, json.dumps(data))
+
+    admin_token = client.post(
+        "/login", json={"email": "admin@example.com", "password": "admin123"}
+    ).json()["token"]
+
+    resp = client.delete(
+        f"/admin/users/{user['email']}",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert resp.status_code == 200
+    assert main_app.redis_client.get(key) is None
+
+
+def test_delete_user_not_found():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+    admin_token = client.post(
+        "/login", json={"email": "admin@example.com", "password": "admin123"}
+    ).json()["token"]
+
+    resp = client.delete(
+        "/admin/users/missing@example.com",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert resp.status_code == 404
+
+
+def test_delete_user_forbidden_non_admin():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    user = {
+        "email": "staff@example.com",
+        "first_name": "Staff",
+        "last_name": "User",
+        "school_code": "1001",
+        "password": "pw",
+    }
+    client.post("/register", json=user)
+    key = f"user:{user['email']}"
+    data = json.loads(main_app.redis_client.get(key))
+    data["approved"] = True
+    main_app.redis_client.set(key, json.dumps(data))
+    token = client.post(
+        "/login", json={"email": user["email"], "password": user["password"]}
+    ).json()["token"]
+
+    resp = client.delete(
+        "/admin/users/admin@example.com",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 403
+
