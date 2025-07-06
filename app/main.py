@@ -336,7 +336,8 @@ def register(req: RegisterRequest):
             {
                 "first_name": req.first_name,
                 "last_name": req.last_name,
-                "institutional_code": label,
+                "institutional_code": req.institutional_code,
+                "school_label": label,
                 "password": hashed,
                 "active": True,
                 "role": "user",
@@ -462,8 +463,11 @@ def update_user(email: str, req: UpdateUserRequest, current_user: dict = Depends
     if req.role is not None:
         user["role"] = req.role
     if req.institutional_code is not None:
-        label = get_school_label(req.institutional_code) or req.institutional_code
-        user["institutional_code"] = label
+        label = get_school_label(req.institutional_code)
+        if not label:
+            raise HTTPException(status_code=400, detail="Invalid school code")
+        user["institutional_code"] = req.institutional_code
+        user["school_label"] = label
     if req.active is not None:
         user["active"] = req.active
     redis_client.set(key, json.dumps(user))
@@ -617,16 +621,22 @@ async def create_student(request: Request, current_user: dict = Depends(get_curr
     user_key = f"user:{current_user.get('sub')}"
     user_raw = redis_client.get(user_key)
     institutional_code = None
+    school_label = None
     if user_raw:
         try:
-            institutional_code = json.loads(user_raw).get("institutional_code")
+            user_data = json.loads(user_raw)
+            institutional_code = user_data.get("institutional_code")
+            school_label = user_data.get("school_label")
         except Exception:
             institutional_code = None
+            school_label = None
 
     data = student_data.model_dump()
     data["embedding"] = embedding
     if institutional_code is not None:
         data["institutional_code"] = institutional_code
+    if school_label is not None:
+        data["school_label"] = school_label
     redis_client.set(f"student:{student_data.email}", json.dumps(data))
 
     if profile_json is not None:
@@ -667,9 +677,13 @@ def update_student(
     data["email"] = email
     data["embedding"] = embedding
     inst_code = existing.get("institutional_code") or existing.get("school_code")
+    school_label = existing.get("school_label")
     if inst_code is not None:
         data["institutional_code"] = inst_code
-        data["school_code"] = existing.get("school_code", inst_code)
+    if school_label is not None:
+        data["school_label"] = school_label
+    if "school_code" in existing:
+        data["school_code"] = existing.get("school_code")
 
     redis_client.set(key, json.dumps(data))
     return {"message": "Student updated successfully"}
@@ -778,7 +792,8 @@ def match_job(req: JobCodeRequest, current_user: dict = Depends(get_current_user
     poster_raw = redis_client.get(f"user:{job.get('posted_by')}")
     if poster_raw:
         try:
-            poster_code = json.loads(poster_raw).get("institutional_code")
+            p_data = json.loads(poster_raw)
+            poster_code = p_data.get("institutional_code") or p_data.get("school_code")
         except Exception:
             poster_code = None
 
@@ -806,7 +821,8 @@ def match_job(req: JobCodeRequest, current_user: dict = Depends(get_current_user
             if student_user_raw and poster_code:
                 try:
                     su = json.loads(student_user_raw)
-                    if su.get("role") == "applicant" and su.get("institutional_code") != poster_code:
+                    stu_code = su.get("institutional_code") or su.get("school_code")
+                    if su.get("role") == "applicant" and stu_code != poster_code:
                         continue
                 except Exception:
                     pass
