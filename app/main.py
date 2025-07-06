@@ -34,10 +34,11 @@ from backend.app.school_codes import SCHOOL_CODE_MAP
 
 
 def init_default_school_codes():
-    """Seed redis with default school codes if not present."""
+    """Ensure Redis contains the default school codes with current labels."""
     for code, label in SCHOOL_CODE_MAP.items():
         key = f"school_code:{code}"
-        if not redis_client.exists(key):
+        existing = redis_client.get(key)
+        if existing != label:
             redis_client.set(key, label)
 
 

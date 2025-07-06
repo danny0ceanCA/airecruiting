@@ -861,3 +861,12 @@ def test_add_school_code():
     codes = client.get("/school-codes").json()["codes"]
     assert any(c["code"] == "SC1" for c in codes)
 
+
+def test_init_default_school_codes_updates_label():
+    main_app.redis_client.flushdb()
+    main_app.redis_client.set("school_code:1002", "1002-Unitek-Old")
+    main_app.init_default_school_codes()
+    assert (
+        main_app.redis_client.get("school_code:1002") == "1002-Unitek-SanJose"
+    )
+
