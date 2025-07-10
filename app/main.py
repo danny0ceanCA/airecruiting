@@ -805,9 +805,7 @@ def match_job(req: JobCodeRequest, current_user: dict = Depends(get_current_user
         raise HTTPException(status_code=500, detail=f"Embedding failed: {str(e)}")
 
     matches = []
-    for key in redis_client.scan_iter("*"):
-        if str(key).startswith("job:") or str(key).startswith("user:"):
-            continue
+    for key in redis_client.scan_iter("student:*"):
         student_raw = redis_client.get(key)
         if not student_raw:
             continue
