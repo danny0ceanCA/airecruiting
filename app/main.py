@@ -844,6 +844,33 @@ def match_job(req: JobCodeRequest, current_user: dict = Depends(get_current_user
         except Exception:
             continue
 
+    # Include applicant user records with a matching institutional code when no
+    # student profile exists for them
+    for ukey in redis_client.scan_iter("user:*"):
+        u_raw = redis_client.get(ukey)
+        if not u_raw:
+            continue
+        try:
+            udata = json.loads(u_raw)
+        except Exception:
+            continue
+        if udata.get("role") != "applicant" or not poster_code:
+            continue
+        ucode = udata.get("institutional_code") or udata.get("school_code")
+        if ucode != poster_code:
+            continue
+        email = ukey.split("user:", 1)[1]
+        if redis_client.exists(f"student:{email}"):
+            continue
+        matches.append(
+            {
+                "name": f"{udata.get('first_name', '')} {udata.get('last_name', '')}",
+                "email": email,
+                "score": 0.0,
+                "distance_miles": None,
+            }
+        )
+
     matches.sort(key=lambda x: x["score"], reverse=True)
     top_matches = matches[:5]
 
