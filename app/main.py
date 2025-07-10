@@ -808,38 +808,52 @@ def match_job(req: JobCodeRequest, current_user: dict = Depends(get_current_user
     for key in redis_client.scan_iter("student:*"):
         student_raw = redis_client.get(key)
         if not student_raw:
+            print(f"SKIP: {key} - no student data")
             continue
         try:
             student = json.loads(student_raw)
             emb = student.get("embedding")
             if not emb:
+                print(f"SKIP: {student.get('email')} - missing embedding")
                 continue
 
+            print(f"\nEVALUATING student: {student.get('email')}")
+            print(f"Job embedding length: {len(job_emb)}, Student embedding length: {len(emb)}")
             student_user_raw = redis_client.get(f"user:{student.get('email')}")
             if student_user_raw and poster_code:
                 try:
                     su = json.loads(student_user_raw)
                     stu_code = su.get("institutional_code") or su.get("school_code")
                     if su.get("role") == "applicant" and stu_code != poster_code:
+                        print(f"  SKIP: institutional code mismatch ({stu_code} != {poster_code})")
                         continue
-                except Exception:
+                except Exception as ex:
+                    print(f"  SKIP: error loading user ({ex})")
                     pass
+
             dist = get_driving_distance_miles(
                 student.get("lat"),
                 student.get("lng"),
                 job.get("lat"),
                 job.get("lng"),
             )
+            print(f"  Distance: {dist} | Student max travel: {student.get('max_travel', 0)}")
+
             if dist > float(student.get("max_travel", 0)):
+                print(f"  SKIP: distance too far ({dist} > {student.get('max_travel', 0)})")
                 continue
+
             score = sum(a * b for a, b in zip(job_emb, emb))
+            print(f"  SCORE: {score}")
+
             matches.append({
                 "name": f"{student.get('first_name', '')} {student.get('last_name', '')}",
                 "email": student.get("email"),
                 "score": score,
                 "distance_miles": round(dist, 1),
             })
-        except Exception:
+        except Exception as ex:
+            print(f"  SKIP: exception during evaluation: {ex}")
             continue
 
     # Include applicant user records with a matching institutional code when no
