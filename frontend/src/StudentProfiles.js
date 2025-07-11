@@ -566,13 +566,14 @@ function StudentProfiles() {
                       <React.Fragment key={s.email}>
                         <tr>
                           <td>
-                            <span
+                            <button
                               className="expand-toggle"
                               onClick={() => toggleRow(s.email, s.assigned_jobs)}
                               title={expandedRows[s.email] ? 'Collapse' : 'Expand'}
+                              type="button"
                             >
                               {expandedRows[s.email] ? '–' : '+'}
-                            </span>
+                            </button>
                           </td>
                           <td>{s.first_name}</td>
                           <td>{s.last_name}</td>
