@@ -14,6 +14,11 @@ function LoginForm() {
     setError('');
     console.log('Submitting login...');
 
+    if (!email.trim() || !password) {
+      setError('Invalid credentials');
+      return;
+    }
+
     try {
       const resp = await api.post('/login',
         { email, password }
@@ -41,7 +46,11 @@ function LoginForm() {
       }
     } catch (err) {
       console.error('Login error:', err);
-      setError(err.response?.data?.detail || 'Login failed');
+      if (err.response && (err.response.status === 401 || err.response.status === 422)) {
+        setError('Invalid credentials');
+      } else {
+        setError(err.response?.data?.detail || 'Login failed');
+      }
     }
   };
 
