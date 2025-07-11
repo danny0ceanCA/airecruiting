@@ -1,5 +1,5 @@
 .dashboard-container {
-  background: linear-gradient(135deg, #001f3f, #003366 50%, #004080);
+  background: linear-gradient(135deg, #1b2b4f, #344f7d 50%, #506fa3);
   min-height: 100vh;
   color: white;
   padding: 2rem;
@@ -17,6 +17,7 @@
   margin-top: 0;
   font-size: 3rem;
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
+  font-family: 'Montserrat', sans-serif;
   animation: fadeSlide 0.6s ease forwards;
 }
 
@@ -36,13 +37,22 @@
   border-radius: 10px;
   text-align: center;
   font-weight: 600;
+  font-family: 'Montserrat', sans-serif;
   animation: fadeSlide 0.6s ease forwards;
   transition: transform 0.3s, box-shadow 0.3s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .dashboard-tile:hover {
   transform: translateY(-4px);
   box-shadow: 0 6px 15px rgba(0, 116, 217, 0.6);
+}
+
+.tile-icon {
+  font-size: 2rem;
+  margin-bottom: 0.5rem;
 }
 
 .tile-grid a:nth-child(1) { animation-delay: 0.2s; }
