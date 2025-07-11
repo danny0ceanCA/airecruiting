@@ -22,6 +22,18 @@ function RegisterForm() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+
+    if (
+      !formData.email.trim() ||
+      !formData.firstName.trim() ||
+      !formData.lastName.trim() ||
+      !institutionalCode.trim() ||
+      !formData.password
+    ) {
+      setError('All fields are required');
+      return;
+    }
+
     try {
       const resp = await api.post('/register', {
         email: formData.email,
@@ -33,7 +45,12 @@ function RegisterForm() {
       setMessage('Registration submitted. Awaiting admin approval.');
       setTimeout(() => navigate('/login'), 3000);
     } catch (err) {
-      setError(err.response?.data?.detail || 'Registration failed');
+      const detail = err.response?.data?.detail;
+      if (Array.isArray(detail)) {
+        setError(detail.map((d) => d.msg).join(', '));
+      } else {
+        setError(detail || 'Registration failed');
+      }
     }
   };
 
