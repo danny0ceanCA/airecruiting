@@ -732,7 +732,8 @@ if (shouldRedirect) {
               <React.Fragment key={job.job_code}>
                 <tr>
                   <td>
-                    <span
+                    <button
+                      type="button"
                       className="expand-toggle"
                       onClick={(e) => {
                         e.stopPropagation();
@@ -747,7 +748,7 @@ if (shouldRedirect) {
                       }}
                     >
                       {expandedJob === job.job_code ? '–' : '+'}
-                    </span>
+                    </button>
                   </td>
                   <td>{job.job_code}</td>
                   <td
