@@ -13,6 +13,10 @@ import Metrics from './Metrics';
 import CareerStaffInfo from './CareerStaffInfo';
 import ActivityLog from './ActivityLog';
 import AdminUsers from './AdminUsers';
+import AboutApplicants from './AboutApplicants';
+import AboutRecruiters from './AboutRecruiters';
+import AboutCareerServices from './AboutCareerServices';
+import AboutPanel from './AboutPanel';
 
 function App() {
   return (
@@ -22,6 +26,10 @@ function App() {
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="/login" element={<LoginForm />} />
           <Route path="/register" element={<RegisterForm />} />
+          <Route path="/about" element={<AboutPanel />} />
+          <Route path="/about/applicants" element={<AboutApplicants />} />
+          <Route path="/about/recruiters" element={<AboutRecruiters />} />
+          <Route path="/about/career-service" element={<AboutCareerServices />} />
           <Route
             path="/dashboard"
             element={
