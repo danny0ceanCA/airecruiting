@@ -355,3 +355,19 @@
   margin-bottom: 0.25rem;
 }
 
+/* Make news links more enticing */
+.news-feed a {
+  display: inline-block;
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+  color: #007bff;
+  text-decoration: none;
+  transition: background-color 0.2s;
+}
+
+.news-feed a:hover {
+  background-color: #e6f2ff;
+  color: #0056b3;
+  text-decoration: underline;
+}
+
