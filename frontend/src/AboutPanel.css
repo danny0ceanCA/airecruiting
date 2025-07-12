@@ -1,0 +1,28 @@
+.about-panel {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  width: 350px;
+  max-height: 90vh;
+  overflow-y: auto;
+  background-color: rgba(255, 255, 255, 0.9);
+  padding: 1rem;
+  border-radius: 8px;
+  color: #333;
+  font-size: 14px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.about-panel h2,
+.about-panel h3 {
+  color: #001f3f;
+  margin-top: 0.5rem;
+}
+
+.about-panel ul {
+  padding-left: 1.2rem;
+}
+
+.about-panel li {
+  margin-bottom: 0.5rem;
+}

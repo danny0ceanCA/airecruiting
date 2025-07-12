@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import api from "./api";
 import { Link, useNavigate } from 'react-router-dom';
 import './LoginForm.css';
+import TopMenu from './TopMenu';
 
 function LoginForm() {
   const [email, setEmail] = useState('');
@@ -56,6 +57,7 @@ function LoginForm() {
 
   return (
     <div className="login-container">
+      <TopMenu />
       <form className="login-form" onSubmit={handleSubmit}>
         <h2>Login</h2>
 
