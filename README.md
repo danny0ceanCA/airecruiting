@@ -60,3 +60,8 @@ email address.
 
 Administrators can manage user accounts. Use `DELETE /admin/users/{email}` to
 remove a user from the system.
+
+## Nursing News
+
+The `/nursing-news` endpoint retrieves articles from several nursing-focused RSS
+feeds. Results are cached for one hour to improve performance.
