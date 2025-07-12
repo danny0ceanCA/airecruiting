@@ -30,8 +30,8 @@ function NursingNews() {
           <ul>
             {feed.articles && feed.articles.map((a, idx) => (
               <li key={idx}>
-                <a href={a.link} target="_blank" rel="noreferrer">
-                  {a.title}
+                <a href={a.link} target="_blank" rel="noopener noreferrer">
+                  {a.title} »
                 </a>
               </li>
             ))}
