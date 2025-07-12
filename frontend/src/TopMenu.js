@@ -5,6 +5,7 @@ import './TopMenu.css';
 function TopMenu() {
   return (
     <nav className="top-menu">
+      <Link to="/login">Home</Link>
       <Link to="/about">About TalentMatch-AI</Link>
       <Link to="/about/applicants">Applicants</Link>
       <Link to="/about/career-service">Career Service</Link>
