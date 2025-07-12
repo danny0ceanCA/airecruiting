@@ -42,6 +42,8 @@ SMTP_PORT=587
 SMTP_USER=username
 SMTP_PASSWORD=secret
 EMAIL_SENDER=noreply@example.com
+ADMIN_EMAIL=admin@example.com
+ADMIN_PASSWORD=admin123
 ```
 
 ## Students Endpoint

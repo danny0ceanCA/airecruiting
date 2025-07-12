@@ -183,6 +183,24 @@ function ApplicantProfile() {
         >
           Matches
         </button>
+        <button
+          className={`tab ${activeTab === 'news' ? 'active' : ''}`}
+          onClick={() => setActiveTab('news')}
+        >
+          Nursing News
+        </button>
+        <button
+          className={`tab ${activeTab === 'resources' ? 'active' : ''}`}
+          onClick={() => setActiveTab('resources')}
+        >
+          Resources
+        </button>
+        <button
+          className={`tab ${activeTab === 'products' ? 'active' : ''}`}
+          onClick={() => setActiveTab('products')}
+        >
+          Products
+        </button>
       </div>
       <div className="tab-content">
         {activeTab === 'profile' && (
@@ -250,6 +268,24 @@ function ApplicantProfile() {
             ) : (
               <p>No matches found.</p>
             )}
+          </div>
+        )}
+        {activeTab === 'news' && (
+          <div className="form-panel">
+            <h2>Nursing News</h2>
+            <p>Stay updated with the latest nursing news and articles.</p>
+          </div>
+        )}
+        {activeTab === 'resources' && (
+          <div className="form-panel">
+            <h2>Resources</h2>
+            <p>Helpful links and guides for your nursing career.</p>
+          </div>
+        )}
+        {activeTab === 'products' && (
+          <div className="form-panel">
+            <h2>Products</h2>
+            <p>Recommended products curated for nurses.</p>
           </div>
         )}
       </div>
