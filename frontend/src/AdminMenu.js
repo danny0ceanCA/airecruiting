@@ -28,7 +28,6 @@ function AdminMenu({ children }) {
             <>
               <Link to="/admin/pending">Pending Approvals</Link>
               <Link to="/students">Student Profiles</Link>
-              <Link to="/career-info">Career Staff Info</Link>
               <Link to="/admin/jobs">Job Matching</Link>
               <Link to="/admin/activity-log">Activity Log</Link>
               <Link to="/admin/users">Manage Users</Link>
@@ -43,7 +42,6 @@ function AdminMenu({ children }) {
           {userRole === 'career' && (
             <>
               <Link to="/students">Student Profiles</Link>
-              <Link to="/career-info">Career Staff Info</Link>
             </>
           )}
           {children}

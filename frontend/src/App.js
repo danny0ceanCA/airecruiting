@@ -10,7 +10,6 @@ import StudentProfiles from './StudentProfiles';
 import ApplicantProfile from './ApplicantProfile';
 import JobPosting from './JobPosting';
 import Metrics from './Metrics';
-import CareerStaffInfo from './CareerStaffInfo';
 import ActivityLog from './ActivityLog';
 import AdminUsers from './AdminUsers';
 
@@ -91,14 +90,6 @@ function App() {
             element={
               <ProtectedRoute>
                 <Metrics />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/career-info"
-            element={
-              <ProtectedRoute>
-                <CareerStaffInfo />
               </ProtectedRoute>
             }
           />
