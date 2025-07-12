@@ -971,3 +971,41 @@ def test_delete_user_forbidden_non_admin():
     )
     assert resp.status_code == 403
 
+
+def test_nursing_news_cache(monkeypatch):
+    main_app.redis_client.flushdb()
+
+    calls = []
+
+    class DummyResp:
+        def __init__(self):
+            self.text = (
+                "<rss><channel>"
+                "<item><title>A</title><link>http://a</link></item>"
+                "</channel></rss>"
+            )
+
+    class DummyClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            pass
+
+        async def get(self, url):
+            calls.append(url)
+            return DummyResp()
+
+    monkeypatch.setattr(main_app.httpx, "AsyncClient", lambda timeout=10: DummyClient())
+
+    resp1 = client.get("/nursing-news")
+    assert resp1.status_code == 200
+    assert len(resp1.json()["feeds"]) == len(main_app.NURSING_FEEDS)
+    assert calls
+
+    calls.clear()
+
+    resp2 = client.get("/nursing-news")
+    assert resp2.status_code == 200
+    assert calls == []
+
