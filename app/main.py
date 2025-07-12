@@ -188,9 +188,13 @@ def school_codes():
 # ----- User Utilities ----- #
 
 def init_default_admin():
-    key = "user:admin@example.com"
+    """Seed the default admin user if it does not already exist."""
+    email = os.getenv("ADMIN_EMAIL", "admin@example.com")
+    password = os.getenv("ADMIN_PASSWORD", "admin123")
+    key = f"user:{email}"
+
     if not redis_client.exists(key):
-        hashed = bcrypt.hashpw("admin123".encode(), bcrypt.gensalt()).decode()
+        hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
         redis_client.set(
             key,
             json.dumps(
