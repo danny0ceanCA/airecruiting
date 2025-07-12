@@ -26,6 +26,7 @@ for _p in ["http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY"]:
 import httpx
 from openai import OpenAI
 import redis
+import requests
 from backend.app.schemas.resume import ResumeRequest
 from backend.app.schemas.description import DescriptionRequest
 from backend.app.services.resume import generate_resume_text
@@ -1635,6 +1636,35 @@ def student_me(current_user: dict = Depends(get_current_user)):
         "assigned_job_code": assigned_jobs[0]["job_code"] if assigned_jobs else None,
     }
     return info
+
+
+NURSING_FEEDS = {
+    "Becker's Hospital Review": "https://www.beckershospitalreview.com/rss-feeds/rss.html",
+    "American Nurse": "https://www.myamericannurse.com/feed/",
+    "Nurse.com": "https://www.nurse.com/feed",
+    "Fierce Healthcare": "https://www.fiercehealthcare.com/rss.xml",
+}
+
+
+@app.get("/nursing-news")
+def nursing_news():
+    """Fetch and return articles from popular nursing RSS feeds."""
+    import xml.etree.ElementTree as ET
+    results = []
+    for name, url in NURSING_FEEDS.items():
+        try:
+            resp = requests.get(url, timeout=10)
+            root = ET.fromstring(resp.content)
+            articles = []
+            for item in root.findall(".//item")[:5]:
+                articles.append({
+                    "title": item.findtext("title") or "",
+                    "link": item.findtext("link") or "",
+                })
+            results.append({"source": name, "articles": articles})
+        except Exception as e:
+            results.append({"source": name, "articles": [], "error": str(e)})
+    return {"feeds": results}
 
 @app.get("/dev/check-admin")
 def check_admin():
