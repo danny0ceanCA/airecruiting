@@ -100,7 +100,7 @@ function RegisterForm() {
           value={institutionalCode}
           onChange={(e) => setInstitutionalCode(e.target.value)}
         />
-        <Link to="/request-code">Request an institutional code</Link>
+        <Link to="/request-code" className="request-code-link">Request an institutional code</Link>
         {error && <p className="error">{error}</p>}
         <label htmlFor="password">Password</label>
         <input
