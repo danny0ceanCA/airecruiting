@@ -88,7 +88,7 @@ function RegisterForm() {
         <label htmlFor="role">Role</label>
         <select id="role" name="role" value={formData.role} onChange={handleChange}>
           <option value="applicant">Applicant</option>
-          <option value="career">Career</option>
+          <option value="career">Career Services</option>
           <option value="recruiter">Recruiter</option>
         </select>
         <label htmlFor="institutional_code">Institutional Code</label>
