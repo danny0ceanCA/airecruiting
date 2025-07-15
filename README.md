@@ -46,6 +46,12 @@ ADMIN_EMAIL=admin@example.com
 ADMIN_PASSWORD=admin123
 ```
 
+## Institutional Codes
+
+Career services staff and recruiters must obtain an institutional code before registering.
+Use the **Request Institutional Code** link on the registration page or email
+<support@talentmatch-ai.com> for assistance. Applicants may register without a code.
+
 ## Students Endpoint
 
 Authenticated users can submit student information using `POST /students`.
