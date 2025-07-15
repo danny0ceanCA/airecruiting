@@ -7,7 +7,7 @@ function RequestInstitutionCode() {
       <TopMenu />
       <h2>Request an Institutional Code</h2>
       <p>
-        Please email <a href="mailto:admin@example.com">admin@example.com</a> to obtain your institutional code.
+        Please email <a href="mailto:support@talentmatch-ai.com">support@talentmatch-ai.com</a> to obtain your institutional code.
       </p>
     </div>
   );
