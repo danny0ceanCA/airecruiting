@@ -1019,3 +1019,42 @@ def test_nursing_news_cache(monkeypatch):
     assert resp2.status_code == 200
     assert calls == []
 
+
+def test_rss_feed_management():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    token = client.post(
+        "/login", json={"email": "admin@example.com", "password": "admin123"}
+    ).json()["token"]
+
+    resp = client.post(
+        "/admin/rss-feeds",
+        json={"name": "TestFeed", "url": "http://example.com/feed"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+
+    feeds = client.get("/rss-feeds").json()["feeds"]
+    assert any(f["name"] == "TestFeed" for f in feeds)
+
+    resp = client.put(
+        "/admin/rss-feeds/TestFeed",
+        json={"url": "http://example.com/updated"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    feeds = client.get("/rss-feeds").json()["feeds"]
+    assert any(
+        f["name"] == "TestFeed" and f["url"] == "http://example.com/updated"
+        for f in feeds
+    )
+
+    resp = client.delete(
+        "/admin/rss-feeds/TestFeed",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    feeds = client.get("/rss-feeds").json()["feeds"]
+    assert not any(f["name"] == "TestFeed" for f in feeds)
+

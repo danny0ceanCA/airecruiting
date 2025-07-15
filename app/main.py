@@ -227,6 +227,7 @@ def on_startup():
         raise
     init_default_admin()
     init_default_school_codes()
+    init_default_rss_feeds()
     keys = redis_client.keys("match_results:*")
     print(f"🔎 Found {len(keys)} saved match sets at startup.")
 
@@ -540,6 +541,54 @@ def delete_school_code(code: str, current_user: dict = Depends(get_current_user)
         raise HTTPException(status_code=404, detail="Code not found")
     redis_client.delete(key)
     return {"message": "School code deleted"}
+
+
+class RSSFeedRequest(BaseModel):
+    name: str
+    url: str
+
+
+class UpdateRSSFeedRequest(BaseModel):
+    url: str
+
+
+@app.get("/rss-feeds")
+def list_rss_feeds():
+    feeds = [{"name": n, "url": u} for n, u in all_rss_feeds().items()]
+    return {"feeds": feeds}
+
+
+@app.post("/admin/rss-feeds")
+def add_rss_feed(req: RSSFeedRequest, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+    key = f"rss_feed:{req.name}"
+    if redis_client.exists(key):
+        raise HTTPException(status_code=400, detail="Feed already exists")
+    redis_client.set(key, req.url)
+    return {"message": "Feed added"}
+
+
+@app.put("/admin/rss-feeds/{name}")
+def update_rss_feed(name: str, req: UpdateRSSFeedRequest, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+    key = f"rss_feed:{name}"
+    if not redis_client.exists(key):
+        raise HTTPException(status_code=404, detail="Feed not found")
+    redis_client.set(key, req.url)
+    return {"message": "Feed updated"}
+
+
+@app.delete("/admin/rss-feeds/{name}")
+def delete_rss_feed(name: str, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+    key = f"rss_feed:{name}"
+    if not redis_client.exists(key):
+        raise HTTPException(status_code=404, detail="Feed not found")
+    redis_client.delete(key)
+    return {"message": "Feed deleted"}
 
 @app.post("/students")
 async def create_student(request: Request, current_user: dict = Depends(get_current_user)):
@@ -1649,6 +1698,27 @@ NURSING_FEEDS = {
     "DailyNurse": "https://dailynurse.com/feed/",
 }
 
+def init_default_rss_feeds() -> None:
+    """Ensure Redis contains the default RSS feeds."""
+    for name, url in NURSING_FEEDS.items():
+        key = f"rss_feed:{name}"
+        existing = redis_client.get(key)
+        if existing != url:
+            redis_client.set(key, url)
+
+
+def all_rss_feeds() -> dict[str, str]:
+    """Return mapping of all configured RSS feeds."""
+    feeds = {}
+    for key in redis_client.scan_iter("rss_feed:*"):
+        url = redis_client.get(key)
+        if url is not None:
+            name = key.split("rss_feed:", 1)[1]
+            feeds[name] = url
+    for n, u in NURSING_FEEDS.items():
+        feeds.setdefault(n, u)
+    return feeds
+
 NURSING_NEWS_CACHE_KEY = "cache:nursing_news"
 NURSING_NEWS_TTL = 3600  # seconds
 
@@ -1665,12 +1735,14 @@ async def nursing_news(force_refresh: bool = False):
             except Exception:
                 pass
 
+    feeds = all_rss_feeds()
+
     async with httpx.AsyncClient(timeout=10) as client:
-        tasks = [client.get(url) for url in NURSING_FEEDS.values()]
+        tasks = [client.get(url) for url in feeds.values()]
         responses = await asyncio.gather(*tasks, return_exceptions=True)
 
     results = []
-    for (name, _), resp in zip(NURSING_FEEDS.items(), responses):
+    for (name, _), resp in zip(feeds.items(), responses):
         if isinstance(resp, Exception):
             results.append({"source": name, "articles": [], "error": str(resp)})
             continue
