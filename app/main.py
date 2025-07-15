@@ -26,6 +26,7 @@ for _p in ["http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY"]:
 import httpx
 from openai import OpenAI
 import redis
+import asyncio
 from backend.app.schemas.resume import ResumeRequest
 from backend.app.schemas.description import DescriptionRequest
 from backend.app.services.resume import generate_resume_text
@@ -1635,6 +1636,63 @@ def student_me(current_user: dict = Depends(get_current_user)):
         "assigned_job_code": assigned_jobs[0]["job_code"] if assigned_jobs else None,
     }
     return info
+
+
+NURSING_FEEDS = {
+    "Becker's Hospital Review": "https://www.beckershospitalreview.com/rss-feeds/rss.html",
+    "American Nurse": "https://www.myamericannurse.com/feed/",
+    "Nurse.com": "https://www.nurse.com/feed",
+    "Fierce Healthcare": "https://www.fiercehealthcare.com/rss.xml",
+    "Nursing Times": "https://www.nursingtimes.net/feed/",
+    "DailyNurse": "https://dailynurse.com/feed/",
+}
+
+NURSING_NEWS_CACHE_KEY = "cache:nursing_news"
+NURSING_NEWS_TTL = 3600  # seconds
+
+
+@app.get("/nursing-news")
+async def nursing_news(force_refresh: bool = False):
+    """Fetch and return articles from popular nursing RSS feeds."""
+    import xml.etree.ElementTree as ET
+    if not force_refresh:
+        cached = redis_client.get(NURSING_NEWS_CACHE_KEY)
+        if cached:
+            try:
+                return json.loads(cached)
+            except Exception:
+                pass
+
+    async with httpx.AsyncClient(timeout=10) as client:
+        tasks = [client.get(url) for url in NURSING_FEEDS.values()]
+        responses = await asyncio.gather(*tasks, return_exceptions=True)
+
+    results = []
+    for (name, _), resp in zip(NURSING_FEEDS.items(), responses):
+        if isinstance(resp, Exception):
+            results.append({"source": name, "articles": [], "error": str(resp)})
+            continue
+        try:
+            root = ET.fromstring(resp.text)
+            articles = []
+            for item in root.findall(".//item")[:5]:
+                articles.append({
+                    "title": item.findtext("title") or "",
+                    "link": item.findtext("link") or "",
+                })
+            results.append({"source": name, "articles": articles})
+        except Exception as e:
+            results.append({"source": name, "articles": [], "error": str(e)})
+
+    data = {"feeds": results}
+    try:
+        if hasattr(redis_client, "setex"):
+            redis_client.setex(NURSING_NEWS_CACHE_KEY, NURSING_NEWS_TTL, json.dumps(data))
+        else:
+            redis_client.set(NURSING_NEWS_CACHE_KEY, json.dumps(data))
+    except Exception:
+        pass
+    return data
 
 @app.get("/dev/check-admin")
 def check_admin():

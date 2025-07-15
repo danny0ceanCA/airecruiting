@@ -335,3 +335,39 @@
   width: 100%;
 }
 
+.news-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.news-feed h3 {
+  margin: 0 0 0.5rem 0;
+  color: #032c4d;
+}
+
+.news-feed ul {
+  list-style: none;
+  padding-left: 1rem;
+}
+
+.news-feed li {
+  margin-bottom: 0.25rem;
+}
+
+/* Make news links more enticing */
+.news-feed a {
+  display: inline-block;
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+  color: #007bff;
+  text-decoration: none;
+  transition: background-color 0.2s;
+}
+
+.news-feed a:hover {
+  background-color: #e6f2ff;
+  color: #0056b3;
+  text-decoration: underline;
+}
+

@@ -3,6 +3,7 @@ import api from './api';
 import jwtDecode from 'jwt-decode';
 import AdminMenu from './AdminMenu';
 import loadGoogleMaps from './utils/loadGoogleMaps';
+import NursingNews from './NursingNews';
 import './StudentProfiles.css';
 
 function ApplicantProfile() {
@@ -273,7 +274,7 @@ function ApplicantProfile() {
         {activeTab === 'news' && (
           <div className="form-panel">
             <h2>Nursing News</h2>
-            <p>Stay updated with the latest nursing news and articles.</p>
+            <NursingNews />
           </div>
         )}
         {activeTab === 'resources' && (
