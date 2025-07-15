@@ -371,3 +371,41 @@
   text-decoration: underline;
 }
 
+.news-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.news-card {
+  background: #f9f9f9;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.news-image {
+  width: 100%;
+  height: auto;
+  border-radius: 4px;
+  margin-bottom: 0.5rem;
+}
+
+.news-title {
+  font-weight: bold;
+  margin-bottom: 0.25rem;
+  color: #007bff;
+  text-decoration: none;
+}
+
+.news-title:hover {
+  text-decoration: underline;
+}
+
+.news-summary {
+  font-size: 0.9rem;
+  color: #333;
+}
+

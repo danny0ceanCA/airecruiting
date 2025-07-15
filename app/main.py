@@ -27,6 +27,8 @@ import httpx
 from openai import OpenAI
 import redis
 import asyncio
+import re
+from html import unescape
 from backend.app.schemas.resume import ResumeRequest
 from backend.app.schemas.description import DescriptionRequest
 from backend.app.services.resume import generate_resume_text
@@ -1676,9 +1678,30 @@ async def nursing_news(force_refresh: bool = False):
             root = ET.fromstring(resp.text)
             articles = []
             for item in root.findall(".//item")[:5]:
+                title = item.findtext("title") or ""
+                link = item.findtext("link") or ""
+                summary = item.findtext("description") or item.findtext("summary") or item.findtext("content:encoded") or ""
+                summary = unescape(re.sub("<.*?>", "", summary))
+
+                image = None
+                media = item.find('{http://search.yahoo.com/mrss/}content')
+                if media is not None and media.get('url'):
+                    image = media.get('url')
+                if not image:
+                    encl = item.find('enclosure')
+                    if encl is not None and encl.get('url') and encl.get('type', '').startswith('image'):
+                        image = encl.get('url')
+                if not image:
+                    desc = item.findtext('description') or ''
+                    m = re.search(r"<img[^>]+src=['\"]([^'\"]+)['\"]", desc)
+                    if m:
+                        image = m.group(1)
+
                 articles.append({
-                    "title": item.findtext("title") or "",
-                    "link": item.findtext("link") or "",
+                    "title": title,
+                    "link": link,
+                    "summary": summary,
+                    "image": image,
                 })
             results.append({"source": name, "articles": articles})
         except Exception as e:

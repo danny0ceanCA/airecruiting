@@ -981,7 +981,12 @@ def test_nursing_news_cache(monkeypatch):
         def __init__(self):
             self.text = (
                 "<rss><channel>"
-                "<item><title>A</title><link>http://a</link></item>"
+                "<item>"
+                "<title>A</title>"
+                "<link>http://a</link>"
+                "<description>desc</description>"
+                "<enclosure url='http://img/a.jpg' type='image/jpeg'/>"
+                "</item>"
                 "</channel></rss>"
             )
 
@@ -1000,7 +1005,12 @@ def test_nursing_news_cache(monkeypatch):
 
     resp1 = client.get("/nursing-news")
     assert resp1.status_code == 200
-    assert len(resp1.json()["feeds"]) == len(main_app.NURSING_FEEDS)
+    data1 = resp1.json()
+    assert len(data1["feeds"]) == len(main_app.NURSING_FEEDS)
+    for feed in data1["feeds"]:
+        art = feed["articles"][0]
+        assert "summary" in art
+        assert "image" in art
     assert calls
 
     calls.clear()
