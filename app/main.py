@@ -236,8 +236,9 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     first_name: str
     last_name: str
-    institutional_code: str = Field(alias="school_code")
+    institutional_code: str | None = Field(default=None, alias="school_code")
     password: str
+    role: str = "applicant"
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -247,7 +248,7 @@ class LoginRequest(BaseModel):
 
 class ApproveRequest(BaseModel):
     email: EmailStr
-    role: str  # "career" or "recruiter"
+    role: str | None = None  # optional new role
 
 class RejectRequest(BaseModel):
     email: EmailStr
@@ -330,12 +331,17 @@ def register(req: RegisterRequest):
     if redis_client.exists(key):
         raise HTTPException(status_code=400, detail="User already exists")
 
-    label = get_school_label(req.institutional_code)
-    if not label:
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid school code. Please contact your administrator.",
-        )
+    if req.role in {"career", "recruiter"} and not req.institutional_code:
+        raise HTTPException(status_code=400, detail="Institutional code required for career staff and recruiters")
+
+    label = None
+    if req.institutional_code:
+        label = get_school_label(req.institutional_code)
+        if not label:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid school code. Please contact your administrator.",
+            )
 
     hashed = bcrypt.hashpw(req.password.encode(), bcrypt.gensalt()).decode()
     redis_client.set(
@@ -348,7 +354,7 @@ def register(req: RegisterRequest):
                 "school_label": label,
                 "password": hashed,
                 "active": True,
-                "role": "user",
+                "role": req.role,
                 "approved": False,
                 "rejected": False,
             }
@@ -409,9 +415,10 @@ def approve(req: ApproveRequest, current_user: dict = Depends(get_current_user))
         raise HTTPException(status_code=404, detail="User not found")
     user = json.loads(raw)
     user["approved"] = True
-    user["role"] = req.role
+    if req.role is not None:
+        user["role"] = req.role
     redis_client.set(key, json.dumps(user))
-    return {"message": f"{req.email} approved as {req.role}"}
+    return {"message": f"{req.email} approved as {user['role']}"}
 
 @app.post("/reject")
 def reject(req: RejectRequest, current_user: dict = Depends(get_current_user)):

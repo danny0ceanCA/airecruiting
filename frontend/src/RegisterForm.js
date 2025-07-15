@@ -9,6 +9,7 @@ function RegisterForm() {
     firstName: '',
     lastName: '',
     password: '',
+    role: 'applicant',
   });
   const [institutionalCode, setInstitutionalCode] = useState('');
   const [message, setMessage] = useState('');
@@ -27,8 +28,9 @@ function RegisterForm() {
       !formData.email.trim() ||
       !formData.firstName.trim() ||
       !formData.lastName.trim() ||
-      !institutionalCode.trim() ||
-      !formData.password
+      !formData.password ||
+      ((formData.role === 'career' || formData.role === 'recruiter') &&
+        !institutionalCode.trim())
     ) {
       setError('All fields are required');
       return;
@@ -40,7 +42,8 @@ function RegisterForm() {
         first_name: formData.firstName,
         last_name: formData.lastName,
         password: formData.password,
-        institutional_code: institutionalCode,
+        institutional_code: institutionalCode || undefined,
+        role: formData.role,
       });
       setMessage('Registration submitted. Awaiting admin approval.');
       setTimeout(() => navigate('/login'), 3000);
@@ -82,7 +85,13 @@ function RegisterForm() {
           value={formData.lastName}
           onChange={handleChange}
         />
-        <label htmlFor="institutional_code">Enter Your Institutional Code (e.g. 1001)</label>
+        <label htmlFor="role">Role</label>
+        <select id="role" name="role" value={formData.role} onChange={handleChange}>
+          <option value="applicant">Applicant</option>
+          <option value="career">Career Services</option>
+          <option value="recruiter">Recruiter</option>
+        </select>
+        <label htmlFor="institutional_code">Institutional Code</label>
         <input
           id="institutional_code"
           name="institutional_code"
@@ -91,6 +100,7 @@ function RegisterForm() {
           value={institutionalCode}
           onChange={(e) => setInstitutionalCode(e.target.value)}
         />
+        <Link to="/request-code" className="request-code-link">Request an institutional code</Link>
         {error && <p className="error">{error}</p>}
         <label htmlFor="password">Password</label>
         <input
