@@ -82,7 +82,7 @@ function RegisterForm() {
           value={formData.lastName}
           onChange={handleChange}
         />
-        <label htmlFor="institutional_code">Enter Your Institutional Code (e.g. 1001)</label>
+        <label htmlFor="institutional_code">Institutional Code</label>
         <input
           id="institutional_code"
           name="institutional_code"
@@ -91,6 +91,7 @@ function RegisterForm() {
           value={institutionalCode}
           onChange={(e) => setInstitutionalCode(e.target.value)}
         />
+        <Link to="/request-code">Request an institutional code</Link>
         {error && <p className="error">{error}</p>}
         <label htmlFor="password">Password</label>
         <input
