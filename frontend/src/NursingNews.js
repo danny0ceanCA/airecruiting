@@ -27,15 +27,26 @@ function NursingNews() {
       {feeds.map(feed => (
         <div key={feed.source} className="news-feed">
           <h3>{feed.source}</h3>
-          <ul>
+          <div className="news-grid">
             {feed.articles && feed.articles.map((a, idx) => (
-              <li key={idx}>
-                <a href={a.link} target="_blank" rel="noopener noreferrer">
+              <div key={idx} className="news-card">
+              <img
+                src={a.image || 'https://via.placeholder.com/400x200?text=No+Image'}
+                alt=""
+                className="news-image"
+              />
+                <a
+                  href={a.link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="news-title"
+                >
                   {a.title} »
                 </a>
-              </li>
+                {a.summary && <p className="news-summary">{a.summary}</p>}
+              </div>
             ))}
-          </ul>
+          </div>
         </div>
       ))}
     </div>

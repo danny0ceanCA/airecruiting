@@ -11,6 +11,10 @@ function AdminUsers() {
   const [newLabel, setNewLabel] = useState('');
   const [activeTab, setActiveTab] = useState('users');
   const [editLabels, setEditLabels] = useState({});
+  const [feeds, setFeeds] = useState([]);
+  const [newFeedName, setNewFeedName] = useState('');
+  const [newFeedUrl, setNewFeedUrl] = useState('');
+  const [editUrls, setEditUrls] = useState({});
   const token = localStorage.getItem('token');
 
   const showToast = (msg) => {
@@ -38,9 +42,19 @@ function AdminUsers() {
     }
   };
 
+  const fetchFeeds = async () => {
+    try {
+      const resp = await api.get('/rss-feeds');
+      setFeeds(resp.data.feeds || []);
+    } catch (err) {
+      console.error('Failed to fetch feeds', err);
+    }
+  };
+
   useEffect(() => {
     if (token) fetchUsers();
     fetchCodes();
+    fetchFeeds();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleChange = (email, field, value) => {
@@ -116,6 +130,58 @@ function AdminUsers() {
     }
   };
 
+  const handleAddFeed = async () => {
+    try {
+      await api.post(
+        '/admin/rss-feeds',
+        { name: newFeedName, url: newFeedUrl },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setNewFeedName('');
+      setNewFeedUrl('');
+      fetchFeeds();
+      showToast('Feed added!');
+    } catch (err) {
+      console.error('Failed to add feed', err);
+    }
+  };
+
+  const handleUpdateFeed = async (name) => {
+    try {
+      await api.put(
+        `/admin/rss-feeds/${encodeURIComponent(name)}`,
+        { url: editUrls[name] },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      fetchFeeds();
+      showToast('Feed updated!');
+    } catch (err) {
+      console.error('Failed to update feed', err);
+    }
+  };
+
+  const handleDeleteFeed = async (name) => {
+    if (!window.confirm(`Delete feed ${name}?`)) return;
+    try {
+      await api.delete(`/admin/rss-feeds/${encodeURIComponent(name)}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      fetchFeeds();
+      showToast('Feed deleted!');
+    } catch (err) {
+      console.error('Failed to delete feed', err);
+    }
+  };
+
+  const handleRefreshFeeds = async () => {
+    try {
+      await api.get('/nursing-news?force_refresh=true');
+      showToast('News refreshed!');
+    } catch (err) {
+      console.error('Refresh failed', err);
+    }
+  };
+
   const handleDelete = async (email) => {
     if (!window.confirm(`Delete user ${email}?`)) return;
     try {
@@ -144,6 +210,12 @@ function AdminUsers() {
           onClick={() => setActiveTab('codes')}
         >
           Institutional Codes
+        </button>
+        <button
+          className={`tab ${activeTab === 'feeds' ? 'active' : ''}`}
+          onClick={() => setActiveTab('feeds')}
+        >
+          RSS Feeds
         </button>
       </div>
       <div className="tab-content">
@@ -265,6 +337,63 @@ function AdminUsers() {
                       <button
                         className="delete-button"
                         onClick={() => handleDeleteCode(c.code)}
+                        style={{ marginLeft: '0.5rem' }}
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {activeTab === 'feeds' && (
+          <div>
+            <div className="add-code-form">
+              <input
+                type="text"
+                placeholder="Name"
+                value={newFeedName}
+                onChange={(e) => setNewFeedName(e.target.value)}
+              />
+              <input
+                type="text"
+                placeholder="URL"
+                value={newFeedUrl}
+                onChange={(e) => setNewFeedUrl(e.target.value)}
+              />
+              <button onClick={handleAddFeed}>Add Feed</button>
+              <button style={{ marginLeft: '0.5rem' }} onClick={handleRefreshFeeds}>
+                Refresh Cache
+              </button>
+            </div>
+            <table className="users-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>URL</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {feeds.map((f) => (
+                  <tr key={f.name}>
+                    <td>{f.name}</td>
+                    <td>
+                      <input
+                        type="text"
+                        value={editUrls[f.name] ?? f.url}
+                        onChange={(e) =>
+                          setEditUrls((prev) => ({ ...prev, [f.name]: e.target.value }))
+                        }
+                      />
+                    </td>
+                    <td>
+                      <button onClick={() => handleUpdateFeed(f.name)}>Save</button>
+                      <button
+                        className="delete-button"
+                        onClick={() => handleDeleteFeed(f.name)}
                         style={{ marginLeft: '0.5rem' }}
                       >
                         Delete
