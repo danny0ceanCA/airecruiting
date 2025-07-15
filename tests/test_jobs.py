@@ -333,6 +333,7 @@ def test_match_ignores_label_changes(monkeypatch):
         "last_name": "Eer",
         "school_code": "1001",
         "password": "pw",
+        "role": "career",
     }
     client.post("/register", json=career)
     ck = f"user:{career['email']}"
@@ -351,6 +352,7 @@ def test_match_ignores_label_changes(monkeypatch):
         "last_name": "L",
         "school_code": "1001",
         "password": "pw",
+        "role": "applicant",
     }
     client.post("/register", json=applicant)
     ak = f"user:{applicant['email']}"
@@ -431,6 +433,7 @@ def test_match_includes_applicant_records_without_student(monkeypatch):
         "last_name": "R",
         "school_code": "1001",
         "password": "pw",
+        "role": "career",
     }
     client.post("/register", json=recruiter)
     rk = f"user:{recruiter['email']}"
@@ -448,6 +451,7 @@ def test_match_includes_applicant_records_without_student(monkeypatch):
         "last_name": "Student",
         "school_code": "1001",
         "password": "pw",
+        "role": "applicant",
     }
     client.post("/register", json=applicant)
     ak = f"user:{applicant['email']}"

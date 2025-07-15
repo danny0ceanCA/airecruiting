@@ -248,7 +248,7 @@ class LoginRequest(BaseModel):
 
 class ApproveRequest(BaseModel):
     email: EmailStr
-    role: str  # "career" or "recruiter"
+    role: str | None = None  # optional new role
 
 class RejectRequest(BaseModel):
     email: EmailStr
@@ -415,9 +415,10 @@ def approve(req: ApproveRequest, current_user: dict = Depends(get_current_user))
         raise HTTPException(status_code=404, detail="User not found")
     user = json.loads(raw)
     user["approved"] = True
-    user["role"] = req.role
+    if req.role is not None:
+        user["role"] = req.role
     redis_client.set(key, json.dumps(user))
-    return {"message": f"{req.email} approved as {req.role}"}
+    return {"message": f"{req.email} approved as {user['role']}"}
 
 @app.post("/reject")
 def reject(req: RejectRequest, current_user: dict = Depends(get_current_user)):
