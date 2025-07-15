@@ -46,6 +46,12 @@ ADMIN_EMAIL=admin@example.com
 ADMIN_PASSWORD=admin123
 ```
 
+## Registration Codes
+
+Career services staff and recruiters must supply an institutional code when registering.
+Codes can be requested from the `/request-code` page or by contacting the administrator
+at `admin@example.com`. Applicants do not need a code and may register directly.
+
 ## Students Endpoint
 
 Authenticated users can submit student information using `POST /students`.
