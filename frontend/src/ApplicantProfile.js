@@ -272,7 +272,7 @@ function ApplicantProfile() {
           </div>
         )}
         {activeTab === 'news' && (
-          <div className="form-panel">
+          <div className="form-panel news-panel">
             <h2>Nursing News</h2>
             <NursingNews />
           </div>

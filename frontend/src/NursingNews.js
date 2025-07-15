@@ -30,9 +30,11 @@ function NursingNews() {
           <div className="news-grid">
             {feed.articles && feed.articles.map((a, idx) => (
               <div key={idx} className="news-card">
-                {a.image && (
-                  <img src={a.image} alt="" className="news-image" />
-                )}
+              <img
+                src={a.image || 'https://via.placeholder.com/400x200?text=No+Image'}
+                alt=""
+                className="news-image"
+              />
                 <a
                   href={a.link}
                   target="_blank"
