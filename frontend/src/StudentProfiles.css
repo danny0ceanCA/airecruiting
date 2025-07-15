@@ -29,6 +29,12 @@
   box-shadow: 0 6px 15px rgba(0, 0, 0, 0.2);
 }
 
+/* Wider layout for the Nursing News tab */
+.news-panel {
+  max-width: 1000px;
+  width: 100%;
+}
+
 .form-section {
   background-color: #003366;
   padding: 1rem 2rem;
@@ -333,5 +339,79 @@
   border-radius: 0 !important;
   box-shadow: none !important;
   width: 100%;
+}
+
+.news-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.news-feed h3 {
+  margin: 0 0 0.5rem 0;
+  color: #032c4d;
+}
+
+.news-feed ul {
+  list-style: none;
+  padding-left: 1rem;
+}
+
+.news-feed li {
+  margin-bottom: 0.25rem;
+}
+
+/* Make news links more enticing */
+.news-feed a {
+  display: inline-block;
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+  color: #007bff;
+  text-decoration: none;
+  transition: background-color 0.2s;
+}
+
+.news-feed a:hover {
+  background-color: #e6f2ff;
+  color: #0056b3;
+  text-decoration: underline;
+}
+
+.news-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.news-card {
+  background: #f9f9f9;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.news-image {
+  width: 100%;
+  height: auto;
+  border-radius: 4px;
+  margin-bottom: 0.5rem;
+}
+
+.news-title {
+  font-weight: bold;
+  margin-bottom: 0.25rem;
+  color: #007bff;
+  text-decoration: none;
+}
+
+.news-title:hover {
+  text-decoration: underline;
+}
+
+.news-summary {
+  font-size: 0.9rem;
+  color: #333;
 }
 

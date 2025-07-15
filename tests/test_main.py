@@ -971,3 +971,90 @@ def test_delete_user_forbidden_non_admin():
     )
     assert resp.status_code == 403
 
+
+def test_nursing_news_cache(monkeypatch):
+    main_app.redis_client.flushdb()
+
+    calls = []
+
+    class DummyResp:
+        def __init__(self):
+            self.text = (
+                "<rss><channel>"
+                "<item>"
+                "<title>A</title>"
+                "<link>http://a</link>"
+                "<description>desc</description>"
+                "<enclosure url='http://img/a.jpg' type='image/jpeg'/>"
+                "</item>"
+                "</channel></rss>"
+            )
+
+    class DummyClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            pass
+
+        async def get(self, url):
+            calls.append(url)
+            return DummyResp()
+
+    monkeypatch.setattr(main_app.httpx, "AsyncClient", lambda timeout=10: DummyClient())
+
+    resp1 = client.get("/nursing-news")
+    assert resp1.status_code == 200
+    data1 = resp1.json()
+    assert len(data1["feeds"]) == len(main_app.NURSING_FEEDS)
+    for feed in data1["feeds"]:
+        art = feed["articles"][0]
+        assert "summary" in art
+        assert "image" in art
+    assert calls
+
+    calls.clear()
+
+    resp2 = client.get("/nursing-news")
+    assert resp2.status_code == 200
+    assert calls == []
+
+
+def test_rss_feed_management():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    token = client.post(
+        "/login", json={"email": "admin@example.com", "password": "admin123"}
+    ).json()["token"]
+
+    resp = client.post(
+        "/admin/rss-feeds",
+        json={"name": "TestFeed", "url": "http://example.com/feed"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+
+    feeds = client.get("/rss-feeds").json()["feeds"]
+    assert any(f["name"] == "TestFeed" for f in feeds)
+
+    resp = client.put(
+        "/admin/rss-feeds/TestFeed",
+        json={"url": "http://example.com/updated"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    feeds = client.get("/rss-feeds").json()["feeds"]
+    assert any(
+        f["name"] == "TestFeed" and f["url"] == "http://example.com/updated"
+        for f in feeds
+    )
+
+    resp = client.delete(
+        "/admin/rss-feeds/TestFeed",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    feeds = client.get("/rss-feeds").json()["feeds"]
+    assert not any(f["name"] == "TestFeed" for f in feeds)
+
