@@ -335,3 +335,11 @@
   width: 100%;
 }
 
+@media (max-width: 768px) {
+  .school-table,
+  .job-subtable {
+    display: block;
+    overflow-x: auto;
+  }
+}
+

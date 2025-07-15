@@ -46,3 +46,10 @@
 .error {
   color: #ff4136;
 }
+
+@media (max-width: 768px) {
+  .log-table {
+    display: block;
+    overflow-x: auto;
+  }
+}

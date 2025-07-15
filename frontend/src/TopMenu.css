@@ -6,8 +6,23 @@
   padding: 0.5rem 1rem;
   border-radius: 8px;
   display: flex;
+  align-items: center;
   gap: 1rem;
   z-index: 1000;
+}
+
+.menu-toggle {
+  display: none;
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 1.5rem;
+  cursor: pointer;
+}
+
+.menu-links {
+  display: flex;
+  gap: 1rem;
 }
 
 .top-menu a {
@@ -18,4 +33,19 @@
 
 .top-menu a:hover {
   text-decoration: underline;
+}
+
+@media (max-width: 768px) {
+  .menu-toggle {
+    display: block;
+  }
+  .menu-links {
+    display: none;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+  }
+  .top-menu.open .menu-links {
+    display: flex;
+  }
 }

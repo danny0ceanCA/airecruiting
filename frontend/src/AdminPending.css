@@ -73,3 +73,10 @@
   border-radius: 5px;
 }
 
+@media (max-width: 768px) {
+  .pending-table {
+    display: block;
+    overflow-x: auto;
+  }
+}
+
