@@ -1689,13 +1689,11 @@ def student_me(current_user: dict = Depends(get_current_user)):
     return info
 
 
+# Default RSS feeds shipped with the application. Only keep the
+# sources the project actively uses. Additional feeds can still be
+# added through the admin interface.
 NURSING_FEEDS = {
-    "Becker's Hospital Review": "https://www.beckershospitalreview.com/rss-feeds/rss.html",
     "American Nurse": "https://www.myamericannurse.com/feed/",
-    "Nurse.com": "https://www.nurse.com/feed",
-    "Fierce Healthcare": "https://www.fiercehealthcare.com/rss.xml",
-    "Nursing Times": "https://www.nursingtimes.net/feed/",
-    "DailyNurse": "https://dailynurse.com/feed/",
 }
 
 def init_default_rss_feeds() -> None:
