@@ -71,6 +71,34 @@ def test_default_admin_exists():
     assert admin["approved"] is True
 
 
+def test_applicant_registration_without_code():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+    user = {
+        "email": "nocode@example.com",
+        "first_name": "No",
+        "last_name": "Code",
+        "password": "pw",
+        "role": "applicant",
+    }
+    resp = client.post("/register", json=user)
+    assert resp.status_code == 200
+
+
+def test_non_applicant_requires_code():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+    user = {
+        "email": "career@example.com",
+        "first_name": "Car",
+        "last_name": "Eer",
+        "password": "pw",
+        "role": "career",
+    }
+    resp = client.post("/register", json=user)
+    assert resp.status_code == 400
+
+
 def test_registration_flow():
     main_app.redis_client.flushdb()
     init_default_admin()
@@ -86,6 +114,7 @@ def test_registration_flow():
         "last_name": "Doe",
         "school_code": "1001",
         "password": "secret",
+        "role": "applicant",
     }
 
     # Register
@@ -133,6 +162,7 @@ def test_non_admin_cannot_approve():
         "last_name": "One",
         "school_code": "1001",
         "password": "pass1",
+        "role": "applicant",
     }
     client.post("/register", json=user1)
     key = f"user:{user1['email']}"
@@ -149,6 +179,7 @@ def test_non_admin_cannot_approve():
         "last_name": "Two",
         "school_code": "1001",
         "password": "pass2",
+        "role": "applicant",
     }
     client.post("/register", json=target)
 
@@ -176,6 +207,7 @@ def test_pending_users_endpoint():
         "last_name": "One",
         "school_code": "1001",
         "password": "pass1",
+        "role": "applicant",
     }
     u2 = {
         "email": "pend2@example.com",
@@ -183,6 +215,7 @@ def test_pending_users_endpoint():
         "last_name": "Two",
         "school_code": "1001",
         "password": "pass2",
+        "role": "applicant",
     }
     client.post("/register", json=u1)
     client.post("/register", json=u2)
@@ -206,6 +239,7 @@ def test_pending_users_forbidden_for_non_admin():
         "last_name": "User",
         "school_code": "1001",
         "password": "secret",
+        "role": "applicant",
     }
     client.post("/register", json=regular)
     key = f"user:{regular['email']}"
@@ -238,6 +272,7 @@ def test_admin_can_reject_user():
         "last_name": "Me",
         "school_code": "1001",
         "password": "pwd",
+        "role": "applicant",
     }
     client.post("/register", json=target)
 
@@ -267,6 +302,7 @@ def test_non_admin_cannot_reject():
         "last_name": "User",
         "school_code": "1001",
         "password": "pass",
+        "role": "applicant",
     }
     client.post("/register", json=regular)
     key = f"user:{regular['email']}"
@@ -282,6 +318,7 @@ def test_non_admin_cannot_reject():
         "last_name": "Tim",
         "school_code": "1001",
         "password": "secret",
+        "role": "applicant",
     }
     client.post("/register", json=target)
 
@@ -444,6 +481,7 @@ def test_students_all_forbidden_for_non_admin():
         "last_name": "Test",
         "school_code": "1001",
         "password": "pass",
+        "role": "applicant",
     }
     client.post("/register", json=user)
     key = f"user:{user['email']}"
@@ -688,6 +726,7 @@ def test_delete_student_forbidden_non_admin():
         "last_name": "Test",
         "school_code": "1001",
         "password": "pass",
+        "role": "applicant",
     }
     client.post("/register", json=user)
     key = f"user:{user['email']}"
@@ -721,6 +760,7 @@ def test_recruiter_cannot_place_student():
         "last_name": "R",
         "school_code": "1001",
         "password": "pass",
+        "role": "recruiter",
     }
     client.post("/register", json=recruiter)
     key = f"user:{recruiter['email']}"
@@ -750,6 +790,7 @@ def test_students_me_endpoint(monkeypatch):
         "last_name": "User",
         "school_code": "1001",
         "password": "pass",
+        "role": "applicant",
     }
     client.post("/register", json=applicant)
     key = f"user:{applicant['email']}"
@@ -806,6 +847,7 @@ def test_admin_user_management_flow():
         "last_name": "It",
         "school_code": "1001",
         "password": "pass",
+        "role": "applicant",
     }
     client.post("/register", json=user)
     key = f"user:{user['email']}"
@@ -912,6 +954,7 @@ def test_admin_delete_user():
         "last_name": "Delete",
         "school_code": "1001",
         "password": "pw",
+        "role": "applicant",
     }
     client.post("/register", json=user)
     key = f"user:{user['email']}"
@@ -955,6 +998,7 @@ def test_delete_user_forbidden_non_admin():
         "last_name": "User",
         "school_code": "1001",
         "password": "pw",
+        "role": "applicant",
     }
     client.post("/register", json=user)
     key = f"user:{user['email']}"
