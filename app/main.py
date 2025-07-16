@@ -1243,6 +1243,16 @@ def generate_resume(req: ResumeRequest, current_user: dict = Depends(get_current
     if raw_html.endswith("```"):
         raw_html = raw_html.rsplit("```", 1)[0].strip()
 
+    lower_html = raw_html.lower()
+    if "<!doctype" in lower_html or "<html" in lower_html:
+        body_match = re.search(r"<body[^>]*>(.*?)</body>", raw_html, re.IGNORECASE | re.DOTALL)
+        if body_match:
+            raw_html = body_match.group(1).strip()
+        else:
+            html_match = re.search(r"<html[^>]*>(.*?)</html>", raw_html, re.IGNORECASE | re.DOTALL)
+            if html_match:
+                raw_html = html_match.group(1).strip()
+
     full_html = f"""
 <!DOCTYPE html>
 <html lang=\"en\">
