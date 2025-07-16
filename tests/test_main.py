@@ -686,7 +686,19 @@ def test_generate_resume_html(monkeypatch):
 
     class FakeResp:
         def __init__(self):
-            self.choices = [type("obj", (), {"message": type("obj", (), {"content": "<div>resume</div>"})})]
+            sample_html = (
+                "<h2>Professional Summary</h2><p>Summary</p>"
+                "<h2>Skills</h2><ul><li>Python</li></ul>"
+                "<h2>Experience</h2><ul><li>Job</li></ul>"
+                "<h2>Education</h2><p>College</p>"
+            )
+            self.choices = [
+                type(
+                    "obj",
+                    (),
+                    {"message": type("obj", (), {"content": sample_html})},
+                )
+            ]
 
     def fake_create(model, messages, temperature):
         return FakeResp()
@@ -708,7 +720,9 @@ def test_generate_resume_html(monkeypatch):
         headers={"Authorization": f"Bearer {token}"},
     )
     assert html_resp.status_code == 200
-    assert "resume" in html_resp.text.lower()
+    lower_html = html_resp.text.lower()
+    assert "professional summary" in lower_html
+    assert "<ul>" in lower_html
 
 
 def test_generate_resume_full_html(monkeypatch):
@@ -727,7 +741,12 @@ def test_generate_resume_full_html(monkeypatch):
     html_page = (
         "<!DOCTYPE html>"
         "<html><head><title>Title</title></head>"
-        "<body><div>resume</div></body></html>"
+        "<body>"
+        "<h2>Professional Summary</h2><p>Summary</p>"
+        "<h2>Skills</h2><ul><li>Python</li></ul>"
+        "<h2>Experience</h2><ul><li>Job</li></ul>"
+        "<h2>Education</h2><p>College</p>"
+        "</body></html>"
     )
 
     class FakeResp:
@@ -755,7 +774,9 @@ def test_generate_resume_full_html(monkeypatch):
     )
     assert html_resp.status_code == 200
     assert html_resp.text.lower().count("<html") == 1
-    assert "resume" in html_resp.text.lower()
+    lower_html = html_resp.text.lower()
+    assert "professional summary" in lower_html
+    assert "<ul>" in lower_html
 
 
 def test_resume_html_route():
@@ -764,7 +785,7 @@ def test_resume_html_route():
 
     main_app.redis_client.set(
         "resumehtml:codeh:stud@example.com",
-        "<html>resume</html>",
+        "<html><body><h2>Professional Summary</h2></body></html>",
     )
 
     token = client.post("/login", json={"email": "admin@example.com", "password": "admin123"}).json()["token"]
@@ -774,7 +795,7 @@ def test_resume_html_route():
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 200
-    assert "resume" in resp.text.lower()
+    assert "professional summary" in resp.text.lower()
 
 
 def test_admin_delete_student_cleans_up():
