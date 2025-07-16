@@ -1,7 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Navigate } from 'react-router-dom';
 import jwtDecode from 'jwt-decode';
-import jsPDF from 'jspdf';
 import api from './api';
 import AdminMenu from './AdminMenu';
 import loadGoogleMaps from './utils/loadGoogleMaps';
@@ -374,33 +373,19 @@ if (shouldRedirect) {
     }
   };
 
-  const downloadResume = async (studentEmail, jobCode) => {
+  const viewResume = async (studentEmail, jobCode) => {
     try {
-      const resp = await api.get(`/resume/${jobCode}/${studentEmail}`, {
-        headers: { Authorization: `Bearer ${token}` }
+      const resp = await api.get(`/resume-html/${jobCode}/${studentEmail}`, {
+        headers: { Authorization: `Bearer ${token}` },
       });
-
-      const resumeText = resp.data.resume;
-      const doc = new jsPDF();
-
-      // Add header
-      doc.setFontSize(16);
-      doc.text('TalenMatch AI Resume', 15, 20);
-
-      // Add watermark footer
-      doc.setFontSize(10);
-      doc.text('Tailored by TalenMatch AI', 15, 285);
-
-      // Resume body
-      doc.setFontSize(12);
-      const lines = doc.splitTextToSize(resumeText, 180);
-      doc.text(lines, 15, 40);
-
-      // Save as PDF
-      doc.save(`resume-${studentEmail}-${jobCode}.pdf`);
+      const newWindow = window.open('', '_blank');
+      if (newWindow) {
+        newWindow.document.write(resp.data);
+        newWindow.document.close();
+      }
     } catch (err) {
-      console.error('Resume download failed', err);
-      alert('Unable to download resume');
+      console.error('Resume load failed', err);
+      alert('Unable to load resume');
     }
   };
 
@@ -513,7 +498,7 @@ if (shouldRedirect) {
                 {generatingResumes[`${job.job_code}:${row.email}`] ? (
                   <span className="spinner">⏳</span>
                 ) : generatedResumes[`${job.job_code}:${row.email}`] ? (
-                  <button className="resume-icon-button" onClick={() => downloadResume(row.email, job.job_code)}>
+                  <button className="resume-icon-button" onClick={() => viewResume(row.email, job.job_code)}>
                     📥
                   </button>
                 ) : (

@@ -1217,14 +1217,13 @@ def assign_student(data: dict, token_data: dict = Depends(get_current_user)):
 
 @app.post("/generate-resume")
 def generate_resume(req: ResumeRequest, current_user: dict = Depends(get_current_user)):
-    """
-    Generates a text resume using OpenAI and stores it in Redis.
-    Does not regenerate if it already exists.
-    """
+    """Generate an HTML resume using OpenAI and store it in Redis."""
     print(f"\U0001F4C4 Generating resume for {req.student_email} - {req.job_code}")
     resume_key = f"resume:{req.job_code}:{req.student_email}"
+    html_key = f"resumehtml:{req.job_code}:{req.student_email}"
     existing = redis_client.get(resume_key)
     if existing:
+        redis_client.set(html_key, existing)
         print(f"\U0001F4C4 Resume already exists for {req.student_email} - {req.job_code}")
         return {"status": "exists"}
 
@@ -1237,11 +1236,45 @@ def generate_resume(req: ResumeRequest, current_user: dict = Depends(get_current
     job = json.loads(job_raw)
     student = json.loads(student_raw)
 
-    generated_resume = generate_resume_text(client, student, job)
+    raw_html = generate_resume_text(client, student, job).strip()
 
-    redis_client.set(resume_key, generated_resume)
+    if raw_html.startswith("```html"):
+        raw_html = raw_html.replace("```html", "", 1).strip()
+    if raw_html.endswith("```"):
+        raw_html = raw_html.rsplit("```", 1)[0].strip()
+
+    full_html = f"""
+<!DOCTYPE html>
+<html lang=\"en\">
+<head>
+  <meta charset=\"UTF-8\">
+  <title>TalentMatch AI – Resume</title>
+  <style>
+    body {{
+      font-family: Arial, sans-serif;
+      margin: 2rem;
+      line-height: 1.6;
+    }}
+    h2 {{
+      color: #1a1a1a;
+      border-bottom: 2px solid #eee;
+      padding-bottom: 0.3rem;
+    }}
+    .section {{
+      margin-bottom: 1.5rem;
+    }}
+  </style>
+</head>
+<body>
+{raw_html}
+</body>
+</html>
+"""
+
+    redis_client.set(resume_key, full_html)
+    redis_client.set(html_key, full_html)
     print(f"\u2705 Resume saved for {req.student_email} - {req.job_code}")
-    return {"status": "success", "message": "Resume stored in Redis"}
+    return {"status": "success"}
 
 
 @app.post("/generate-description")
@@ -1397,6 +1430,17 @@ def get_resume(job_code: str, student_email: str, current_user: dict = Depends(g
         "student_email": student_email,
         "resume": resume if isinstance(resume, str) else resume.decode("utf-8"),
     }
+
+
+@app.get("/resume-html/{job_code}/{student_email}")
+def get_resume_html(job_code: str, student_email: str, current_user: dict = Depends(get_current_user)):
+    key = f"resumehtml:{job_code}:{student_email}"
+    html = redis_client.get(key)
+    if not html:
+        html = redis_client.get(f"resume:{job_code}:{student_email}")
+    if not html:
+        raise HTTPException(status_code=404, detail="Resume not found")
+    return HTMLResponse(content=html, status_code=200)
 
 
 
