@@ -671,6 +671,65 @@ def test_job_description_html_route():
     assert "html" in resp.text.lower()
 
 
+def test_generate_resume_html(monkeypatch):
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    main_app.redis_client.set(
+        "student:stud@example.com",
+        json.dumps({"first_name": "Stud", "last_name": "S", "skills": ["python"]})
+    )
+    main_app.redis_client.set(
+        "job:coder",
+        json.dumps({"job_code": "coder", "job_title": "Dev", "job_description": "desc", "desired_skills": ["python"]})
+    )
+
+    class FakeResp:
+        def __init__(self):
+            self.choices = [type("obj", (), {"message": type("obj", (), {"content": "<div>resume</div>"})})]
+
+    def fake_create(model, messages, temperature):
+        return FakeResp()
+
+    monkeypatch.setattr(main_app.client.chat.completions, "create", fake_create)
+
+    token = client.post("/login", json={"email": "admin@example.com", "password": "admin123"}).json()["token"]
+
+    resp = client.post(
+        "/generate-resume",
+        json={"student_email": "stud@example.com", "job_code": "coder"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "success"
+
+    html_resp = client.get(
+        "/resume-html/coder/stud@example.com",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert html_resp.status_code == 200
+    assert "resume" in html_resp.text.lower()
+
+
+def test_resume_html_route():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    main_app.redis_client.set(
+        "resumehtml:codeh:stud@example.com",
+        "<html>resume</html>",
+    )
+
+    token = client.post("/login", json={"email": "admin@example.com", "password": "admin123"}).json()["token"]
+
+    resp = client.get(
+        "/resume-html/codeh/stud@example.com",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    assert "resume" in resp.text.lower()
+
+
 def test_admin_delete_student_cleans_up():
     main_app.redis_client.flushdb()
     init_default_admin()

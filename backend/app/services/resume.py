@@ -1,13 +1,13 @@
 def generate_resume_text(client, student: dict, job: dict) -> str:
-    """Create a tailored job summary using OpenAI"""
+    """Create an HTML resume tailored to the student and job."""
     instructions = f"""
-You are a career advisor assistant. Create a personalized job summary for a student who has been assigned a job opportunity. Your task is to:
+You are generating a professional resume in HTML format. Use the information
+provided to craft a short resume with these sections:
 
-1. Summarize what the assigned job entails in plain, student-friendly language.
-2. Explain why the student may be a good fit based on their background, skills, and interests.
-3. Gently mention areas the student might need to work on or prepare for before starting.
-
-Respond with professional, friendly language. Do not format as a resume. Write clearly in paragraph form using plain language. Your audience is the student and their career advisor.
+1. **Name and Contact Information** - include email and phone.
+2. **Skills** - highlight relevant skills from the student profile.
+3. **Experience Summary / Job History** - summarise the student's background
+   and how it relates to the assigned job.
 
 Student Profile:
 Name: {student.get('first_name', '')} {student.get('last_name', '')}
@@ -23,7 +23,7 @@ Title: {job.get('job_title')}
 Description: {job.get('job_description')}
 Desired Skills: {', '.join(job.get('desired_skills', []))}
 
-Begin with a short 1–2 sentence job summary, followed by a paragraph explaining the student’s fit, and end with a short paragraph highlighting potential preparation tips.
+Return only valid HTML.
 """
 
     resp = client.chat.completions.create(
