@@ -189,6 +189,23 @@ if (shouldRedirect) {
     }
   };
 
+  const handleRematch = async (code) => {
+    try {
+      setLoadingMatches((prev) => ({ ...prev, [code]: true }));
+      const resp = await api.post(
+        `/rematches/${code}`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const matchResults = resp.data.matches.map((m) => ({ ...m, status: null }));
+      setMatches((prev) => ({ ...prev, [code]: matchResults }));
+    } catch (err) {
+      console.error('Error rematching job:', err);
+    } finally {
+      setLoadingMatches((prev) => ({ ...prev, [code]: false }));
+    }
+  };
+
   const loadMatchResults = async (code) => {
     try {
       const resp = await api.get(`/match/${code}`, {
@@ -285,6 +302,19 @@ if (shouldRedirect) {
     }
   };
 
+  const notifyInterest = async (jobCode, email) => {
+    try {
+      await api.post(
+        '/notify-interest',
+        { job_code: jobCode, student_email: email },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      alert('Candidate notified of interest');
+    } catch (err) {
+      console.error('Notification failed', err);
+    }
+  };
+
   const bulkAssign = async (job) => {
     const emails = selectedRows[job.job_code] || [];
     for (const email of emails) {
@@ -373,6 +403,23 @@ if (shouldRedirect) {
     }
   };
 
+  const previewResume = async (email, jobCode) => {
+    try {
+      const resp = await api.post(
+        '/generate-resume',
+        { student_email: email, job_code: jobCode, preview: true },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const newWindow = window.open('', '_blank');
+      if (newWindow) {
+        newWindow.document.write(resp.data.html);
+        newWindow.document.close();
+      }
+    } catch (err) {
+      console.error('Preview resume error:', err);
+    }
+  };
+
   const viewResume = async (studentEmail, jobCode) => {
     try {
       const resp = await api.get(`/resume-html/${jobCode}/${studentEmail}`, {
@@ -457,6 +504,7 @@ if (shouldRedirect) {
                         </>
                       ) : (
                         <>
+                          <button onClick={() => previewResume(row.email, job.job_code)}>Preview</button>
                           <button onClick={() => handleAssign(job, row)}>Assign</button>
                           {!isRecruiter && (
                             <button onClick={() => handlePlace(job, row)}>Place</button>
@@ -509,6 +557,9 @@ if (shouldRedirect) {
               </td>
               <td>
                 <span className="badge assigned inline">Assigned</span>
+                {isRecruiter && (
+                  <button onClick={() => notifyInterest(job.job_code, row.email)}>Interested</button>
+                )}
                 {!isRecruiter && (
                   <button onClick={() => handlePlace(job, row)}>Place</button>
                 )}
@@ -797,18 +848,23 @@ if (shouldRedirect) {
                       const hasMatchInRedis = matchPresence[job.job_code] === true;
 
                       return hasMatchInRedis ? (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setExpandedJob(job.job_code);
-                            setActiveSubtab((prev) => ({
-                              ...prev,
-                              [job.job_code]: 'matches',
-                            }));
-                          }}
-                        >
-                          View Matches
-                        </button>
+                        <>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setExpandedJob(job.job_code);
+                              setActiveSubtab((prev) => ({
+                                ...prev,
+                                [job.job_code]: 'matches',
+                              }));
+                            }}
+                          >
+                            View Matches
+                          </button>
+                          <button onClick={() => handleRematch(job.job_code)}>
+                            Match Again
+                          </button>
+                        </>
                       ) : (
                         <button
                           onClick={(e) => {
