@@ -1172,7 +1172,11 @@ def test_nursing_news_cache(monkeypatch):
             calls.append(url)
             return DummyResp()
 
-    monkeypatch.setattr(main_app.httpx, "AsyncClient", lambda timeout=10: DummyClient())
+    monkeypatch.setattr(
+        main_app.httpx,
+        "AsyncClient",
+        lambda timeout=10, headers=None: DummyClient(),
+    )
 
     resp1 = client.get("/nursing-news")
     assert resp1.status_code == 200
