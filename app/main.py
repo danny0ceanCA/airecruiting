@@ -1780,6 +1780,8 @@ def all_rss_feeds() -> dict[str, str]:
 
 NURSING_NEWS_CACHE_KEY = "cache:nursing_news"
 NURSING_NEWS_TTL = 3600  # seconds
+# Use a browser-like User-Agent when fetching RSS feeds to avoid blocking
+RSS_HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 
 @app.get("/nursing-news")
@@ -1796,7 +1798,7 @@ async def nursing_news(force_refresh: bool = False):
 
     feeds = all_rss_feeds()
 
-    async with httpx.AsyncClient(timeout=10) as client:
+    async with httpx.AsyncClient(timeout=10, headers=RSS_HEADERS) as client:
         tasks = [client.get(url) for url in feeds.values()]
         responses = await asyncio.gather(*tasks, return_exceptions=True)
 

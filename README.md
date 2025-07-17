@@ -71,4 +71,6 @@ remove a user from the system.
 ## Nursing News
 
 The `/nursing-news` endpoint retrieves articles from several nursing-focused RSS
-feeds. Results are cached for one hour to improve performance.
+feeds. Results are cached for one hour to improve performance. RSS requests use
+a browser-like `User-Agent` header to avoid being blocked by some feed
+providers.
