@@ -538,3 +538,85 @@ def test_rematches_endpoint(monkeypatch):
     rematch_resp = client.post(f"/rematches/{job_code}", headers={"Authorization": f"Bearer {token}"})
     assert rematch_resp.status_code == 200
     assert main_app.redis_client.get("metrics:total_rematches") == 1
+
+
+def test_not_interested_filters_out_student(monkeypatch):
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    class FakeResp:
+        def __init__(self):
+            self.data = [type("obj", (), {"embedding": [1.0]})]
+
+    monkeypatch.setattr(main_app.client.embeddings, "create", lambda *a, **k: FakeResp())
+    monkeypatch.setattr(main_app, "get_driving_distance_miles", lambda *a, **k: 1.0)
+
+    token = login_admin()
+
+    s1 = {
+        "first_name": "John",
+        "last_name": "Doe",
+        "email": "john@example.com",
+        "phone": "123",
+        "education_level": "College",
+        "skills": ["python"],
+        "experience_summary": "s1",
+        "interests": "i",
+        "city": "c",
+        "state": "s",
+        "lat": 0.0,
+        "lng": 0.0,
+        "max_travel": 50.0,
+    }
+
+    s2 = {
+        "first_name": "Jane",
+        "last_name": "Roe",
+        "email": "jane@example.com",
+        "phone": "456",
+        "education_level": "College",
+        "skills": ["java"],
+        "experience_summary": "s2",
+        "interests": "i",
+        "city": "c",
+        "state": "s",
+        "lat": 0.0,
+        "lng": 0.0,
+        "max_travel": 50.0,
+    }
+
+    client.post("/students", json=s1, headers={"Authorization": f"Bearer {token}"})
+    client.post("/students", json=s2, headers={"Authorization": f"Bearer {token}"})
+
+    job = {
+        "job_title": "Dev",
+        "job_description": "desc",
+        "desired_skills": ["python"],
+        "source": "x",
+        "min_pay": 1.0,
+        "max_pay": 2.0,
+        "city": "c",
+        "state": "s",
+        "lat": 0.0,
+        "lng": 0.0,
+    }
+
+    resp = client.post("/jobs", json=job, headers={"Authorization": f"Bearer {token}"})
+    job_code = resp.json()["job_code"]
+
+    first = client.post("/match", json={"job_code": job_code}, headers={"Authorization": f"Bearer {token}"})
+    assert len(first.json()["matches"]) == 2
+
+    client.post(
+        "/not-interested",
+        json={"job_code": job_code, "student_email": s2["email"]},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    second = client.post("/match", json={"job_code": job_code}, headers={"Authorization": f"Bearer {token}"})
+    emails = [m["email"] for m in second.json()["matches"]]
+    assert s2["email"] not in emails
+    assert s1["email"] in emails
+
+    stored = json.loads(main_app.redis_client.get(f"job:{job_code}"))
+    assert s2["email"] in stored.get("uninterested_students", [])

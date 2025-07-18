@@ -315,6 +315,22 @@ if (shouldRedirect) {
     }
   };
 
+  const markNotInterested = async (jobCode, email) => {
+    try {
+      await api.post(
+        '/not-interested',
+        { job_code: jobCode, student_email: email },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setMatches((prev) => ({
+        ...prev,
+        [jobCode]: (prev[jobCode] || []).filter((m) => m.email !== email)
+      }));
+    } catch (err) {
+      console.error('Not interested call failed', err);
+    }
+  };
+
   const bulkAssign = async (job) => {
     const emails = selectedRows[job.job_code] || [];
     for (const email of emails) {
@@ -506,6 +522,7 @@ if (shouldRedirect) {
                         <>
                           <button onClick={() => previewResume(row.email, job.job_code)}>Preview Resume</button>
                           <button onClick={() => handleAssign(job, row)}>Assign Student</button>
+                          <button onClick={() => markNotInterested(job.job_code, row.email)}>Not Interested</button>
                           {!isRecruiter && (
                             <button onClick={() => handlePlace(job, row)}>Place</button>
                           )}
