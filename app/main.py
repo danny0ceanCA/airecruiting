@@ -1311,9 +1311,9 @@ def notify_interest(data: dict, token_data: dict = Depends(get_current_user)):
 
     body = (
         f"Hello {first_name},\n\n"
-        "Your resume has been matched with a job and the recruiter has reviewed. "
-        "You are receiving this email because the Recruiter would like to notify you "
-        "that you are a match and will be contacting you to discuss your resume. "
+        "Your resume has been matched with a job and the recruiter has reviewed your resume.\n\n"
+        "You are receiving this email because the Recruiter would like to notify you that you are a match "
+        "and will be contacting you to discuss your resume.\n\n"
         "Please see the attached document outlining the job description as it pertains to your resume.\n\n"
         "Good Luck!\n\n"
         "Support Team @ TalentMatch-AI"
