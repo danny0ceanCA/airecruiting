@@ -558,7 +558,7 @@ if (shouldRedirect) {
               <td>
                 <span className="badge assigned inline">Assigned</span>
                 {isRecruiter && (
-                  <button onClick={() => notifyInterest(job.job_code, row.email)}>Interested</button>
+                  <button onClick={() => notifyInterest(job.job_code, row.email)}>Notify Candidate</button>
                 )}
                 {!isRecruiter && (
                   <button onClick={() => handlePlace(job, row)}>Place</button>
