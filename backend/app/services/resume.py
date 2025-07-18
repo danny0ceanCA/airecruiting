@@ -14,11 +14,13 @@ def generate_resume_text(client, student: dict, job: dict, include_contact: bool
 
     instructions = f"""
 You are generating a professional resume in HTML format. Use the information
-provided to craft a concise resume. Structure the document with <h2> section
-headers and <ul> bullet lists. Include these sections:
+provided to craft a concise, persuasive resume that highlights the applicant to
+recruiters. Structure the document with <h2> section headers and <ul> bullet
+lists. Include these sections:
 
 1. **Name and Contact Information** {contact_note}
-2. **Professional Summary** - a short introduction of the candidate.
+2. **Professional Summary** - a persuasive overview selling the applicant's
+   strengths and fit for the role.
 3. **Skills** - present as a bullet list.
 4. **Experience** - bullet points for each relevant job or role.
 5. **Education** - mention the education level.
