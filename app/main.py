@@ -86,8 +86,13 @@ redis_client = redis.Redis.from_url(redis_url, decode_responses=True)
 # Key used to store activity log entries
 ACTIVITY_LOG_KEY = "activity_logs"
 
-def send_email(recipient: str, subject: str, body: str) -> None:
-    """Send an email if SMTP configuration is available."""
+def send_email(
+    recipient: str,
+    subject: str,
+    body: str,
+    attachments: list[tuple[str, bytes | str, str]] | None = None,
+) -> None:
+    """Send an email with optional attachments if SMTP configuration is available."""
     if not SMTP_HOST or not EMAIL_SENDER:
         print(f"[email] Skipping email to {recipient}; SMTP not configured")
         return
@@ -97,6 +102,19 @@ def send_email(recipient: str, subject: str, body: str) -> None:
         msg["To"] = recipient
         msg["Subject"] = subject
         msg.set_content(body)
+
+        if attachments:
+            for filename, content, mime in attachments:
+                if isinstance(content, str):
+                    content = content.encode("utf-8")
+                maintype, subtype = mime.split("/", 1)
+                msg.add_attachment(
+                    content,
+                    maintype=maintype,
+                    subtype=subtype,
+                    filename=filename,
+                )
+
         with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as s:
             if SMTP_USER and SMTP_PASSWORD:
                 s.starttls()
@@ -814,6 +832,7 @@ def create_job(job: JobRequest, current_user: dict = Depends(get_current_user)):
     data["timestamp"] = datetime.now().isoformat()
     data.setdefault("assigned_students", [])
     data.setdefault("placed_students", [])
+    data.setdefault("uninterested_students", [])
 
     redis_client.set(key, json.dumps(data))
     print(f"Stored job at {key}: {data}")
@@ -863,6 +882,7 @@ def _perform_match(job_code: str, send_emails: bool = True):
     if not raw:
         raise HTTPException(status_code=404, detail="Job not found")
     job = json.loads(raw)
+    job.setdefault("uninterested_students", [])
 
     poster_code = None
     poster_raw = redis_client.get(f"user:{job.get('posted_by')}")
@@ -895,6 +915,9 @@ def _perform_match(job_code: str, send_emails: bool = True):
 
             print(f"\nEVALUATING student: {student.get('email')}")
             print(f"Job embedding length: {len(job_emb)}, Student embedding length: {len(emb)}")
+            if student.get("email") in job.get("uninterested_students", []):
+                print("  SKIP: student marked not interested")
+                continue
             student_user_raw = redis_client.get(f"user:{student.get('email')}")
             if student_user_raw and poster_code:
                 try:
@@ -948,6 +971,8 @@ def _perform_match(job_code: str, send_emails: bool = True):
         if ucode != poster_code:
             continue
         email = ukey.split("user:", 1)[1]
+        if email in job.get("uninterested_students", []):
+            continue
         if redis_client.exists(f"student:{email}"):
             continue
         matches.append(
@@ -1063,6 +1088,7 @@ def list_jobs(current_user: dict = Depends(get_current_user)):
             job = json.loads(job_data)
             job.setdefault("assigned_students", [])
             job.setdefault("placed_students", [])
+            job.setdefault("uninterested_students", [])
             jobs.append(job)
     print(f"Returning {len(jobs)} jobs from Redis")
     return {"jobs": jobs}
@@ -1232,9 +1258,31 @@ def assign_student(data: dict, token_data: dict = Depends(get_current_user)):
     return {"message": f"Assigned {student_email}"}
 
 
+@app.post("/not-interested")
+def mark_not_interested(data: dict, token_data: dict = Depends(get_current_user)):
+    """Record that a student is not interested in a job."""
+    job_code = data.get("job_code")
+    student_email = data.get("student_email")
+    if not job_code or not student_email:
+        raise HTTPException(status_code=400, detail="Missing job_code or student_email")
+
+    key = f"job:{job_code}"
+    raw = redis_client.get(key)
+    if not raw:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    job = json.loads(raw)
+    job.setdefault("uninterested_students", [])
+    if student_email not in job["uninterested_students"]:
+        job["uninterested_students"].append(student_email)
+
+    redis_client.set(key, json.dumps(job))
+    return {"message": "Not interested recorded"}
+
+
 @app.post("/notify-interest")
 def notify_interest(data: dict, token_data: dict = Depends(get_current_user)):
-    """Notify a student that a recruiter is interested."""
+    """Notify a student that a recruiter is interested and send them a job description."""
     job_code = data.get("job_code")
     student_email = data.get("student_email")
     if not job_code or not student_email:
@@ -1249,13 +1297,32 @@ def notify_interest(data: dict, token_data: dict = Depends(get_current_user)):
     if student_email not in job.get("assigned_students", []):
         raise HTTPException(status_code=400, detail="Student not assigned to job")
 
+    desc_html, _ = generate_job_description_html(job_code, student_email)
+
+    student_raw = redis_client.get(f"student:{student_email}")
+    first_name = ""
+    if student_raw:
+        try:
+            student = json.loads(student_raw)
+            first_name = student.get("first_name", "")
+        except Exception:
+            pass
+
+    body = (
+        f"Hello {first_name},\n\n"
+        "Your resume has been matched with a job and the recruiter has reviewed. "
+        "You are receiving this email because the Recruiter would like to notify you "
+        "that you are a match and will be contacting you to discuss your resume. "
+        "Please see the attached document outlining the job description as it pertains to your resume.\n\n"
+        "Good Luck!\n\n"
+        "Support Team @ TalentMatch-AI"
+    )
+
     send_email(
         student_email,
         f"Recruiter Interest: {job.get('job_title')}",
-        (
-            f"Hello,\n\nA recruiter has expressed interest in you for the job '{job.get('job_title')}'. "
-            "They may contact you soon."
-        ),
+        body,
+        attachments=[("job_description.html", desc_html, "text/html")],
     )
 
     return {"message": "Notification sent"}
@@ -1283,6 +1350,9 @@ def generate_resume(req: ResumeRequest, current_user: dict = Depends(get_current
 
     job = json.loads(job_raw)
     student = json.loads(student_raw)
+
+    if req.student_email not in job.get("assigned_students", []) and req.student_email not in job.get("placed_students", []):
+        raise HTTPException(status_code=403, detail="Student not assigned to job")
 
     raw_html = generate_resume_text(client, student, job, include_contact=not preview).strip()
 
@@ -1362,16 +1432,15 @@ def generate_description(req: DescriptionRequest, current_user: dict = Depends(g
     return {"status": "success", "description": generated_desc}
 
 
-@app.post("/generate-job-description")
-def generate_job_description(req: ResumeRequest, current_user: dict = Depends(get_current_user)):
-    job_code = req.job_code
-    student_email = req.student_email
+def generate_job_description_html(job_code: str, student_email: str) -> tuple[str, bool]:
+    """Create or fetch an HTML job description for a student."""
     key = f"job_description:{job_code}:{student_email}"
     html_key = f"jobdesc:{job_code}:{student_email}"
+
     existing = redis_client.get(key)
     if existing:
         redis_client.set(html_key, existing)
-        return {"status": "exists"}
+        return existing, True
 
     job_raw = redis_client.get(f"job:{job_code}")
     student_raw = redis_client.get(f"student:{student_email}")
@@ -1417,18 +1486,16 @@ Output only valid HTML.
 
     raw_content = resp.choices[0].message.content.strip()
 
-    # Clean up Markdown-style ```html block
     if raw_content.startswith("```html"):
         raw_content = raw_content.replace("```html", "", 1).strip()
     if raw_content.endswith("```"):
         raw_content = raw_content.rsplit("```", 1)[0].strip()
 
-    # Wrap in HTML layout
     full_html = f"""
 <!DOCTYPE html>
-<html lang="en">
+<html lang=\"en\">
 <head>
-  <meta charset="UTF-8">
+  <meta charset=\"UTF-8\">
   <title>TalentMatch AI – Job Description</title>
   <style>
     body {{
@@ -1454,7 +1521,13 @@ Output only valid HTML.
 
     redis_client.set(key, full_html)
     redis_client.set(html_key, full_html)
-    return {"status": "success"}
+    return full_html, False
+
+
+@app.post("/generate-job-description")
+def generate_job_description(req: ResumeRequest, current_user: dict = Depends(get_current_user)):
+    html, existed = generate_job_description_html(req.job_code, req.student_email)
+    return {"status": "exists"} if existed else {"status": "success"}
 
 
 @app.get("/job-description/{job_code}/{student_email}")
@@ -1479,8 +1552,15 @@ def get_job_description_html(job_code: str, student_email: str, current_user: di
 def get_resume(job_code: str, student_email: str, current_user: dict = Depends(get_current_user)):
     key = f"resume:{job_code}:{student_email}"
     print(f"\U0001F4E5 Download request for resume: {job_code} - {student_email}")
-    resume = redis_client.get(key)
 
+    job_raw = redis_client.get(f"job:{job_code}")
+    if not job_raw:
+        raise HTTPException(status_code=404, detail="Job not found")
+    job = json.loads(job_raw)
+    if student_email not in job.get("assigned_students", []) and student_email not in job.get("placed_students", []):
+        raise HTTPException(status_code=403, detail="Student not assigned to job")
+
+    resume = redis_client.get(key)
     if not resume:
         raise HTTPException(status_code=404, detail="Resume not found")
 
@@ -1496,6 +1576,14 @@ def get_resume(job_code: str, student_email: str, current_user: dict = Depends(g
 @app.get("/resume-html/{job_code}/{student_email}")
 def get_resume_html(job_code: str, student_email: str, current_user: dict = Depends(get_current_user)):
     key = f"resumehtml:{job_code}:{student_email}"
+
+    job_raw = redis_client.get(f"job:{job_code}")
+    if not job_raw:
+        raise HTTPException(status_code=404, detail="Job not found")
+    job = json.loads(job_raw)
+    if student_email not in job.get("assigned_students", []) and student_email not in job.get("placed_students", []):
+        raise HTTPException(status_code=403, detail="Student not assigned to job")
+
     html = redis_client.get(key)
     if not html:
         html = redis_client.get(f"resume:{job_code}:{student_email}")

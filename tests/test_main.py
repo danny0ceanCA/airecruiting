@@ -671,6 +671,58 @@ def test_job_description_html_route():
     assert "html" in resp.text.lower()
 
 
+def test_notify_interest_generates_description(monkeypatch):
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    main_app.redis_client.set(
+        "student:stud@example.com",
+        json.dumps({"first_name": "Stud", "last_name": "S", "skills": ["python"]})
+    )
+    main_app.redis_client.set(
+        "job:codei",
+        json.dumps({
+            "job_code": "codei",
+            "job_title": "Dev",
+            "job_description": "desc",
+            "desired_skills": ["python"],
+            "assigned_students": ["stud@example.com"],
+        })
+    )
+
+    class FakeResp:
+        def __init__(self):
+            self.choices = [type("obj", (), {"message": type("obj", (), {"content": "done"})})]
+
+    def fake_create(model, messages, temperature):
+        return FakeResp()
+
+    sent = {}
+
+    def fake_send(recipient, subject, body, attachments=None):
+        sent['body'] = body
+        sent['attachments'] = attachments
+
+    monkeypatch.setattr(main_app.client.chat.completions, "create", fake_create)
+    monkeypatch.setattr(main_app, "send_email", fake_send)
+
+    token = client.post("/login", json={"email": "admin@example.com", "password": "admin123"}).json()["token"]
+
+    resp = client.post(
+        "/notify-interest",
+        json={"student_email": "stud@example.com", "job_code": "codei"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    stored = main_app.redis_client.get("job_description:codei:stud@example.com")
+    assert stored is not None and "done" in stored
+    assert main_app.redis_client.get("jobdesc:codei:stud@example.com") == stored
+    assert "Good Luck" in sent.get("body")
+    attachments = sent.get("attachments")
+    assert attachments and attachments[0][0] == "job_description.html"
+    assert attachments[0][1] == stored
+
+
 def test_generate_resume_html(monkeypatch):
     main_app.redis_client.flushdb()
     init_default_admin()
@@ -681,7 +733,13 @@ def test_generate_resume_html(monkeypatch):
     )
     main_app.redis_client.set(
         "job:coder",
-        json.dumps({"job_code": "coder", "job_title": "Dev", "job_description": "desc", "desired_skills": ["python"]})
+        json.dumps({
+            "job_code": "coder",
+            "job_title": "Dev",
+            "job_description": "desc",
+            "desired_skills": ["python"],
+            "assigned_students": ["stud@example.com"],
+        })
     )
 
     class FakeResp:
@@ -735,7 +793,13 @@ def test_generate_resume_full_html(monkeypatch):
     )
     main_app.redis_client.set(
         "job:coder",
-        json.dumps({"job_code": "coder", "job_title": "Dev", "job_description": "desc", "desired_skills": ["python"]})
+        json.dumps({
+            "job_code": "coder",
+            "job_title": "Dev",
+            "job_description": "desc",
+            "desired_skills": ["python"],
+            "assigned_students": ["stud@example.com"],
+        })
     )
 
     html_page = (
@@ -787,6 +851,10 @@ def test_resume_html_route():
         "resumehtml:codeh:stud@example.com",
         "<html><body><h2>Professional Summary</h2></body></html>",
     )
+    main_app.redis_client.set(
+        "job:codeh",
+        json.dumps({"job_code": "codeh", "assigned_students": ["stud@example.com"]})
+    )
 
     token = client.post("/login", json={"email": "admin@example.com", "password": "admin123"}).json()["token"]
 
@@ -808,7 +876,13 @@ def test_generate_resume_preview(monkeypatch):
     )
     main_app.redis_client.set(
         "job:coder",
-        json.dumps({"job_code": "coder", "job_title": "Dev", "job_description": "desc", "desired_skills": ["python"]})
+        json.dumps({
+            "job_code": "coder",
+            "job_title": "Dev",
+            "job_description": "desc",
+            "desired_skills": ["python"],
+            "assigned_students": ["stud@example.com"],
+        })
     )
 
     class FakeResp:
@@ -833,6 +907,57 @@ def test_generate_resume_preview(monkeypatch):
     assert resp.json()["status"] == "preview"
     assert "stud@example.com" not in resp.json()["html"]
     assert main_app.redis_client.get("resumehtml:coder:stud@example.com") is None
+
+
+def test_generate_resume_requires_assignment():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    main_app.redis_client.set("student:s1@example.com", json.dumps({"first_name": "S"}))
+    main_app.redis_client.set("job:j1", json.dumps({"job_code": "j1"}))
+
+    token = client.post("/login", json={"email": "admin@example.com", "password": "admin123"}).json()["token"]
+
+    resp = client.post(
+        "/generate-resume",
+        json={"student_email": "s1@example.com", "job_code": "j1"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 403
+
+
+def test_get_resume_requires_assignment():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    main_app.redis_client.set("student:s1@example.com", json.dumps({"first_name": "S"}))
+    main_app.redis_client.set("job:j1", json.dumps({"job_code": "j1"}))
+    main_app.redis_client.set("resume:j1:s1@example.com", "resume")
+
+    token = client.post("/login", json={"email": "admin@example.com", "password": "admin123"}).json()["token"]
+
+    resp = client.get(
+        "/resume/j1/s1@example.com",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 403
+
+
+def test_get_resume_html_requires_assignment():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    main_app.redis_client.set("student:s1@example.com", json.dumps({"first_name": "S"}))
+    main_app.redis_client.set("job:j1", json.dumps({"job_code": "j1"}))
+    main_app.redis_client.set("resumehtml:j1:s1@example.com", "<html>")
+
+    token = client.post("/login", json={"email": "admin@example.com", "password": "admin123"}).json()["token"]
+
+    resp = client.get(
+        "/resume-html/j1/s1@example.com",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 403
 
 
 def test_admin_delete_student_cleans_up():

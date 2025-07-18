@@ -315,6 +315,22 @@ if (shouldRedirect) {
     }
   };
 
+  const markNotInterested = async (jobCode, email) => {
+    try {
+      await api.post(
+        '/not-interested',
+        { job_code: jobCode, student_email: email },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setMatches((prev) => ({
+        ...prev,
+        [jobCode]: (prev[jobCode] || []).filter((m) => m.email !== email)
+      }));
+    } catch (err) {
+      console.error('Not interested call failed', err);
+    }
+  };
+
   const bulkAssign = async (job) => {
     const emails = selectedRows[job.job_code] || [];
     for (const email of emails) {
@@ -451,14 +467,13 @@ if (shouldRedirect) {
           disabled={(selectedRows[job.job_code]?.length || 0) === 0}
           onClick={() => bulkAssign(job)}
         >
-          Assign Selected ({selectedRows[job.job_code]?.length || 0})
+          Mark Selected as Interested ({selectedRows[job.job_code]?.length || 0})
         </button>
         <table className="matches-table">
           <thead>
             <tr>
               <th></th>
               <th>Name</th>
-              <th>Email</th>
               <th>Score</th>
               <th>Action</th>
             </tr>
@@ -490,7 +505,6 @@ if (shouldRedirect) {
                       {row.first_name || row.name?.split(' ')[0]}{' '}
                       {row.last_name || row.name?.split(' ')[1]}
                     </td>
-                    <td>{row.email}</td>
                     <td>{row.score.toFixed(2)}</td>
                     <td>
                       {row.status === 'placed' ? (
@@ -504,8 +518,8 @@ if (shouldRedirect) {
                         </>
                       ) : (
                         <>
-                          <button onClick={() => previewResume(row.email, job.job_code)}>Preview</button>
-                          <button onClick={() => handleAssign(job, row)}>Assign</button>
+                          <button onClick={() => handleAssign(job, row)}>Interested</button>
+                          <button onClick={() => markNotInterested(job.job_code, row.email)}>Not Interested</button>
                           {!isRecruiter && (
                             <button onClick={() => handlePlace(job, row)}>Place</button>
                           )}
@@ -558,7 +572,7 @@ if (shouldRedirect) {
               <td>
                 <span className="badge assigned inline">Assigned</span>
                 {isRecruiter && (
-                  <button onClick={() => notifyInterest(job.job_code, row.email)}>Interested</button>
+                  <button onClick={() => notifyInterest(job.job_code, row.email)}>Notify Candidate</button>
                 )}
                 {!isRecruiter && (
                   <button onClick={() => handlePlace(job, row)}>Place</button>
