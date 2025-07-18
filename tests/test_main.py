@@ -1270,3 +1270,60 @@ def test_rss_feed_management():
     feeds = client.get("/rss-feeds").json()["feeds"]
     assert not any(f["name"] == "TestFeed" for f in feeds)
 
+
+def test_admin_test_notification(monkeypatch):
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    sent = {}
+
+    def fake_send_email(recipient, subject, body):
+        sent["recipient"] = recipient
+        sent["subject"] = subject
+        sent["body"] = body
+
+    monkeypatch.setattr(main_app, "send_email", fake_send_email)
+
+    token = client.post(
+        "/login", json={"email": "admin@example.com", "password": "admin123"}
+    ).json()["token"]
+
+    resp = client.post(
+        "/admin/test-notification",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    assert sent["recipient"] == "admin@example.com"
+    assert "Recruiter Interest" in sent["subject"]
+    assert "recruiter has expressed interest" in sent["body"].lower()
+
+
+def test_test_notification_forbidden():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    # register and approve regular user
+    user = {
+        "email": "reg@example.com",
+        "first_name": "Reg",
+        "last_name": "User",
+        "school_code": "1001",
+        "password": "pass",
+        "role": "applicant",
+    }
+    client.post("/register", json=user)
+    key = f"user:{user['email']}"
+    data = json.loads(main_app.redis_client.get(key))
+    data["approved"] = True
+    main_app.redis_client.set(key, json.dumps(data))
+
+    token = client.post(
+        "/login", json={"email": user["email"], "password": user["password"]}
+    ).json()["token"]
+
+    resp = client.post(
+        "/admin/test-notification",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 403
+
