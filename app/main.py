@@ -86,17 +86,29 @@ redis_client = redis.Redis.from_url(redis_url, decode_responses=True)
 # Key used to store activity log entries
 ACTIVITY_LOG_KEY = "activity_logs"
 
-def send_email(recipient: str, subject: str, body: str) -> None:
-    """Send an email if SMTP configuration is available."""
+def send_email(
+    recipient: str,
+    subject: str,
+    body: str,
+    attachments: list[tuple[str, str, str]] | None = None,
+) -> None:
+    """Send an email with optional attachments if SMTP is configured."""
     if not SMTP_HOST or not EMAIL_SENDER:
         print(f"[email] Skipping email to {recipient}; SMTP not configured")
         return
+    attachments = attachments or []
     try:
         msg = EmailMessage()
         msg["From"] = EMAIL_SENDER
         msg["To"] = recipient
         msg["Subject"] = subject
         msg.set_content(body)
+        for fname, content, mime in attachments:
+            if "/" in mime:
+                maintype, subtype = mime.split("/", 1)
+            else:
+                maintype, subtype = "application", "octet-stream"
+            msg.add_attachment(content, maintype=maintype, subtype=subtype, filename=fname)
         with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as s:
             if SMTP_USER and SMTP_PASSWORD:
                 s.starttls()
@@ -1234,7 +1246,7 @@ def assign_student(data: dict, token_data: dict = Depends(get_current_user)):
 
 @app.post("/notify-interest")
 def notify_interest(data: dict, token_data: dict = Depends(get_current_user)):
-    """Notify a student that a recruiter is interested."""
+    """Notify a student that a recruiter is interested and send them a job description."""
     job_code = data.get("job_code")
     student_email = data.get("student_email")
     if not job_code or not student_email:
@@ -1249,13 +1261,16 @@ def notify_interest(data: dict, token_data: dict = Depends(get_current_user)):
     if student_email not in job.get("assigned_students", []):
         raise HTTPException(status_code=400, detail="Student not assigned to job")
 
+    desc_html, _ = generate_job_description_html(job_code, student_email)
+
     send_email(
         student_email,
         f"Recruiter Interest: {job.get('job_title')}",
         (
             f"Hello,\n\nA recruiter has expressed interest in you for the job '{job.get('job_title')}'. "
-            "They may contact you soon."
+            "Your personalized job description is attached."
         ),
+        attachments=[("job_description.html", desc_html, "text/html")],
     )
 
     return {"message": "Notification sent"}
@@ -1362,16 +1377,15 @@ def generate_description(req: DescriptionRequest, current_user: dict = Depends(g
     return {"status": "success", "description": generated_desc}
 
 
-@app.post("/generate-job-description")
-def generate_job_description(req: ResumeRequest, current_user: dict = Depends(get_current_user)):
-    job_code = req.job_code
-    student_email = req.student_email
+def generate_job_description_html(job_code: str, student_email: str) -> tuple[str, bool]:
+    """Create or fetch an HTML job description for a student."""
     key = f"job_description:{job_code}:{student_email}"
     html_key = f"jobdesc:{job_code}:{student_email}"
+
     existing = redis_client.get(key)
     if existing:
         redis_client.set(html_key, existing)
-        return {"status": "exists"}
+        return existing, True
 
     job_raw = redis_client.get(f"job:{job_code}")
     student_raw = redis_client.get(f"student:{student_email}")
@@ -1417,18 +1431,16 @@ Output only valid HTML.
 
     raw_content = resp.choices[0].message.content.strip()
 
-    # Clean up Markdown-style ```html block
     if raw_content.startswith("```html"):
         raw_content = raw_content.replace("```html", "", 1).strip()
     if raw_content.endswith("```"):
         raw_content = raw_content.rsplit("```", 1)[0].strip()
 
-    # Wrap in HTML layout
     full_html = f"""
 <!DOCTYPE html>
-<html lang="en">
+<html lang=\"en\">
 <head>
-  <meta charset="UTF-8">
+  <meta charset=\"UTF-8\">
   <title>TalentMatch AI – Job Description</title>
   <style>
     body {{
@@ -1454,7 +1466,13 @@ Output only valid HTML.
 
     redis_client.set(key, full_html)
     redis_client.set(html_key, full_html)
-    return {"status": "success"}
+    return full_html, False
+
+
+@app.post("/generate-job-description")
+def generate_job_description(req: ResumeRequest, current_user: dict = Depends(get_current_user)):
+    html, existed = generate_job_description_html(req.job_code, req.student_email)
+    return {"status": "exists"} if existed else {"status": "success"}
 
 
 @app.get("/job-description/{job_code}/{student_email}")

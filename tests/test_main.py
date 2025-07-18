@@ -671,6 +671,56 @@ def test_job_description_html_route():
     assert "html" in resp.text.lower()
 
 
+def test_notify_interest_generates_description(monkeypatch):
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    main_app.redis_client.set(
+        "student:stud@example.com",
+        json.dumps({"first_name": "Stud", "last_name": "S", "skills": ["python"]})
+    )
+    main_app.redis_client.set(
+        "job:codei",
+        json.dumps({
+            "job_code": "codei",
+            "job_title": "Dev",
+            "job_description": "desc",
+            "desired_skills": ["python"],
+            "assigned_students": ["stud@example.com"],
+        })
+    )
+
+    class FakeResp:
+        def __init__(self):
+            self.choices = [type("obj", (), {"message": type("obj", (), {"content": "done"})})]
+
+    def fake_create(model, messages, temperature):
+        return FakeResp()
+
+    sent = {}
+
+    def fake_send(recipient, subject, body, attachments=None):
+        sent['body'] = body
+        sent['attachments'] = attachments
+
+    monkeypatch.setattr(main_app.client.chat.completions, "create", fake_create)
+    monkeypatch.setattr(main_app, "send_email", fake_send)
+
+    token = client.post("/login", json={"email": "admin@example.com", "password": "admin123"}).json()["token"]
+
+    resp = client.post(
+        "/notify-interest",
+        json={"student_email": "stud@example.com", "job_code": "codei"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    stored = main_app.redis_client.get("job_description:codei:stud@example.com")
+    assert stored is not None and "done" in stored
+    assert main_app.redis_client.get("jobdesc:codei:stud@example.com") == stored
+    assert "recruiter has expressed" in sent.get("body", "").lower()
+    assert sent.get("attachments") and sent["attachments"][0][1] == stored
+
+
 def test_generate_resume_html(monkeypatch):
     main_app.redis_client.flushdb()
     init_default_admin()
