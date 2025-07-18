@@ -798,6 +798,43 @@ def test_resume_html_route():
     assert "professional summary" in resp.text.lower()
 
 
+def test_generate_resume_preview(monkeypatch):
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    main_app.redis_client.set(
+        "student:stud@example.com",
+        json.dumps({"first_name": "Stud", "last_name": "S", "phone": "123", "email": "stud@example.com"})
+    )
+    main_app.redis_client.set(
+        "job:coder",
+        json.dumps({"job_code": "coder", "job_title": "Dev", "job_description": "desc", "desired_skills": ["python"]})
+    )
+
+    class FakeResp:
+        def __init__(self):
+            self.choices = [type("obj", (), {"message": type("obj", (), {"content": "<h2>Name</h2>"})})]
+
+    def fake_create(model, messages, temperature):
+        assert "stud@example.com" not in messages[0]["content"]
+        assert "123" not in messages[0]["content"]
+        return FakeResp()
+
+    monkeypatch.setattr(main_app.client.chat.completions, "create", fake_create)
+
+    token = client.post("/login", json={"email": "admin@example.com", "password": "admin123"}).json()["token"]
+
+    resp = client.post(
+        "/generate-resume",
+        json={"student_email": "stud@example.com", "job_code": "coder", "preview": True},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "preview"
+    assert "stud@example.com" not in resp.json()["html"]
+    assert main_app.redis_client.get("resumehtml:coder:stud@example.com") is None
+
+
 def test_admin_delete_student_cleans_up():
     main_app.redis_client.flushdb()
     init_default_admin()
