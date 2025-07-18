@@ -451,7 +451,7 @@ if (shouldRedirect) {
           disabled={(selectedRows[job.job_code]?.length || 0) === 0}
           onClick={() => bulkAssign(job)}
         >
-          Assign Selected ({selectedRows[job.job_code]?.length || 0})
+          Assign Selected Students ({selectedRows[job.job_code]?.length || 0})
         </button>
         <table className="matches-table">
           <thead>
@@ -504,8 +504,8 @@ if (shouldRedirect) {
                         </>
                       ) : (
                         <>
-                          <button onClick={() => previewResume(row.email, job.job_code)}>Preview</button>
-                          <button onClick={() => handleAssign(job, row)}>Assign</button>
+                          <button onClick={() => previewResume(row.email, job.job_code)}>Preview Resume</button>
+                          <button onClick={() => handleAssign(job, row)}>Assign Student</button>
                           {!isRecruiter && (
                             <button onClick={() => handlePlace(job, row)}>Place</button>
                           )}
