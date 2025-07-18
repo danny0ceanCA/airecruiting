@@ -1313,6 +1313,9 @@ def generate_resume(req: ResumeRequest, current_user: dict = Depends(get_current
     job = json.loads(job_raw)
     student = json.loads(student_raw)
 
+    if req.student_email not in job.get("assigned_students", []) and req.student_email not in job.get("placed_students", []):
+        raise HTTPException(status_code=403, detail="Student not assigned to job")
+
     raw_html = generate_resume_text(client, student, job, include_contact=not preview).strip()
 
     if raw_html.startswith("```html"):
@@ -1511,8 +1514,15 @@ def get_job_description_html(job_code: str, student_email: str, current_user: di
 def get_resume(job_code: str, student_email: str, current_user: dict = Depends(get_current_user)):
     key = f"resume:{job_code}:{student_email}"
     print(f"\U0001F4E5 Download request for resume: {job_code} - {student_email}")
-    resume = redis_client.get(key)
 
+    job_raw = redis_client.get(f"job:{job_code}")
+    if not job_raw:
+        raise HTTPException(status_code=404, detail="Job not found")
+    job = json.loads(job_raw)
+    if student_email not in job.get("assigned_students", []) and student_email not in job.get("placed_students", []):
+        raise HTTPException(status_code=403, detail="Student not assigned to job")
+
+    resume = redis_client.get(key)
     if not resume:
         raise HTTPException(status_code=404, detail="Resume not found")
 
@@ -1528,6 +1538,14 @@ def get_resume(job_code: str, student_email: str, current_user: dict = Depends(g
 @app.get("/resume-html/{job_code}/{student_email}")
 def get_resume_html(job_code: str, student_email: str, current_user: dict = Depends(get_current_user)):
     key = f"resumehtml:{job_code}:{student_email}"
+
+    job_raw = redis_client.get(f"job:{job_code}")
+    if not job_raw:
+        raise HTTPException(status_code=404, detail="Job not found")
+    job = json.loads(job_raw)
+    if student_email not in job.get("assigned_students", []) and student_email not in job.get("placed_students", []):
+        raise HTTPException(status_code=403, detail="Student not assigned to job")
+
     html = redis_client.get(key)
     if not html:
         html = redis_client.get(f"resume:{job_code}:{student_email}")

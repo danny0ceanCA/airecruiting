@@ -729,7 +729,13 @@ def test_generate_resume_html(monkeypatch):
     )
     main_app.redis_client.set(
         "job:coder",
-        json.dumps({"job_code": "coder", "job_title": "Dev", "job_description": "desc", "desired_skills": ["python"]})
+        json.dumps({
+            "job_code": "coder",
+            "job_title": "Dev",
+            "job_description": "desc",
+            "desired_skills": ["python"],
+            "assigned_students": ["stud@example.com"],
+        })
     )
 
     class FakeResp:
@@ -783,7 +789,13 @@ def test_generate_resume_full_html(monkeypatch):
     )
     main_app.redis_client.set(
         "job:coder",
-        json.dumps({"job_code": "coder", "job_title": "Dev", "job_description": "desc", "desired_skills": ["python"]})
+        json.dumps({
+            "job_code": "coder",
+            "job_title": "Dev",
+            "job_description": "desc",
+            "desired_skills": ["python"],
+            "assigned_students": ["stud@example.com"],
+        })
     )
 
     html_page = (
@@ -835,6 +847,10 @@ def test_resume_html_route():
         "resumehtml:codeh:stud@example.com",
         "<html><body><h2>Professional Summary</h2></body></html>",
     )
+    main_app.redis_client.set(
+        "job:codeh",
+        json.dumps({"job_code": "codeh", "assigned_students": ["stud@example.com"]})
+    )
 
     token = client.post("/login", json={"email": "admin@example.com", "password": "admin123"}).json()["token"]
 
@@ -856,7 +872,13 @@ def test_generate_resume_preview(monkeypatch):
     )
     main_app.redis_client.set(
         "job:coder",
-        json.dumps({"job_code": "coder", "job_title": "Dev", "job_description": "desc", "desired_skills": ["python"]})
+        json.dumps({
+            "job_code": "coder",
+            "job_title": "Dev",
+            "job_description": "desc",
+            "desired_skills": ["python"],
+            "assigned_students": ["stud@example.com"],
+        })
     )
 
     class FakeResp:
@@ -881,6 +903,57 @@ def test_generate_resume_preview(monkeypatch):
     assert resp.json()["status"] == "preview"
     assert "stud@example.com" not in resp.json()["html"]
     assert main_app.redis_client.get("resumehtml:coder:stud@example.com") is None
+
+
+def test_generate_resume_requires_assignment():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    main_app.redis_client.set("student:s1@example.com", json.dumps({"first_name": "S"}))
+    main_app.redis_client.set("job:j1", json.dumps({"job_code": "j1"}))
+
+    token = client.post("/login", json={"email": "admin@example.com", "password": "admin123"}).json()["token"]
+
+    resp = client.post(
+        "/generate-resume",
+        json={"student_email": "s1@example.com", "job_code": "j1"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 403
+
+
+def test_get_resume_requires_assignment():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    main_app.redis_client.set("student:s1@example.com", json.dumps({"first_name": "S"}))
+    main_app.redis_client.set("job:j1", json.dumps({"job_code": "j1"}))
+    main_app.redis_client.set("resume:j1:s1@example.com", "resume")
+
+    token = client.post("/login", json={"email": "admin@example.com", "password": "admin123"}).json()["token"]
+
+    resp = client.get(
+        "/resume/j1/s1@example.com",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 403
+
+
+def test_get_resume_html_requires_assignment():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    main_app.redis_client.set("student:s1@example.com", json.dumps({"first_name": "S"}))
+    main_app.redis_client.set("job:j1", json.dumps({"job_code": "j1"}))
+    main_app.redis_client.set("resumehtml:j1:s1@example.com", "<html>")
+
+    token = client.post("/login", json={"email": "admin@example.com", "password": "admin123"}).json()["token"]
+
+    resp = client.get(
+        "/resume-html/j1/s1@example.com",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 403
 
 
 def test_admin_delete_student_cleans_up():
