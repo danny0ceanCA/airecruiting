@@ -486,3 +486,55 @@ def test_match_includes_applicant_records_without_student(monkeypatch):
     assert match_resp.status_code == 200
     emails = [m["email"] for m in match_resp.json()["matches"]]
     assert applicant["email"] in emails
+
+
+def test_rematches_endpoint(monkeypatch):
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    class FakeResp:
+        def __init__(self, emb):
+            self.data = [type("obj", (), {"embedding": emb})]
+
+    monkeypatch.setattr(main_app.client.embeddings, "create", lambda *a, **k: FakeResp([1.0]))
+    monkeypatch.setattr(main_app, "get_driving_distance_miles", lambda *a, **k: 1.0)
+
+    token = login_admin()
+
+    student = {
+        "first_name": "John",
+        "last_name": "Doe",
+        "email": "john@example.com",
+        "phone": "123",
+        "education_level": "College",
+        "skills": ["python"],
+        "experience_summary": "summary",
+        "interests": "i",
+        "city": "c",
+        "state": "s",
+        "lat": 0.0,
+        "lng": 0.0,
+        "max_travel": 50.0,
+    }
+
+    client.post("/students", json=student, headers={"Authorization": f"Bearer {token}"})
+
+    job = {
+        "job_title": "Dev",
+        "job_description": "need python",
+        "desired_skills": ["python"],
+        "source": "x",
+        "min_pay": 1.0,
+        "max_pay": 2.0,
+        "city": "c",
+        "state": "s",
+        "lat": 0.0,
+        "lng": 0.0,
+    }
+    resp = client.post("/jobs", json=job, headers={"Authorization": f"Bearer {token}"})
+    job_code = resp.json()["job_code"]
+
+    client.post("/match", json={"job_code": job_code}, headers={"Authorization": f"Bearer {token}"})
+    rematch_resp = client.post(f"/rematches/{job_code}", headers={"Authorization": f"Bearer {token}"})
+    assert rematch_resp.status_code == 200
+    assert main_app.redis_client.get("metrics:total_rematches") == 1

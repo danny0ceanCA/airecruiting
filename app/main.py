@@ -845,7 +845,20 @@ def update_job(job_code: str, updated: dict, token_data: dict = Depends(get_curr
 
 @app.post("/match")
 def match_job(req: JobCodeRequest, current_user: dict = Depends(get_current_user)):
-    key = f"job:{req.job_code}"
+    """Compute matches for a job and notify candidates."""
+    matches = _perform_match(req.job_code, send_emails=True)
+    return {"matches": matches}
+
+
+@app.post("/rematches/{job_code}")
+def rematch_job(job_code: str, current_user: dict = Depends(get_current_user)):
+    """Recompute matches without notifying students."""
+    matches = _perform_match(job_code, send_emails=False)
+    return {"matches": matches}
+
+
+def _perform_match(job_code: str, send_emails: bool = True):
+    key = f"job:{job_code}"
     raw = redis_client.get(key)
     if not raw:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -962,22 +975,23 @@ def match_job(req: JobCodeRequest, current_user: dict = Depends(get_current_user
 
 
     redis_client.set(
-        f"match_results:{req.job_code}", json.dumps(top_matches)
+        f"match_results:{job_code}", json.dumps(top_matches)
     )
     print(
-        f"✅ Stored {len(top_matches)} matches for job {req.job_code}"
+        f"✅ Stored {len(top_matches)} matches for job {job_code}"
     )
 
-    for m in top_matches:
-        send_email(
-            m["email"],
-            f"New Job Match: {job.get('job_title')}",
-            (
-                f"Hello {m['name']},\n\n"
-                f"You have been matched with the job '{job.get('job_title')}'. "
-                "Log in to view details."
-            ),
-        )
+    if send_emails:
+        for m in top_matches:
+            send_email(
+                m["email"],
+                f"New Job Match: {job.get('job_title')}",
+                (
+                    f"Hello {m['name']},\n\n"
+                    f"You have been matched with the job '{job.get('job_title')}'. "
+                    "Log in to view details."
+                ),
+            )
 
     # Metrics tracking
     try:
@@ -986,7 +1000,10 @@ def match_job(req: JobCodeRequest, current_user: dict = Depends(get_current_user
             if matches
             else 0.0
         )
-        redis_client.incr("metrics:total_matches")
+        if send_emails:
+            redis_client.incr("metrics:total_matches")
+        else:
+            redis_client.incr("metrics:total_rematches")
         redis_client.incrbyfloat("metrics:total_match_score", avg_score)
         redis_client.set(
             "metrics:last_match_timestamp", datetime.now().isoformat()
@@ -994,7 +1011,7 @@ def match_job(req: JobCodeRequest, current_user: dict = Depends(get_current_user
     except Exception:
         pass
 
-    return {"matches": top_matches}
+    return top_matches
 
 
 @app.get("/match/{job_code}")
@@ -1215,17 +1232,48 @@ def assign_student(data: dict, token_data: dict = Depends(get_current_user)):
     return {"message": f"Assigned {student_email}"}
 
 
+@app.post("/notify-interest")
+def notify_interest(data: dict, token_data: dict = Depends(get_current_user)):
+    """Notify a student that a recruiter is interested."""
+    job_code = data.get("job_code")
+    student_email = data.get("student_email")
+    if not job_code or not student_email:
+        raise HTTPException(status_code=400, detail="Missing job_code or student_email")
+
+    key = f"job:{job_code}"
+    raw = redis_client.get(key)
+    if not raw:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    job = json.loads(raw)
+    if student_email not in job.get("assigned_students", []):
+        raise HTTPException(status_code=400, detail="Student not assigned to job")
+
+    send_email(
+        student_email,
+        f"Recruiter Interest: {job.get('job_title')}",
+        (
+            f"Hello,\n\nA recruiter has expressed interest in you for the job '{job.get('job_title')}'. "
+            "They may contact you soon."
+        ),
+    )
+
+    return {"message": "Notification sent"}
+
+
 @app.post("/generate-resume")
 def generate_resume(req: ResumeRequest, current_user: dict = Depends(get_current_user)):
     """Generate an HTML resume using OpenAI and store it in Redis."""
     print(f"\U0001F4C4 Generating resume for {req.student_email} - {req.job_code}")
+    preview = getattr(req, "preview", False)
     resume_key = f"resume:{req.job_code}:{req.student_email}"
     html_key = f"resumehtml:{req.job_code}:{req.student_email}"
-    existing = redis_client.get(resume_key)
-    if existing:
-        redis_client.set(html_key, existing)
-        print(f"\U0001F4C4 Resume already exists for {req.student_email} - {req.job_code}")
-        return {"status": "exists"}
+    if not preview:
+        existing = redis_client.get(resume_key)
+        if existing:
+            redis_client.set(html_key, existing)
+            print(f"\U0001F4C4 Resume already exists for {req.student_email} - {req.job_code}")
+            return {"status": "exists"}
 
     job_raw = redis_client.get(f"job:{req.job_code}")
     student_raw = redis_client.get(f"student:{req.student_email}")
@@ -1236,7 +1284,7 @@ def generate_resume(req: ResumeRequest, current_user: dict = Depends(get_current
     job = json.loads(job_raw)
     student = json.loads(student_raw)
 
-    raw_html = generate_resume_text(client, student, job).strip()
+    raw_html = generate_resume_text(client, student, job, include_contact=not preview).strip()
 
     if raw_html.startswith("```html"):
         raw_html = raw_html.replace("```html", "", 1).strip()
@@ -1281,10 +1329,13 @@ def generate_resume(req: ResumeRequest, current_user: dict = Depends(get_current
 </html>
 """
 
-    redis_client.set(resume_key, full_html)
-    redis_client.set(html_key, full_html)
-    print(f"\u2705 Resume saved for {req.student_email} - {req.job_code}")
-    return {"status": "success"}
+    if not preview:
+        redis_client.set(resume_key, full_html)
+        redis_client.set(html_key, full_html)
+        print(f"\u2705 Resume saved for {req.student_email} - {req.job_code}")
+        return {"status": "success"}
+    else:
+        return {"status": "preview", "html": full_html}
 
 
 @app.post("/generate-description")
