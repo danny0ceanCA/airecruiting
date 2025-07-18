@@ -814,6 +814,7 @@ def create_job(job: JobRequest, current_user: dict = Depends(get_current_user)):
     data["timestamp"] = datetime.now().isoformat()
     data.setdefault("assigned_students", [])
     data.setdefault("placed_students", [])
+    data.setdefault("uninterested_students", [])
 
     redis_client.set(key, json.dumps(data))
     print(f"Stored job at {key}: {data}")
@@ -863,6 +864,7 @@ def _perform_match(job_code: str, send_emails: bool = True):
     if not raw:
         raise HTTPException(status_code=404, detail="Job not found")
     job = json.loads(raw)
+    job.setdefault("uninterested_students", [])
 
     poster_code = None
     poster_raw = redis_client.get(f"user:{job.get('posted_by')}")
@@ -895,6 +897,9 @@ def _perform_match(job_code: str, send_emails: bool = True):
 
             print(f"\nEVALUATING student: {student.get('email')}")
             print(f"Job embedding length: {len(job_emb)}, Student embedding length: {len(emb)}")
+            if student.get("email") in job.get("uninterested_students", []):
+                print("  SKIP: student marked not interested")
+                continue
             student_user_raw = redis_client.get(f"user:{student.get('email')}")
             if student_user_raw and poster_code:
                 try:
@@ -948,6 +953,8 @@ def _perform_match(job_code: str, send_emails: bool = True):
         if ucode != poster_code:
             continue
         email = ukey.split("user:", 1)[1]
+        if email in job.get("uninterested_students", []):
+            continue
         if redis_client.exists(f"student:{email}"):
             continue
         matches.append(
@@ -1063,6 +1070,7 @@ def list_jobs(current_user: dict = Depends(get_current_user)):
             job = json.loads(job_data)
             job.setdefault("assigned_students", [])
             job.setdefault("placed_students", [])
+            job.setdefault("uninterested_students", [])
             jobs.append(job)
     print(f"Returning {len(jobs)} jobs from Redis")
     return {"jobs": jobs}
@@ -1230,6 +1238,28 @@ def assign_student(data: dict, token_data: dict = Depends(get_current_user)):
 
     redis_client.set(key, json.dumps(job))
     return {"message": f"Assigned {student_email}"}
+
+
+@app.post("/not-interested")
+def mark_not_interested(data: dict, token_data: dict = Depends(get_current_user)):
+    """Record that a student is not interested in a job."""
+    job_code = data.get("job_code")
+    student_email = data.get("student_email")
+    if not job_code or not student_email:
+        raise HTTPException(status_code=400, detail="Missing job_code or student_email")
+
+    key = f"job:{job_code}"
+    raw = redis_client.get(key)
+    if not raw:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    job = json.loads(raw)
+    job.setdefault("uninterested_students", [])
+    if student_email not in job["uninterested_students"]:
+        job["uninterested_students"].append(student_email)
+
+    redis_client.set(key, json.dumps(job))
+    return {"message": "Not interested recorded"}
 
 
 @app.post("/notify-interest")
