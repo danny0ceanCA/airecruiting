@@ -182,19 +182,6 @@ function AdminUsers() {
     }
   };
 
-  const handleSendTest = async () => {
-    try {
-      await api.post(
-        '/admin/test-notification',
-        {},
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      showToast('Test email sent!');
-    } catch (err) {
-      console.error('Failed to send test email', err);
-    }
-  };
-
   const handleDelete = async (email) => {
     if (!window.confirm(`Delete user ${email}?`)) return;
     try {
@@ -229,12 +216,6 @@ function AdminUsers() {
           onClick={() => setActiveTab('feeds')}
         >
           RSS Feeds
-        </button>
-        <button
-          className={`tab ${activeTab === 'tests' ? 'active' : ''}`}
-          onClick={() => setActiveTab('tests')}
-        >
-          Tests
         </button>
       </div>
       <div className="tab-content">
@@ -422,15 +403,6 @@ function AdminUsers() {
                 ))}
               </tbody>
             </table>
-          </div>
-        )}
-        {activeTab === 'tests' && (
-          <div style={{ marginTop: '1rem' }}>
-            <p>
-              Click the button below to send yourself a sample notification email
-              so you can see what candidates receive.
-            </p>
-            <button onClick={handleSendTest}>Send Test Email</button>
           </div>
         )}
       </div>
