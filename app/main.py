@@ -29,6 +29,7 @@ import redis
 import asyncio
 import re
 from html import unescape
+import random
 from backend.app.schemas.resume import ResumeRequest
 from backend.app.schemas.description import DescriptionRequest
 from backend.app.services.resume import generate_resume_text
@@ -1995,6 +1996,33 @@ def check_admin():
     if not raw:
         return {"exists": False}
     return json.loads(raw)
+
+
+@app.post("/admin/test-notification")
+def admin_test_notification(current_user: dict = Depends(get_current_user)):
+    """Send a sample candidate notification to the admin's email."""
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+
+    admin_email = current_user.get("sub")
+    job_title = random.choice(
+        [
+            "Registered Nurse",
+            "Clinical Manager",
+            "Nursing Assistant",
+            "Care Coordinator",
+            "Health Specialist",
+        ]
+    )
+    send_email(
+        admin_email,
+        f"Recruiter Interest: {job_title}",
+        (
+            f"Hello,\n\nA recruiter has expressed interest in you for the job '{job_title}'. "
+            "They may contact you soon."
+        ),
+    )
+    return {"message": "Test email sent"}
 
 
 @app.get("/activity-log")
