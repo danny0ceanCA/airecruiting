@@ -699,8 +699,9 @@ def test_notify_interest_generates_description(monkeypatch):
 
     sent = {}
 
-    def fake_send(recipient, subject, body):
+    def fake_send(recipient, subject, body, attachments=None):
         sent['body'] = body
+        sent['attachments'] = attachments
 
     monkeypatch.setattr(main_app.client.chat.completions, "create", fake_create)
     monkeypatch.setattr(main_app, "send_email", fake_send)
@@ -716,7 +717,10 @@ def test_notify_interest_generates_description(monkeypatch):
     stored = main_app.redis_client.get("job_description:codei:stud@example.com")
     assert stored is not None and "done" in stored
     assert main_app.redis_client.get("jobdesc:codei:stud@example.com") == stored
-    assert sent.get("body") == stored
+    assert "Good Luck" in sent.get("body")
+    attachments = sent.get("attachments")
+    assert attachments and attachments[0][0] == "job_description.html"
+    assert attachments[0][1] == stored
 
 
 def test_generate_resume_html(monkeypatch):

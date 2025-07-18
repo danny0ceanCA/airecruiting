@@ -86,8 +86,13 @@ redis_client = redis.Redis.from_url(redis_url, decode_responses=True)
 # Key used to store activity log entries
 ACTIVITY_LOG_KEY = "activity_logs"
 
-def send_email(recipient: str, subject: str, body: str) -> None:
-    """Send an email if SMTP configuration is available."""
+def send_email(
+    recipient: str,
+    subject: str,
+    body: str,
+    attachments: list[tuple[str, bytes | str, str]] | None = None,
+) -> None:
+    """Send an email with optional attachments if SMTP configuration is available."""
     if not SMTP_HOST or not EMAIL_SENDER:
         print(f"[email] Skipping email to {recipient}; SMTP not configured")
         return
@@ -97,6 +102,19 @@ def send_email(recipient: str, subject: str, body: str) -> None:
         msg["To"] = recipient
         msg["Subject"] = subject
         msg.set_content(body)
+
+        if attachments:
+            for filename, content, mime in attachments:
+                if isinstance(content, str):
+                    content = content.encode("utf-8")
+                maintype, subtype = mime.split("/", 1)
+                msg.add_attachment(
+                    content,
+                    maintype=maintype,
+                    subtype=subtype,
+                    filename=filename,
+                )
+
         with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as s:
             if SMTP_USER and SMTP_PASSWORD:
                 s.starttls()
@@ -1281,10 +1299,30 @@ def notify_interest(data: dict, token_data: dict = Depends(get_current_user)):
 
     desc_html, _ = generate_job_description_html(job_code, student_email)
 
+    student_raw = redis_client.get(f"student:{student_email}")
+    first_name = ""
+    if student_raw:
+        try:
+            student = json.loads(student_raw)
+            first_name = student.get("first_name", "")
+        except Exception:
+            pass
+
+    body = (
+        f"Hello {first_name},\n\n"
+        "Your resume has been matched with a job and the recruiter has reviewed. "
+        "You are receiving this email because the Recruiter would like to notify you "
+        "that you are a match and will be contacting you to discuss your resume. "
+        "Please see the attached document outlining the job description as it pertains to your resume.\n\n"
+        "Good Luck!\n\n"
+        "Support Team @ TalentMatch-AI"
+    )
+
     send_email(
         student_email,
         f"Recruiter Interest: {job.get('job_title')}",
-        desc_html,
+        body,
+        attachments=[("job_description.html", desc_html, "text/html")],
     )
 
     return {"message": "Notification sent"}
