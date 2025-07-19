@@ -738,6 +738,60 @@ def test_notify_interest_generates_description(monkeypatch):
     assert sent.get("attachments") is None
 
 
+def test_notify_interest_multiple_times(monkeypatch):
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    main_app.redis_client.set(
+        "student:stud@example.com",
+        json.dumps({"first_name": "Stud", "last_name": "S", "skills": ["python"]})
+    )
+    main_app.redis_client.set(
+        "job:codei",
+        json.dumps({
+            "job_code": "codei",
+            "job_title": "Dev",
+            "job_description": "desc",
+            "desired_skills": ["python"],
+            "assigned_students": ["stud@example.com"],
+        })
+    )
+
+    class FakeResp:
+        def __init__(self):
+            self.choices = [type("obj", (), {"message": type("obj", (), {"content": "done"})})]
+
+    def fake_create(model, messages, temperature):
+        return FakeResp()
+
+    bodies = []
+
+    def fake_send(recipient, subject, body, attachments=None):
+        bodies.append(body)
+
+    monkeypatch.setattr(main_app.client.chat.completions, "create", fake_create)
+    monkeypatch.setattr(main_app, "send_email", fake_send)
+
+    token = client.post("/login", json={"email": "admin@example.com", "password": "admin123"}).json()["token"]
+
+    resp1 = client.post(
+        "/notify-interest",
+        json={"student_email": "stud@example.com", "job_code": "codei"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    resp2 = client.post(
+        "/notify-interest",
+        json={"student_email": "stud@example.com", "job_code": "codei"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp1.status_code == 200
+    assert resp2.status_code == 200
+    assert len(bodies) == 2 and bodies[0] == bodies[1]
+    stored = main_app.redis_client.get("job_description:codei:stud@example.com")
+    assert stored is not None and "done" in stored
+
+
 def test_generate_resume_html(monkeypatch):
     main_app.redis_client.flushdb()
     init_default_admin()

@@ -47,9 +47,10 @@ ADMIN_PASSWORD=admin123
 SITE_BASE_URL=https://yourdomain.com
 ```
 
-`SITE_BASE_URL` must point to the base URL of the FastAPI backend (e.g.,
-`https://your-api.com`). Using the React frontend URL here will cause links in
-emails to break.
+`SITE_BASE_URL` is used when building links in notification emails. It **must**
+point to the publicly reachable FastAPI backend (for example,
+`https://your-api.com`). If this value is set to the React frontend's address or
+left blank, the links in emails will lead to missing pages.
 
 ## Registration Codes
 
