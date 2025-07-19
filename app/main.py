@@ -1468,7 +1468,7 @@ You are generating a job description document for internal career services staff
 
 Use the student profile and job information below to:
 
-- Write a **professional summary** of the student's fit for the role with extensive and relevant details
+- Provide a **Job Summary** that comprehensively covers the job description
 - Describe **key responsibilities** they might undertake as noted in the job description
 - List **areas of strength** with plenty of details to reinforce existing experience and how it connects with the job description and potential **areas for growth** with plenty of insightful and targeted recommendations for training that will improve the probability of success
 - Mention **school affiliation** and any relevant compliance or readiness info
@@ -1487,6 +1487,7 @@ Title: {job.get('job_title')}
 Source: {job.get('source')}
 Description: {job.get('job_description')}
 Desired Skills: {', '.join(job.get('desired_skills', []))}
+Location: {job.get('city')}, {job.get('state')}
 
 Output only valid HTML.
 """
