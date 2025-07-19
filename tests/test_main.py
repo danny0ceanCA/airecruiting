@@ -671,6 +671,22 @@ def test_job_description_html_route():
     assert "html" in resp.text.lower()
 
 
+def test_public_job_description_html_route():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    main_app.redis_client.set(
+        "jobdesc:codep:stud@example.com",
+        "public desc",
+    )
+
+    resp = client.get(
+        "/public/job-description-html/codep/stud@example.com",
+    )
+    assert resp.status_code == 200
+    assert "public" in resp.text.lower()
+
+
 def test_notify_interest_generates_description(monkeypatch):
     main_app.redis_client.flushdb()
     init_default_admin()
@@ -718,9 +734,8 @@ def test_notify_interest_generates_description(monkeypatch):
     assert stored is not None and "done" in stored
     assert main_app.redis_client.get("jobdesc:codei:stud@example.com") == stored
     assert "Good Luck" in sent.get("body")
-    attachments = sent.get("attachments")
-    assert attachments and attachments[0][0] == "job_description.html"
-    assert attachments[0][1] == stored
+    assert "/public/job-description-html/codei/stud@example.com" in sent.get("body")
+    assert sent.get("attachments") is None
 
 
 def test_generate_resume_html(monkeypatch):
