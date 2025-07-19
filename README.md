@@ -47,6 +47,10 @@ ADMIN_PASSWORD=admin123
 SITE_BASE_URL=https://yourdomain.com
 ```
 
+`SITE_BASE_URL` must point to the base URL of the FastAPI backend (e.g.,
+`https://your-api.com`). Using the React frontend URL here will cause links in
+emails to break.
+
 ## Registration Codes
 
 Career services staff and recruiters must supply an institutional code when registering.
