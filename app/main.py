@@ -250,6 +250,8 @@ def on_startup():
         print(
             "[startup] Warning: SITE_BASE_URL is empty; links in notification emails may be incorrect"
         )
+    else:
+        print(f"[startup] Using SITE_BASE_URL={SITE_BASE_URL}")
     init_default_admin()
     init_default_school_codes()
     init_default_rss_feeds()
@@ -1301,7 +1303,7 @@ def notify_interest(data: dict, token_data: dict = Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="Job not found")
 
     job = json.loads(raw)
-    if student_email not in job.get("assigned_students", []):
+    if student_email not in job.get("assigned_students", []) and student_email not in job.get("placed_students", []):
         raise HTTPException(status_code=400, detail="Student not assigned to job")
 
     desc_html, _ = generate_job_description_html(job_code, student_email)
