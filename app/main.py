@@ -246,6 +246,10 @@ def on_startup():
     except Exception as e:
         print(f"Redis connection failed: {e}")
         raise
+    if not SITE_BASE_URL:
+        print(
+            "[startup] Warning: SITE_BASE_URL is empty; links in notification emails may be incorrect"
+        )
     init_default_admin()
     init_default_school_codes()
     init_default_rss_feeds()
