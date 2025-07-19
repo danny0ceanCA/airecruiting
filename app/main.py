@@ -77,6 +77,8 @@ SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USER = os.getenv("SMTP_USER")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 EMAIL_SENDER = os.getenv("EMAIL_SENDER")
+# Optional base URL for links in notification emails
+SITE_BASE_URL = os.getenv("SITE_BASE_URL", "").rstrip("/")
 
 if not redis_url:
     raise RuntimeError("Missing REDIS_URL in .env")
@@ -1309,12 +1311,17 @@ def notify_interest(data: dict, token_data: dict = Depends(get_current_user)):
         except Exception:
             pass
 
+    public_url = (
+        f"{SITE_BASE_URL}/public/job-description-html/{job_code}/{student_email}"
+        if SITE_BASE_URL
+        else f"/public/job-description-html/{job_code}/{student_email}"
+    )
     body = (
         f"Hello {first_name},\n\n"
         "Your resume has been matched with a job and the recruiter has reviewed your resume.\n\n"
         "You are receiving this email because the Recruiter would like to notify you that you are a match "
         "and will be contacting you to discuss your resume.\n\n"
-        "Please see the attached document outlining the job description as it pertains to your resume.\n\n"
+        f"Please review the job description here: {public_url}\n\n"
         "Good Luck!\n\n"
         "Support Team @ TalentMatch-AI"
     )
@@ -1323,7 +1330,6 @@ def notify_interest(data: dict, token_data: dict = Depends(get_current_user)):
         student_email,
         f"Recruiter Interest: {job.get('job_title')}",
         body,
-        attachments=[("job_description.html", desc_html, "text/html")],
     )
 
     return {"message": "Notification sent"}
@@ -1542,6 +1548,16 @@ def get_job_description(job_code: str, student_email: str, current_user: dict = 
 
 @app.get("/job-description-html/{job_code}/{student_email}")
 def get_job_description_html(job_code: str, student_email: str, current_user: dict = Depends(get_current_user)):
+    key = f"jobdesc:{job_code}:{student_email}"
+    html = redis_client.get(key)
+    if not html:
+        raise HTTPException(status_code=404, detail="Job description not found")
+    return HTMLResponse(content=html, status_code=200)
+
+
+# Public version of the job description HTML without auth
+@app.get("/public/job-description-html/{job_code}/{student_email}")
+def get_public_job_description_html(job_code: str, student_email: str):
     key = f"jobdesc:{job_code}:{student_email}"
     html = redis_client.get(key)
     if not html:

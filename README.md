@@ -44,6 +44,7 @@ SMTP_PASSWORD=secret
 EMAIL_SENDER=noreply@example.com
 ADMIN_EMAIL=admin@example.com
 ADMIN_PASSWORD=admin123
+SITE_BASE_URL=https://yourdomain.com
 ```
 
 ## Registration Codes
