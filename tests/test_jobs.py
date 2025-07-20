@@ -620,3 +620,44 @@ def test_not_interested_filters_out_student(monkeypatch):
 
     stored = json.loads(main_app.redis_client.get(f"job:{job_code}"))
     assert s2["email"] in stored.get("uninterested_students", [])
+
+
+def test_recruiter_job_source_autopopulated(monkeypatch):
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    recruiter = {
+        "email": "rec2@example.com",
+        "first_name": "Rec",
+        "last_name": "R",
+        "school_code": "1001",
+        "password": "pw",
+        "role": "recruiter",
+    }
+    client.post("/register", json=recruiter)
+    rk = f"user:{recruiter['email']}"
+    rdata = json.loads(main_app.redis_client.get(rk))
+    rdata["approved"] = True
+    rdata["role"] = "recruiter"
+    main_app.redis_client.set(rk, json.dumps(rdata))
+    token = client.post(
+        "/login",
+        json={"email": recruiter["email"], "password": recruiter["password"]},
+    ).json()["token"]
+
+    job = {
+        "job_title": "Dev",
+        "job_description": "desc",
+        "desired_skills": ["python"],
+        "min_pay": 1.0,
+        "max_pay": 2.0,
+        "city": "c",
+        "state": "s",
+        "lat": 0.0,
+        "lng": 0.0,
+    }
+    resp = client.post("/jobs", json=job, headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200
+    job_code = resp.json()["job_code"]
+    stored = json.loads(main_app.redis_client.get(f"job:{job_code}"))
+    assert stored["source"] == "Unitek-Sacramento"
