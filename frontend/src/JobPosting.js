@@ -145,18 +145,21 @@ if (shouldRedirect) {
       return;
     }
     try {
-      const resp = await api.post('/jobs', {
+      const payload = {
         job_title: formData.job_title,
         job_description: formData.job_description,
         desired_skills: formData.desired_skills.split(',').map((s) => s.trim()).filter(Boolean),
-        source: formData.source,
         min_pay: min,
         max_pay: max,
         city: formData.city,
         state: formData.state,
         lat: parseFloat(formData.lat || 0),
         lng: parseFloat(formData.lng || 0)
-      }, {
+      };
+      if (!isRecruiter) {
+        payload.source = formData.source;
+      }
+      const resp = await api.post('/jobs', payload, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setMessage(`Job posted successfully! Job code: ${resp.data.job_code}`);
@@ -695,16 +698,18 @@ if (shouldRedirect) {
                   onChange={handleChange}
                 />
               </div>
-              <div className="form-field">
-                <label htmlFor="source">Source</label>
-                <input
-                  id="source"
-                  name="source"
-                  type="text"
-                  value={formData.source}
-                  onChange={handleChange}
-                />
-              </div>
+              {!isRecruiter && (
+                <div className="form-field">
+                  <label htmlFor="source">Source</label>
+                  <input
+                    id="source"
+                    name="source"
+                    type="text"
+                    value={formData.source}
+                    onChange={handleChange}
+                  />
+                </div>
+              )}
               <div className="form-field">
                 <label htmlFor="min_pay">Minimum Pay</label>
                 <input

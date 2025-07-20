@@ -312,7 +312,7 @@ class JobRequest(BaseModel):
     job_description: str
     desired_skills: list[str]
     job_code: Optional[str] = None
-    source: str
+    source: str | None = None
     min_pay: float
     max_pay: float
     city: str
@@ -836,8 +836,23 @@ def create_job(job: JobRequest, current_user: dict = Depends(get_current_user)):
         key = f"job:{generated_code}"
 
     data = job.model_dump()
+    user_email = current_user.get("sub")
+    user_role = current_user.get("role")
+    # Autopopulate source for recruiters if missing or blank
+    if user_role == "recruiter" or not data.get("source"):
+        raw_user = redis_client.get(f"user:{user_email}")
+        label = None
+        if raw_user:
+            try:
+                udata = json.loads(raw_user)
+                label = udata.get("school_label")
+            except Exception:
+                label = None
+        if label:
+            data["source"] = label.split("-", 1)[-1] if "-" in label else label
+
     data["job_code"] = generated_code
-    data["posted_by"] = current_user.get("sub")
+    data["posted_by"] = user_email
     data["timestamp"] = datetime.now().isoformat()
     data.setdefault("assigned_students", [])
     data.setdefault("placed_students", [])
