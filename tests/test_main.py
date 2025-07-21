@@ -618,6 +618,9 @@ def test_generate_job_description(monkeypatch):
             "desired_skills": ["python"],
             "min_pay": 5.0,
             "max_pay": 10.0,
+            "city": "Austin",
+            "state": "TX",
+            "source": "Indeed",
         })
     )
 
@@ -655,6 +658,9 @@ def test_generate_job_description(monkeypatch):
     html_content = get_resp.json()["description"]
     assert html_content.lstrip().startswith("<!DOCTYPE html>")
     assert "done" in html_content
+    assert "Source:" in html_content
+    assert "Pay Range:" in html_content
+    assert "Location:" in html_content
 
 
 def test_job_description_html_route():
