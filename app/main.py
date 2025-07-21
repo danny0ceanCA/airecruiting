@@ -1503,6 +1503,7 @@ Source: {job.get('source')}
 Description: {job.get('job_description')}
 Desired Skills: {', '.join(job.get('desired_skills', []))}
 Location: {job.get('city')}, {job.get('state')}
+Pay Range: {job.get('min_pay', '')} - {job.get('max_pay', '')}
 
 Output only valid HTML.
 """
