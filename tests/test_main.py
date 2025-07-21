@@ -616,6 +616,8 @@ def test_generate_job_description(monkeypatch):
             "job_title": "Dev",
             "job_description": "desc",
             "desired_skills": ["python"],
+            "min_pay": 5.0,
+            "max_pay": 10.0,
         })
     )
 
@@ -623,7 +625,10 @@ def test_generate_job_description(monkeypatch):
         def __init__(self):
             self.choices = [type("obj", (), {"message": type("obj", (), {"content": "done"})})]
 
+    captured = {}
+
     def fake_create(model, messages, temperature):
+        captured["messages"] = messages
         return FakeResp()
 
     monkeypatch.setattr(main_app.client.chat.completions, "create", fake_create)
@@ -638,6 +643,9 @@ def test_generate_job_description(monkeypatch):
     )
     assert resp.status_code == 200
     assert resp.json()["status"] == "success"
+    assert "Pay Range" in captured["messages"][0]["content"]
+    assert "5.0" in captured["messages"][0]["content"]
+    assert "10.0" in captured["messages"][0]["content"]
 
     get_resp = client.get(
         "/job-description/code2/stud@example.com",
