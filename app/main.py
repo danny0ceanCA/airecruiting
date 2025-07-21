@@ -1479,11 +1479,11 @@ def generate_job_description_html(job_code: str, student_email: str) -> tuple[st
     student = json.loads(student_raw)
 
     prompt = f"""
-You are generating a job description document for internal career services staff. The purpose is to describe what the student will likely be expected to perform based on their background and the job assignment.
+You are generating a job description document for internal career services staff. The document should first summarize the position itself, then connect it with the student's background.
 
 Use the student profile and job information below to:
 
-- Provide a **Job Summary** that comprehensively covers the job description
+- Provide a **Job Summary** that comprehensively covers the job description **without referencing the applicant's experience**
 - Describe **key responsibilities** they might undertake as noted in the job description
 - List **areas of strength** with plenty of details to reinforce existing experience and how it connects with the job description and potential **areas for growth** with plenty of insightful and targeted recommendations for training that will improve the probability of success
 - Mention **school affiliation** and any relevant compliance or readiness info
