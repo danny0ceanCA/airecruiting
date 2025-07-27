@@ -12,8 +12,9 @@
 }
 
 .landing-logo {
-  width: 150px;
-  height: 150px;
+  /* Maintain aspect ratio while enlarging the logo */
+  width: 300px;
+  height: auto;
   margin-bottom: 1rem;
   animation: glow 3s ease-in-out infinite, flash 1.5s linear infinite;
 }
