@@ -13,11 +13,10 @@
 
 .landing-logo {
   /* Scale logo but keep it within the viewport */
-  width: 90vw;
-  max-width: 450px;
+  width: 70vw;
+  max-width: 350px;
   height: auto;
-  margin-bottom: 1rem;
-  animation: glow 3s ease-in-out infinite, flash 1.5s linear infinite;
+  margin-bottom: 0.5rem;
 }
 
 .landing-title {
@@ -44,22 +43,4 @@
 
 .landing-btn:hover {
   background-color: #005fa3;
-}
-
-@keyframes glow {
-  0%, 100% {
-    filter: drop-shadow(0 0 2px #fff) drop-shadow(0 0 4px #61dafb);
-  }
-  50% {
-    filter: drop-shadow(0 0 10px #fff) drop-shadow(0 0 20px #61dafb);
-  }
-}
-
-@keyframes flash {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.5;
-  }
 }
