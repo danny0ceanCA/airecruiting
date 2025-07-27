@@ -12,9 +12,9 @@
 }
 
 .landing-logo {
-  /* Maintain aspect ratio and prevent overflow on small screens */
-  width: 300px;
-  max-width: 80vw;
+  /* Scale logo but keep it within the viewport */
+  width: 90vw;
+  max-width: 450px;
   height: auto;
   margin-bottom: 1rem;
   animation: glow 3s ease-in-out infinite, flash 1.5s linear infinite;
