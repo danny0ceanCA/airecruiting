@@ -8,6 +8,21 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Ensure images and videos scale nicely on small screens */
+img,
+video {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Base button sizing for comfortable touch targets */
+button,
+input[type='button'],
+input[type='submit'] {
+  min-height: 44px;
+  padding: 0.75rem 1rem;
+}
+
 code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
