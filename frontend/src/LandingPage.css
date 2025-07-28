@@ -1,5 +1,5 @@
 .landing-container {
-  background: linear-gradient(135deg, #001f3f, #003366 50%, #004080);
+  background-color: #001f3f;
   min-height: 100vh;
   color: white;
   display: flex;
