@@ -4,7 +4,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import './LoginForm.css';
 import TopMenu from './TopMenu';
 
-function LoginForm() {
+function LoginForm({ infoContent }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -56,8 +56,9 @@ function LoginForm() {
   };
 
   return (
-    <div className="login-container">
+    <div className={`login-container${infoContent ? ' with-info' : ''}`}> 
       <TopMenu />
+      <div className="login-content">
       <form className="login-form" onSubmit={handleSubmit}>
         <h2>Login</h2>
 
@@ -83,6 +84,8 @@ function LoginForm() {
 
         {error && <p className="error">{error}</p>}
       </form>
+      {infoContent && <div className="info-panel">{infoContent}</div>}
+      </div>
     </div>
   );
 }

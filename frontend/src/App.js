@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import LandingPage from './LandingPage';
 import './App.css';
 import LoginForm from './LoginForm';
+import RoleLogin from './RoleLogin';
 import RegisterForm from './RegisterForm';
 import Dashboard from './Dashboard';
 import ProtectedRoute from './ProtectedRoute';
@@ -27,6 +28,7 @@ function App() {
         <Routes>
           <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<LoginForm />} />
+          <Route path="/login/:role" element={<RoleLogin />} />
           <Route path="/register" element={<RegisterForm />} />
           <Route path="/request-code" element={<RequestInstitutionCode />} />
           <Route path="/about" element={<AboutPanel />} />
