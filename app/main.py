@@ -1521,6 +1521,21 @@ Output only valid HTML.
     if raw_content.endswith("```"):
         raw_content = raw_content.rsplit("```", 1)[0].strip()
 
+    details_html = """
+    <h2>Job Details</h2>
+    <ul>
+      <li><strong>Source:</strong> {source}</li>
+      <li><strong>Pay Range:</strong> {pay_min} - {pay_max}</li>
+      <li><strong>Location:</strong> {city}, {state}</li>
+    </ul>
+    """.format(
+        source=job.get("source", ""),
+        pay_min=job.get("min_pay", ""),
+        pay_max=job.get("max_pay", ""),
+        city=job.get("city", ""),
+        state=job.get("state", ""),
+    )
+
     full_html = f"""
 <!DOCTYPE html>
 <html lang=\"en\">
@@ -1544,6 +1559,7 @@ Output only valid HTML.
   </style>
 </head>
 <body>
+{details_html}
 {raw_content}
 </body>
 </html>

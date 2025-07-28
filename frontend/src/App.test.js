@@ -19,9 +19,9 @@ beforeAll(() => {
   };
 });
 
-test('renders login form', () => {
+test('renders landing page', () => {
   render(<App />);
-  const heading = screen.getByRole('heading', { name: /login/i });
+  const heading = screen.getByRole('heading', { name: /who are you/i });
   expect(heading).toBeInTheDocument();
 });
 
