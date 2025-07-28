@@ -2,8 +2,29 @@
   background-color: #001f3f;
   height: 100vh;
   display: flex;
+  flex-direction: column;
   justify-content: center;
   align-items: center;
+}
+
+.login-content {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.login-container.with-info .login-content {
+  flex-direction: row;
+  gap: 2rem;
+}
+
+.info-panel {
+  background-color: #003366;
+  padding: 2rem;
+  border-radius: 10px;
+  color: white;
+  max-width: 400px;
+  border-left: 2px solid white;
 }
 
 .login-form {
