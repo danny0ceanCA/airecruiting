@@ -630,6 +630,8 @@ function StudentProfiles() {
                                     <th>Rate</th>
                                     <th>Source</th>
                                     <th>Job Description</th>
+                                    <th>Status</th>
+                                    <th>Recruiter Note</th>
                                   </tr>
                                 </thead>
                                 <tbody>
@@ -677,11 +679,13 @@ function StudentProfiles() {
                                             </button>
                                           )}
                                         </td>
+                                        <td>{job.status}</td>
+                                        <td>{job.note || ''}</td>
                                       </tr>
                                     ))
                                   ) : (
                                     <tr className="no-jobs-row">
-                                      <td colSpan="4">No jobs assigned by recruiters.</td>
+                                      <td colSpan="6">No jobs assigned by recruiters.</td>
                                     </tr>
                                   )}
                                 </tbody>
