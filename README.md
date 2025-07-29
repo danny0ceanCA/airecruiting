@@ -74,6 +74,19 @@ email address.
 Administrators can manage user accounts. Use `DELETE /admin/users/{email}` to
 remove a user from the system.
 
+## Rejection Workflow
+
+Recruiters can mark an assigned candidate as no longer interested via
+`POST /reject-assigned`. Provide the `job_code`, the candidate's email, and a
+note explaining the reason. The student will be removed from the job's
+`assigned_students` list and recorded in `rejected_students` with the note stored
+under `rejection_notes[email]`.
+
+Job objects created with `/jobs` now include `rejected_students` and
+`rejection_notes` fields by default. Student listing endpoints
+(`/students/all`, `/students/by-school`, and `/students/me`) return these jobs
+with a `status` of `rejected` and the stored note.
+
 ## Nursing News
 
 The `/nursing-news` endpoint retrieves articles from several nursing-focused RSS
