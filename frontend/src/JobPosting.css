@@ -265,6 +265,11 @@
   color: white;
 }
 
+.badge.rejected {
+  background-color: #d9534f;
+  color: white;
+}
+
 .job-description-panel {
   text-align: left;
   padding: 1rem 2rem;

@@ -334,6 +334,26 @@ if (shouldRedirect) {
     }
   };
 
+  const rejectAssigned = async (jobCode, email) => {
+    const note = window.prompt('Add a note for this rejection:');
+    if (note === null) return;
+    try {
+      await api.post(
+        '/reject-assigned',
+        { job_code: jobCode, student_email: email, note },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setMatches((prev) => ({
+        ...prev,
+        [jobCode]: prev[jobCode].map((m) =>
+          m.email === email ? { ...m, status: 'rejected', note } : m
+        )
+      }));
+    } catch (err) {
+      console.error('Reject failed', err);
+    }
+  };
+
   const bulkAssign = async (job) => {
     const emails = selectedRows[job.job_code] || [];
     for (const email of emails) {
@@ -519,6 +539,8 @@ if (shouldRedirect) {
                             <button onClick={() => handlePlace(job, row)}>Place</button>
                           )}
                         </>
+                      ) : row.status === 'rejected' ? (
+                        <span className="badge rejected inline">Rejected</span>
                       ) : (
                         <>
                           <button onClick={() => handleAssign(job, row)}>Interested</button>
@@ -580,6 +602,9 @@ if (shouldRedirect) {
                 {!isRecruiter && (
                   <button onClick={() => handlePlace(job, row)}>Place</button>
                 )}
+                <button onClick={() => rejectAssigned(job.job_code, row.email)}>
+                  Not Interested
+                </button>
               </td>
             </tr>
           ))}
