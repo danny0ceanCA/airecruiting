@@ -1,15 +1,18 @@
 import os
 import redis
+from rq import Worker, Queue
+import rq.connections
 
-from rq import Worker, Queue, Connection
-
+# Grab your Redis URL from the environment
 redis_url = os.getenv("REDIS_URL")
 if not redis_url:
     raise RuntimeError("Missing REDIS_URL")
 
+# Connect to Redis
 redis_client = redis.Redis.from_url(redis_url, decode_responses=True)
 queue = Queue(connection=redis_client)
 
-with Connection(redis_client):
+# Use the proper Connection context manager
+with rq.connections.Connection(redis_client):
     worker = Worker([queue.name])
     worker.work()
