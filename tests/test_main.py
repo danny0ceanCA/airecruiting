@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from jose import jwt
 import json
 import app.main as main_app
+from datetime import datetime
 
 
 class DummyRedis:
@@ -1534,4 +1535,42 @@ def test_test_notification_forbidden():
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 403
+
+
+def test_match_metrics_increment(monkeypatch):
+    main_app.redis_client.flushdb()
+    job = {
+        "job_code": "abc",
+        "job_title": "Test",
+        "job_description": "d",
+        "desired_skills": [],
+        "lat": 0.0,
+        "lng": 0.0,
+        "posted_by": "admin@example.com",
+    }
+    student = {
+        "email": "s@example.com",
+        "first_name": "S",
+        "last_name": "T",
+        "embedding": [0.0] * 1536,
+        "lat": 0.0,
+        "lng": 0.0,
+        "max_travel": 10,
+    }
+    main_app.redis_client.set("job:abc", json.dumps(job))
+    main_app.redis_client.set("student:s@example.com", json.dumps(student))
+    main_app.rebuild_vector_index()
+
+    class FakeResp:
+        def __init__(self):
+            self.data = [type("obj", (), {"embedding": [0.0] * 1536})]
+
+    monkeypatch.setattr(main_app.client.embeddings, "create", lambda *a, **k: FakeResp())
+    monkeypatch.setattr(main_app, "get_driving_distance_miles", lambda *a, **k: 1.0)
+
+    main_app.match_worker("abc", send_emails=False, enq_time=datetime.now().timestamp())
+    process = float(main_app.redis_client.get("metrics:match_process_time") or 0)
+    queue = float(main_app.redis_client.get("metrics:match_queue_time") or 0)
+    assert process > 0
+    assert queue >= 0
 

@@ -28,6 +28,9 @@ from openai import OpenAI
 import redis
 import asyncio
 import re
+import numpy as np
+import faiss
+from rq import Queue
 from html import unescape
 import random
 from backend.app.schemas.resume import ResumeRequest
@@ -86,6 +89,47 @@ if not redis_url:
 # Redis connection
 redis_client = redis.Redis.from_url(redis_url, decode_responses=True)
 
+# Background task queue helper
+def get_queue() -> Queue:
+    return Queue(connection=redis_client)
+
+# In-memory vector search index for student embeddings
+EMBEDDING_DIM: int | None = None
+vector_index: faiss.Index | None = None
+vector_emails: list[str] = []
+
+
+def ensure_index(dim: int) -> None:
+    """Ensure the FAISS index exists with the correct dimension."""
+    global EMBEDDING_DIM, vector_index
+    if EMBEDDING_DIM != dim:
+        EMBEDDING_DIM = dim
+        vector_index = faiss.IndexFlatIP(dim)
+        vector_emails.clear()
+
+
+def rebuild_vector_index() -> None:
+    """Populate the FAISS index with existing student embeddings."""
+    global vector_index, vector_emails
+    vector_emails = []
+    if EMBEDDING_DIM is None:
+        return
+    vector_index = faiss.IndexFlatIP(EMBEDDING_DIM)
+    for key in redis_client.scan_iter("student:*"):
+        raw = redis_client.get(key)
+        if not raw:
+            continue
+        try:
+            student = json.loads(raw)
+            emb = student.get("embedding")
+            if emb:
+                ensure_index(len(emb))
+                if vector_index is not None:
+                    vector_index.add(np.array([emb], dtype="float32"))
+                    vector_emails.append(key.split("student:", 1)[1])
+        except Exception:
+            continue
+
 # Key used to store activity log entries
 ACTIVITY_LOG_KEY = "activity_logs"
 
@@ -127,21 +171,39 @@ def send_email(
     except Exception as e:
         print(f"[email] Failed to send email to {recipient}: {e}")
 
-def get_driving_distance_miles(orig_lat: float, orig_lng: float, dest_lat: float, dest_lng: float) -> float:
-    """Return driving distance in miles between two coordinates using Google Distance Matrix."""
+async def get_driving_distance_miles(orig_lat: float, orig_lng: float, dest_lat: float, dest_lng: float) -> float:
+    """Return driving distance in miles between two coordinates using Google Distance Matrix.
+
+    Results are cached in Redis for 24 hours to avoid excessive API calls.
+    """
     key = os.getenv("GOOGLE_KEY")
     if not key:
         raise RuntimeError("Missing GOOGLE_KEY")
+
+    cache_key = f"distance:{orig_lat}:{orig_lng}:{dest_lat}:{dest_lng}"
+    cached = redis_client.get(cache_key)
+    if cached is not None:
+        try:
+            return float(cached)
+        except ValueError:
+            pass
+
     params = {
         "origins": f"{orig_lat},{orig_lng}",
         "destinations": f"{dest_lat},{dest_lng}",
         "units": "imperial",
         "key": key,
     }
-    resp = httpx.get("https://maps.googleapis.com/maps/api/distancematrix/json", params=params)
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            "https://maps.googleapis.com/maps/api/distancematrix/json",
+            params=params,
+        )
     data = resp.json()
     value_meters = data["rows"][0]["elements"][0]["distance"]["value"]
-    return value_meters / 1609.34
+    miles = value_meters / 1609.34
+    redis_client.setex(cache_key, int(timedelta(hours=24).total_seconds()), miles)
+    return miles
 
 JWT_SECRET = "secret"
 ALGORITHM = "HS256"
@@ -728,6 +790,10 @@ async def create_student(request: Request, current_user: dict = Depends(get_curr
     if school_label is not None:
         data["school_label"] = school_label
     redis_client.set(f"student:{student_data.email}", json.dumps(data))
+    ensure_index(len(embedding))
+    if vector_index is not None:
+        vector_index.add(np.array([embedding], dtype="float32"))
+        vector_emails.append(student_data.email)
 
     if profile_json is not None:
         return {"message": "Resume parsed by GPT successfully.", "profile": profile_json}
@@ -776,6 +842,7 @@ def update_student(
         data["school_code"] = existing.get("school_code")
 
     redis_client.set(key, json.dumps(data))
+    rebuild_vector_index()
     return {"message": "Student updated successfully"}
 
 @app.post("/students/upload")
@@ -821,6 +888,10 @@ def upload_students(file: UploadFile = File(...), current_user: dict = Depends(g
         data = student.model_dump()
         data["embedding"] = embedding
         redis_client.set(f"student:{student.email}", json.dumps(data))
+        ensure_index(len(embedding))
+        if vector_index is not None:
+            vector_index.add(np.array([embedding], dtype="float32"))
+            vector_emails.append(student.email)
 
         count += 1
 
@@ -890,19 +961,29 @@ def update_job(job_code: str, updated: dict, token_data: dict = Depends(get_curr
 
 @app.post("/match")
 def match_job(req: JobCodeRequest, current_user: dict = Depends(get_current_user)):
-    """Compute matches for a job and notify candidates."""
-    matches = _perform_match(req.job_code, send_emails=True)
-    return {"matches": matches}
+    """Enqueue a matching job and return immediately."""
+    enq_time = datetime.now().timestamp()
+    if hasattr(redis_client, "pipeline"):
+        get_queue().enqueue(match_worker, req.job_code, True, enq_time)
+        return {"message": "Match job queued"}
+    else:
+        matches = match_worker(req.job_code, True, enq_time)
+        return {"matches": matches}
 
 
 @app.post("/rematches/{job_code}")
 def rematch_job(job_code: str, current_user: dict = Depends(get_current_user)):
-    """Recompute matches without notifying students."""
-    matches = _perform_match(job_code, send_emails=False)
-    return {"matches": matches}
+    """Queue a rematch computation without notifying students."""
+    enq_time = datetime.now().timestamp()
+    if hasattr(redis_client, "pipeline"):
+        get_queue().enqueue(match_worker, job_code, False, enq_time)
+        return {"message": "Rematch queued"}
+    else:
+        matches = match_worker(job_code, False, enq_time)
+        return {"matches": matches}
 
 
-def _perform_match(job_code: str, send_emails: bool = True):
+async def _perform_match_async(job_code: str, send_emails: bool = True, enq_time: float | None = None):
     key = f"job:{job_code}"
     raw = redis_client.get(key)
     if not raw:
@@ -926,23 +1007,33 @@ def _perform_match(job_code: str, send_emails: bool = True):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Embedding failed: {str(e)}")
 
+    ensure_index(len(job_emb))
+    if vector_index is None:
+        return []
+
     matches = []
-    for key in redis_client.scan_iter("student:*"):
-        student_raw = redis_client.get(key)
+    if vector_index.ntotal == 0:
+        rebuild_vector_index()
+    search_vec = np.array([job_emb], dtype="float32")
+    k = min(50, vector_index.ntotal)
+    if k > 0:
+        sims, idxs = vector_index.search(search_vec, k)
+        candidate_emails = [vector_emails[i] for i in idxs[0] if i != -1]
+    else:
+        candidate_emails = []
+
+    tasks = []
+    candidates = []
+    for email in candidate_emails:
+        student_raw = redis_client.get(f"student:{email}")
         if not student_raw:
-            print(f"SKIP: {key} - no student data")
             continue
         try:
             student = json.loads(student_raw)
             emb = student.get("embedding")
             if not emb:
-                print(f"SKIP: {student.get('email')} - missing embedding")
                 continue
-
-            print(f"\nEVALUATING student: {student.get('email')}")
-            print(f"Job embedding length: {len(job_emb)}, Student embedding length: {len(emb)}")
             if student.get("email") in job.get("uninterested_students", []):
-                print("  SKIP: student marked not interested")
                 continue
             student_user_raw = redis_client.get(f"user:{student.get('email')}")
             if student_user_raw and poster_code:
@@ -950,36 +1041,44 @@ def _perform_match(job_code: str, send_emails: bool = True):
                     su = json.loads(student_user_raw)
                     stu_code = su.get("institutional_code") or su.get("school_code")
                     if su.get("role") == "applicant" and stu_code != poster_code:
-                        print(f"  SKIP: institutional code mismatch ({stu_code} != {poster_code})")
                         continue
-                except Exception as ex:
-                    print(f"  SKIP: error loading user ({ex})")
+                except Exception:
                     pass
-
-            dist = get_driving_distance_miles(
+            coro = get_driving_distance_miles(
                 student.get("lat"),
                 student.get("lng"),
                 job.get("lat"),
                 job.get("lng"),
             )
-            print(f"  Distance: {dist} | Student max travel: {student.get('max_travel', 0)}")
+            if asyncio.iscoroutine(coro):
+                tasks.append(coro)
+            else:
+                tasks.append(asyncio.sleep(0, result=coro))
+            candidates.append((student, emb))
+        except Exception:
+            continue
 
-            if dist > float(student.get("max_travel", 0)):
-                print(f"  SKIP: distance too far ({dist} > {student.get('max_travel', 0)})")
-                continue
-
-            score = sum(a * b for a, b in zip(job_emb, emb))
-            print(f"  SCORE: {score}")
-
-            matches.append({
+    dists = await asyncio.gather(*tasks, return_exceptions=True)
+    for (student, emb), dist in zip(candidates, dists):
+        if isinstance(dist, Exception):
+            continue
+        if dist > float(student.get("max_travel", 0)):
+            continue
+        score = float(np.dot(job_emb, emb))
+        matches.append(
+            {
                 "name": f"{student.get('first_name', '')} {student.get('last_name', '')}",
                 "email": student.get("email"),
                 "score": score,
                 "distance_miles": round(dist, 1),
-            })
-        except Exception as ex:
-            print(f"  SKIP: exception during evaluation: {ex}")
-            continue
+            }
+        )
+
+    # Deduplicate by email
+    dedup: dict[str, dict] = {}
+    for m in matches:
+        dedup[m["email"]] = m
+    matches = list(dedup.values())
 
     # Include applicant user records with a matching institutional code when no
     # student profile exists for them
@@ -1066,6 +1165,22 @@ def _perform_match(job_code: str, send_emails: bool = True):
         pass
 
     return top_matches
+
+
+def _perform_match(job_code: str, send_emails: bool = True, enq_time: float | None = None):
+    """Synchronous wrapper for background execution."""
+    return asyncio.run(_perform_match_async(job_code, send_emails, enq_time))
+
+
+def match_worker(job_code: str, send_emails: bool = True, enq_time: float | None = None):
+    start = datetime.now()
+    if enq_time is not None:
+        queue_time = start - datetime.fromtimestamp(enq_time)
+        redis_client.incrbyfloat("metrics:match_queue_time", queue_time.total_seconds())
+    result = _perform_match(job_code, send_emails)
+    process_time = datetime.now() - start
+    redis_client.incrbyfloat("metrics:match_process_time", process_time.total_seconds())
+    return result
 
 
 @app.get("/match/{job_code}")
@@ -1189,6 +1304,8 @@ def get_metrics(current_user: dict = Depends(get_current_user)):
         total_placements,
         total_rematches,
         sum_time_to_place,
+        match_queue_time,
+        match_process_time,
     ) = [
         redis_client.get(k)
         for k in [
@@ -1197,6 +1314,8 @@ def get_metrics(current_user: dict = Depends(get_current_user)):
             "metrics:total_placements",
             "metrics:total_rematches",
             "metrics:sum_time_to_place",
+            "metrics:match_queue_time",
+            "metrics:match_process_time",
         ]
     ]
     total_matches = int(total_matches or 0)
@@ -1204,6 +1323,8 @@ def get_metrics(current_user: dict = Depends(get_current_user)):
     total_placements = int(total_placements or 0)
     total_rematches = int(total_rematches or 0)
     sum_time_to_place = float(sum_time_to_place or 0.0)
+    match_queue_time = float(match_queue_time or 0.0)
+    match_process_time = float(match_process_time or 0.0)
 
     avg_match_score = (
         total_match_score / total_matches if total_matches else None
@@ -1243,6 +1364,8 @@ def get_metrics(current_user: dict = Depends(get_current_user)):
         "avg_time_to_placement_days": avg_time_to_place,
         "license_breakdown": license_counts,
         "rematch_rate": rematch_rate,
+        "total_match_queue_time": match_queue_time,
+        "total_match_process_time": match_process_time,
     }
 
 
