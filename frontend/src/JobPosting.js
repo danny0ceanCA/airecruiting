@@ -172,6 +172,22 @@ if (shouldRedirect) {
     }
   };
 
+  const pollForMatch = (code) => {
+    const check = async () => {
+      try {
+        const resp = await api.get(`/has-match/${code}`);
+        if (resp.data.has_match) {
+          await loadMatchResults(code);
+          return;
+        }
+      } catch (err) {
+        console.error('Error polling match status:', err);
+      }
+      setTimeout(check, 2000);
+    };
+    check();
+  };
+
   const handleMatch = async (code) => {
     try {
       setLoadingMatches((prev) => ({ ...prev, [code]: true }));
@@ -182,8 +198,12 @@ if (shouldRedirect) {
           headers: { Authorization: `Bearer ${token}` },
         }
       );
-      const matchResults = resp.data.matches.map((m) => ({ ...m, status: null }));
-      setMatches((prev) => ({ ...prev, [code]: matchResults }));
+      if (Array.isArray(resp.data.matches)) {
+        const matchResults = resp.data.matches.map((m) => ({ ...m, status: null }));
+        setMatches((prev) => ({ ...prev, [code]: matchResults }));
+      } else {
+        pollForMatch(code);
+      }
       setMatchPresence((prev) => ({ ...prev, [code]: true }));
     } catch (err) {
       console.error('Error matching job:', err);
@@ -200,8 +220,12 @@ if (shouldRedirect) {
         {},
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      const matchResults = resp.data.matches.map((m) => ({ ...m, status: null }));
-      setMatches((prev) => ({ ...prev, [code]: matchResults }));
+      if (Array.isArray(resp.data.matches)) {
+        const matchResults = resp.data.matches.map((m) => ({ ...m, status: null }));
+        setMatches((prev) => ({ ...prev, [code]: matchResults }));
+      } else {
+        pollForMatch(code);
+      }
     } catch (err) {
       console.error('Error rematching job:', err);
     } finally {
