@@ -1,7 +1,7 @@
 import os
 import redis
 from rq import Worker, Queue
-from rq.connections import Connection
+from rq.connection import Connection
 
 redis_url = os.getenv("REDIS_URL")
 if not redis_url:
