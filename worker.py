@@ -8,6 +8,7 @@ if not redis_url:
     raise RuntimeError("Missing REDIS_URL")
 
 # Connect to Redis
-redis_client = redis.Redis.from_url(redis_url, decode_responses=True)
+# RQ expects raw bytes, so disable automatic response decoding
+redis_client = redis.Redis.from_url(redis_url)
 queue = Queue(connection=redis_client)
 Worker([queue], connection=redis_client).work()
