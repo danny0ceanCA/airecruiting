@@ -178,6 +178,7 @@ if (shouldRedirect) {
         const resp = await api.get(`/has-match/${code}`);
         if (resp.data.has_match) {
           await loadMatchResults(code);
+          setLoadingMatches((prev) => ({ ...prev, [code]: false }));
           return;
         }
       } catch (err) {
@@ -201,13 +202,13 @@ if (shouldRedirect) {
       if (Array.isArray(resp.data.matches)) {
         const matchResults = resp.data.matches.map((m) => ({ ...m, status: null }));
         setMatches((prev) => ({ ...prev, [code]: matchResults }));
+        setLoadingMatches((prev) => ({ ...prev, [code]: false }));
       } else {
         pollForMatch(code);
       }
       setMatchPresence((prev) => ({ ...prev, [code]: true }));
     } catch (err) {
       console.error('Error matching job:', err);
-    } finally {
       setLoadingMatches((prev) => ({ ...prev, [code]: false }));
     }
   };
@@ -223,12 +224,12 @@ if (shouldRedirect) {
       if (Array.isArray(resp.data.matches)) {
         const matchResults = resp.data.matches.map((m) => ({ ...m, status: null }));
         setMatches((prev) => ({ ...prev, [code]: matchResults }));
+        setLoadingMatches((prev) => ({ ...prev, [code]: false }));
       } else {
         pollForMatch(code);
       }
     } catch (err) {
       console.error('Error rematching job:', err);
-    } finally {
       setLoadingMatches((prev) => ({ ...prev, [code]: false }));
     }
   };
