@@ -12,7 +12,6 @@ if not redis_url:
 redis_client = redis.Redis.from_url(redis_url, decode_responses=True)
 queue = Queue(connection=redis_client)
 
-# Use the proper Connection context manager
+# This is how you set the Connection context in RQ 2.x
 with rq.connections.Connection(redis_client):
-    worker = Worker([queue.name])
-    worker.work()
+    Worker([queue.name]).work()
