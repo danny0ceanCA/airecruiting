@@ -11,6 +11,17 @@ Run it with:
 uvicorn app.main:app --reload
 ```
 
+### Background workers
+
+Matching jobs are processed asynchronously using [RQ](https://python-rq.org/).
+Start a worker alongside the API server:
+
+```bash
+python worker.py
+```
+
+`/match` and `/rematches/{job_code}` enqueue work for these workers.
+
 ## Frontend
 
 The frontend was bootstrapped with Create React App and lives in the `frontend` folder. Install dependencies and start the development server with:
@@ -87,9 +98,18 @@ Job objects created with `/jobs` now include `rejected_students` and
 (`/students/all`, `/students/by-school`, and `/students/me`) return these jobs
 with a `status` of `rejected` and the stored note.
 
+## Driving distance caching
+
+Driving distance lookups use Google's Distance Matrix API. Results are cached in
+Redis for 24 hours to minimize API requests.
+
 ## Nursing News
 
 The `/nursing-news` endpoint retrieves articles from several nursing-focused RSS
 feeds. Results are cached for one hour to improve performance. RSS requests use
 a browser-like `User-Agent` header to avoid being blocked by some feed
 providers.
+
+## Metrics
+
+Match jobs record queue and processing time in Redis. The `/metrics` endpoint exposes `total_match_queue_time` and `total_match_process_time` along with existing counters.
