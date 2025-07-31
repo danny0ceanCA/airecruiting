@@ -86,12 +86,15 @@ SITE_BASE_URL = os.getenv("SITE_BASE_URL", "").rstrip("/")
 if not redis_url:
     raise RuntimeError("Missing REDIS_URL in .env")
 
-# Redis connection
+# Redis connection for general app data (strings/JSON)
 redis_client = redis.Redis.from_url(redis_url, decode_responses=True)
+# Separate connection for RQ that returns bytes
+rq_redis_client = redis.Redis.from_url(redis_url)
 
 # Background task queue helper
 def get_queue() -> Queue:
-    return Queue(connection=redis_client)
+    """Return an RQ queue using a raw-redis connection."""
+    return Queue(connection=rq_redis_client)
 
 # In-memory vector search index for student embeddings
 EMBEDDING_DIM: int | None = None
