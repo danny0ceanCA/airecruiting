@@ -288,6 +288,10 @@
   font-size: 0.85rem;
   color: #555;
   margin-bottom: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
 }
 
 .matched-button {
@@ -375,9 +379,19 @@
 }
 
 .spinner {
-  font-size: 0.8rem;
-  padding-left: 0.5rem;
-  color: #999;
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid #ccc;
+  border-top: 2px solid #333;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .resume-ready {
@@ -392,6 +406,21 @@
   border: none;
   cursor: pointer;
   font-size: 1.2rem;
+}
+
+.preview-button {
+  background-color: #007bff;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.preview-button:disabled {
+  background-color: #d3d3d3;
+  color: #666;
+  cursor: not-allowed;
 }
 @media (max-width: 768px) {
   .job-matching-layout {

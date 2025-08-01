@@ -35,6 +35,7 @@ function JobPosting() {
   const [editedJobs, setEditedJobs] = useState({});
   const [generatingResumes, setGeneratingResumes] = useState({});
   const [generatedResumes, setGeneratedResumes] = useState({});
+  const [previewingResumes, setPreviewingResumes] = useState({});
   const [activeTab, setActiveTab] = useState('jobs');
 
   const locationRef = useRef(null);
@@ -468,6 +469,8 @@ if (shouldRedirect) {
   };
 
   const previewResume = async (email, jobCode) => {
+    const key = `${jobCode}:${email}`;
+    setPreviewingResumes((prev) => ({ ...prev, [key]: true }));
     try {
       const resp = await api.post(
         '/generate-resume',
@@ -481,6 +484,8 @@ if (shouldRedirect) {
       }
     } catch (err) {
       console.error('Preview resume error:', err);
+    } finally {
+      setPreviewingResumes((prev) => ({ ...prev, [key]: false }));
     }
   };
 
@@ -509,7 +514,9 @@ if (shouldRedirect) {
     return (
       <>
         {loadingMatches[job.job_code] && (
-          <div className="loader-bar">Loading matches...</div>
+          <div className="loader-bar">
+            <span className="spinner" /> Loading matches...
+          </div>
         )}
         <button
           disabled={(selectedRows[job.job_code]?.length || 0) === 0}
@@ -523,6 +530,7 @@ if (shouldRedirect) {
               <th></th>
               <th>Name</th>
               <th>Score</th>
+              <th>Preview</th>
               <th>Action</th>
             </tr>
           </thead>
@@ -554,6 +562,18 @@ if (shouldRedirect) {
                       {row.last_name || row.name?.split(' ')[1]}
                     </td>
                     <td>{row.score.toFixed(2)}</td>
+                    <td>
+                      {previewingResumes[`${job.job_code}:${row.email}`] ? (
+                        <span className="spinner" />
+                      ) : (
+                        <button
+                          className="preview-button"
+                          onClick={() => previewResume(row.email, job.job_code)}
+                        >
+                          Preview Resume
+                        </button>
+                      )}
+                    </td>
                     <td>
                       {row.status === 'placed' ? (
                         <span className="badge placed inline">Placed</span>

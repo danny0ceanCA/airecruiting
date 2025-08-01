@@ -965,7 +965,8 @@ def test_generate_resume_preview(monkeypatch):
             "job_title": "Dev",
             "job_description": "desc",
             "desired_skills": ["python"],
-            "assigned_students": ["stud@example.com"],
+            "assigned_students": [],
+            "placed_students": [],
         })
     )
 
