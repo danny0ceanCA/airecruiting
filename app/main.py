@@ -1547,7 +1547,8 @@ def generate_resume(req: ResumeRequest, current_user: dict = Depends(get_current
     job = json.loads(job_raw)
     student = json.loads(student_raw)
 
-    if req.student_email not in job.get("assigned_students", []) and req.student_email not in job.get("placed_students", []):
+    if not preview and req.student_email not in job.get("assigned_students", []) \
+        and req.student_email not in job.get("placed_students", []):
         raise HTTPException(status_code=403, detail="Student not assigned to job")
 
     raw_html = generate_resume_text(client, student, job, include_contact=not preview).strip()
