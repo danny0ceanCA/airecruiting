@@ -288,6 +288,9 @@
   font-size: 0.85rem;
   color: #555;
   margin-bottom: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .matched-button {
@@ -375,9 +378,19 @@
 }
 
 .spinner {
-  font-size: 0.8rem;
-  padding-left: 0.5rem;
-  color: #999;
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid #ccc;
+  border-top: 2px solid #333;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .resume-ready {
