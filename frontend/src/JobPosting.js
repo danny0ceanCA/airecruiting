@@ -509,7 +509,9 @@ if (shouldRedirect) {
     return (
       <>
         {loadingMatches[job.job_code] && (
-          <div className="loader-bar">Loading matches...</div>
+          <div className="loader-bar">
+            <span className="spinner" /> Loading matches...
+          </div>
         )}
         <button
           disabled={(selectedRows[job.job_code]?.length || 0) === 0}
