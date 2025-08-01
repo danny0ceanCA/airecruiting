@@ -35,6 +35,7 @@ function JobPosting() {
   const [editedJobs, setEditedJobs] = useState({});
   const [generatingResumes, setGeneratingResumes] = useState({});
   const [generatedResumes, setGeneratedResumes] = useState({});
+  const [previewingResumes, setPreviewingResumes] = useState({});
   const [activeTab, setActiveTab] = useState('jobs');
 
   const locationRef = useRef(null);
@@ -468,6 +469,8 @@ if (shouldRedirect) {
   };
 
   const previewResume = async (email, jobCode) => {
+    const key = `${jobCode}:${email}`;
+    setPreviewingResumes((prev) => ({ ...prev, [key]: true }));
     try {
       const resp = await api.post(
         '/generate-resume',
@@ -481,6 +484,8 @@ if (shouldRedirect) {
       }
     } catch (err) {
       console.error('Preview resume error:', err);
+    } finally {
+      setPreviewingResumes((prev) => ({ ...prev, [key]: false }));
     }
   };
 
@@ -557,6 +562,16 @@ if (shouldRedirect) {
                     </td>
                     <td>{row.score.toFixed(2)}</td>
                     <td>
+                      {previewingResumes[`${job.job_code}:${row.email}`] ? (
+                        <span className="spinner" />
+                      ) : (
+                        <button
+                          className="preview-resume-button"
+                          onClick={() => previewResume(row.email, job.job_code)}
+                        >
+                          Preview Resume
+                        </button>
+                      )}
                       {row.status === 'placed' ? (
                         <span className="badge placed inline">Placed</span>
                       ) : row.status === 'assigned' ? (
