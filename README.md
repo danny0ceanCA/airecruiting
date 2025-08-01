@@ -113,3 +113,9 @@ providers.
 ## Metrics
 
 Match jobs record queue and processing time in Redis. The `/metrics` endpoint exposes `total_match_queue_time` and `total_match_process_time` along with existing counters.
+
+## Resume Previews
+
+The `/generate-resume` endpoint accepts an optional `preview` flag. When `true`,
+the generated resume includes placeholder contact information and does not
+require the student to be listed in `assigned_students` for the job.
