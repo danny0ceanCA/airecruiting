@@ -617,24 +617,28 @@ if (shouldRedirect) {
                     </td>
                     <td>
                       {row.status === 'placed' ? (
-                        <span className="badge placed inline">Placed</span>
+                        <div className="action-controls">
+                          <span className="badge placed inline">Placed</span>
+                        </div>
                       ) : row.status === 'assigned' ? (
-                        <>
+                        <div className="action-controls">
                           <span className="badge assigned inline">Assigned</span>
                           {!isRecruiter && (
                             <button onClick={() => handlePlace(job, row)}>Place</button>
                           )}
-                        </>
+                        </div>
                       ) : row.status === 'rejected' ? (
-                        <span className="badge rejected inline">Rejected</span>
+                        <div className="action-controls">
+                          <span className="badge rejected inline">Rejected</span>
+                        </div>
                       ) : (
-                        <>
+                        <div className="action-controls">
                           <button onClick={() => handleAssign(job, row)}>Interested</button>
                           <button onClick={() => markNotInterested(job.job_code, row.email)}>Not Interested</button>
                           {!isRecruiter && (
                             <button onClick={() => handlePlace(job, row)}>Place</button>
                           )}
-                        </>
+                        </div>
                       )}
                     </td>
                   </tr>
@@ -706,16 +710,18 @@ if (shouldRedirect) {
                 )}
               </td>
               <td>
-                <span className="badge assigned inline">Assigned</span>
-                {isRecruiter && (
-                  <button onClick={() => notifyInterest(job.job_code, row.email)}>Notify Candidate</button>
-                )}
-                {!isRecruiter && (
-                  <button onClick={() => handlePlace(job, row)}>Place</button>
-                )}
-                <button onClick={() => rejectAssigned(job.job_code, row.email)}>
-                  Not Interested
-                </button>
+                <div className="action-controls">
+                  <span className="badge assigned inline">Assigned</span>
+                  {isRecruiter && (
+                    <button onClick={() => notifyInterest(job.job_code, row.email)}>Notify Candidate</button>
+                  )}
+                  {!isRecruiter && (
+                    <button onClick={() => handlePlace(job, row)}>Place</button>
+                  )}
+                  <button onClick={() => rejectAssigned(job.job_code, row.email)}>
+                    Not Interested
+                  </button>
+                </div>
               </td>
             </tr>
           ))}

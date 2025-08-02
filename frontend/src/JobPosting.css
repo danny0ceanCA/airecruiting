@@ -284,6 +284,13 @@
   color: white;
 }
 
+.action-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
 .job-description-panel {
   text-align: left;
   padding: 1rem 2rem;
