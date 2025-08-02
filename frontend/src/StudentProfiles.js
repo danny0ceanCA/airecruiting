@@ -680,7 +680,11 @@ function StudentProfiles() {
                                           )}
                                         </td>
                                         <td>{job.status}</td>
-                                        <td>{job.note || ''}</td>
+                                        <td>
+                                          {job.notes && job.notes.length
+                                            ? job.notes[job.notes.length - 1].text
+                                            : job.note || ''}
+                                        </td>
                                       </tr>
                                     ))
                                   ) : (

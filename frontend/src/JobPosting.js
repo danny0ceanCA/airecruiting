@@ -601,7 +601,13 @@ if (shouldRedirect) {
                             setMatches((prev) => ({
                               ...prev,
                               [job.job_code]: (prev[job.job_code] || []).map((m) =>
-                                m.email === row.email ? { ...m, note: n } : m
+                                m.email === row.email
+                                  ? {
+                                      ...m,
+                                      note: n,
+                                      notes: [...(m.notes || []), { text: n }],
+                                    }
+                                  : m
                               ),
                             }));
                             cancelNote(job.job_code, row.email);
@@ -610,8 +616,22 @@ if (shouldRedirect) {
                         />
                       ) : (
                         <>
-                          {row.note || ''}
-                          <button onClick={() => startNote(job.job_code, row.email, row.note)}>Comment</button>
+                          {row.notes && row.notes.length
+                            ? row.notes[row.notes.length - 1].text
+                            : row.note || ''}
+                          <button
+                            onClick={() =>
+                              startNote(
+                                job.job_code,
+                                row.email,
+                                row.notes && row.notes.length
+                                  ? row.notes[row.notes.length - 1].text
+                                  : row.note
+                              )
+                            }
+                          >
+                            Comment
+                          </button>
                         </>
                       )}
                     </td>
@@ -691,7 +711,13 @@ if (shouldRedirect) {
                       setMatches((prev) => ({
                         ...prev,
                         [job.job_code]: (prev[job.job_code] || []).map((m) =>
-                          m.email === row.email ? { ...m, note: n } : m
+                          m.email === row.email
+                            ? {
+                                ...m,
+                                note: n,
+                                notes: [...(m.notes || []), { text: n }],
+                              }
+                            : m
                         ),
                       }));
                       cancelNote(job.job_code, row.email);
@@ -700,8 +726,22 @@ if (shouldRedirect) {
                   />
                 ) : (
                   <>
-                    {row.note || ''}
-                    <button onClick={() => startNote(job.job_code, row.email, row.note)}>Comment</button>
+                    {row.notes && row.notes.length
+                      ? row.notes[row.notes.length - 1].text
+                      : row.note || ''}
+                    <button
+                      onClick={() =>
+                        startNote(
+                          job.job_code,
+                          row.email,
+                          row.notes && row.notes.length
+                            ? row.notes[row.notes.length - 1].text
+                            : row.note
+                        )
+                      }
+                    >
+                      Comment
+                    </button>
                   </>
                 )}
               </td>
@@ -753,7 +793,13 @@ if (shouldRedirect) {
                       setMatches((prev) => ({
                         ...prev,
                         [job.job_code]: (prev[job.job_code] || []).map((m) =>
-                          m.email === row.email ? { ...m, note: n } : m
+                          m.email === row.email
+                            ? {
+                                ...m,
+                                note: n,
+                                notes: [...(m.notes || []), { text: n }],
+                              }
+                            : m
                         ),
                       }));
                       cancelNote(job.job_code, row.email);
@@ -762,8 +808,22 @@ if (shouldRedirect) {
                   />
                 ) : (
                   <>
-                    {row.note || ''}
-                    <button onClick={() => startNote(job.job_code, row.email, row.note)}>Comment</button>
+                    {row.notes && row.notes.length
+                      ? row.notes[row.notes.length - 1].text
+                      : row.note || ''}
+                    <button
+                      onClick={() =>
+                        startNote(
+                          job.job_code,
+                          row.email,
+                          row.notes && row.notes.length
+                            ? row.notes[row.notes.length - 1].text
+                            : row.note
+                        )
+                      }
+                    >
+                      Comment
+                    </button>
                   </>
                 )}
               </td>
