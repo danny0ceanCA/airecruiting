@@ -249,6 +249,14 @@
   min-width: 120px;
 }
 
+.job-table .action-cell,
+.matches-table .action-cell {
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .badge {
   display: inline-block;
   min-width: 100px;

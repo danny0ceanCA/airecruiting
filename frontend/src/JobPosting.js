@@ -615,7 +615,7 @@ if (shouldRedirect) {
                         </>
                       )}
                     </td>
-                    <td>
+                    <td className="action-cell">
                       {row.status === 'placed' ? (
                         <span className="badge placed inline">Placed</span>
                       ) : row.status === 'assigned' ? (
@@ -705,7 +705,7 @@ if (shouldRedirect) {
                   </>
                 )}
               </td>
-              <td>
+              <td className="action-cell">
                 <span className="badge assigned inline">Assigned</span>
                 {isRecruiter && (
                   <button onClick={() => notifyInterest(job.job_code, row.email)}>Notify Candidate</button>
@@ -1023,12 +1023,12 @@ if (shouldRedirect) {
                       )}
                     </td>
                   )}
-                  <td>
-                    {(() => {
-                      const hasMatchInRedis = matchPresence[job.job_code] === true;
+                <td className="action-cell">
+                  {(() => {
+                    const hasMatchInRedis = matchPresence[job.job_code] === true;
 
-                      return hasMatchInRedis ? (
-                        <>
+                    return hasMatchInRedis ? (
+                      <>
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
