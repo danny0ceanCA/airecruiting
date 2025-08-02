@@ -85,18 +85,23 @@ email address.
 Administrators can manage user accounts. Use `DELETE /admin/users/{email}` to
 remove a user from the system.
 
-## Rejection Workflow
+## Assignment and Rejection Workflow
 
-Recruiters can mark an assigned candidate as no longer interested via
-`POST /reject-assigned`. Provide the `job_code`, the candidate's email, and a
-note explaining the reason. The student will be removed from the job's
-`assigned_students` list and recorded in `rejected_students` with the note stored
-under `rejection_notes[email]`.
+Recruiters can assign a candidate to a job via `POST /assign`. Provide the
+`job_code`, the student's email, and optionally a `note`. The student will be
+added to the job's `assigned_students` list and, if provided, the note will be
+stored under `student_notes[email]`.
+
+If an assigned candidate is no longer interested, use `POST /reject-assigned`.
+Include the `job_code`, the student's email, and an optional `note`. The student
+will be removed from `assigned_students`, added to `rejected_students`, and any
+note will be recorded in `student_notes[email]`.
 
 Job objects created with `/jobs` now include `rejected_students` and
-`rejection_notes` fields by default. Student listing endpoints
-(`/students/all`, `/students/by-school`, and `/students/me`) return these jobs
-with a `status` of `rejected` and the stored note.
+`student_notes` fields by default. Student listing endpoints (`/students/all`,
+`/students/by-school`, and `/students/me`) return jobs with a status of either
+`assigned` or `rejected` and include the stored note, so notes are visible for
+both assigned and rejected students.
 
 ## Driving distance caching
 
