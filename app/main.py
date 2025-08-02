@@ -1455,6 +1455,28 @@ def reject_assigned_student(data: dict, token_data: dict = Depends(get_current_u
     return {"message": "Student rejected"}
 
 
+@app.post("/student-note")
+def student_note(data: dict, token_data: dict = Depends(get_current_user)):
+    """Create or update a note for a student on a job."""
+    job_code = data.get("job_code")
+    student_email = data.get("student_email")
+    note = data.get("note")
+    if not job_code or not student_email:
+        raise HTTPException(status_code=400, detail="Missing job_code or student_email")
+
+    key = f"job:{job_code}"
+    raw = redis_client.get(key)
+    if not raw:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    job = json.loads(raw)
+    job.setdefault("student_notes", {})
+    job["student_notes"][student_email] = note
+
+    redis_client.set(key, json.dumps(job))
+    return {"email": student_email, "note": note}
+
+
 @app.post("/not-interested")
 def mark_not_interested(data: dict, token_data: dict = Depends(get_current_user)):
     """Record that a student is not interested in a job."""

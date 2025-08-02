@@ -5,6 +5,7 @@ import api from './api';
 import AdminMenu from './AdminMenu';
 import loadGoogleMaps from './utils/loadGoogleMaps';
 import './JobPosting.css';
+import NoteEditor from './NoteEditor';
 
 function JobPosting() {
   const [formData, setFormData] = useState({
@@ -37,6 +38,7 @@ function JobPosting() {
   const [generatedResumes, setGeneratedResumes] = useState({});
   const [previewingResumes, setPreviewingResumes] = useState({});
   const [activeTab, setActiveTab] = useState('jobs');
+  const [noteInputs, setNoteInputs] = useState({});
 
   const locationRef = useRef(null);
 
@@ -260,15 +262,12 @@ if (shouldRedirect) {
   };
 
   const handleAssign = async (job, row) => {
-    const note = window.prompt('Add a note for this assignment:');
-    if (note === null) return;
     try {
       await api.post(
         '/assign',
         {
           student_email: row.email,
           job_code: job.job_code,
-          note,
         },
         {
           headers: {
@@ -280,7 +279,7 @@ if (shouldRedirect) {
       setMatches((prev) => ({
         ...prev,
         [job.job_code]: prev[job.job_code].map((m) =>
-          m.email === row.email ? { ...m, status: 'assigned', note } : m
+          m.email === row.email ? { ...m, status: 'assigned' } : m
         ),
       }));
       setJobs((prevJobs) =>
@@ -363,19 +362,31 @@ if (shouldRedirect) {
     }
   };
 
+  const startNote = (jobCode, email, current) => {
+    setNoteInputs((prev) => ({ ...prev, [`${jobCode}:${email}`]: current || '' }));
+  };
+
+  const cancelNote = (jobCode, email) => {
+    setNoteInputs((prev) => {
+      const key = `${jobCode}:${email}`;
+      const copy = { ...prev };
+      delete copy[key];
+      return copy;
+    });
+  };
+
+
   const rejectAssigned = async (jobCode, email) => {
-    const note = window.prompt('Add a note for this rejection:');
-    if (note === null) return;
     try {
       await api.post(
         '/reject-assigned',
-        { job_code: jobCode, student_email: email, note },
+        { job_code: jobCode, student_email: email },
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setMatches((prev) => ({
         ...prev,
         [jobCode]: prev[jobCode].map((m) =>
-          m.email === email ? { ...m, status: 'rejected', note } : m
+          m.email === email ? { ...m, status: 'rejected' } : m
         )
       }));
     } catch (err) {
@@ -386,20 +397,19 @@ if (shouldRedirect) {
   const bulkAssign = async (job) => {
     const emails = selectedRows[job.job_code] || [];
     for (const email of emails) {
-      const note = window.prompt(`Add a note for ${email}:`);
-      if (note === null) continue;
       try {
-        await api.post('/assign', {
-          student_email: email,
-          job_code: job.job_code,
-          note,
-        }, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        await api.post(
+          '/assign',
+          {
+            student_email: email,
+            job_code: job.job_code,
+          },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
         setMatches((prev) => ({
           ...prev,
           [job.job_code]: prev[job.job_code].map((m) =>
-            m.email === email ? { ...m, status: 'assigned', note } : m
+            m.email === email ? { ...m, status: 'assigned' } : m
           )
         }));
       } catch (err) {
@@ -581,7 +591,30 @@ if (shouldRedirect) {
                         </button>
                       )}
                     </td>
-                    <td>{row.note || ''}</td>
+                    <td>
+                      {noteInputs[`${job.job_code}:${row.email}`] !== undefined ? (
+                        <NoteEditor
+                          jobCode={job.job_code}
+                          email={row.email}
+                          initialNote={noteInputs[`${job.job_code}:${row.email}`]}
+                          onSaved={(n) => {
+                            setMatches((prev) => ({
+                              ...prev,
+                              [job.job_code]: (prev[job.job_code] || []).map((m) =>
+                                m.email === row.email ? { ...m, note: n } : m
+                              ),
+                            }));
+                            cancelNote(job.job_code, row.email);
+                          }}
+                          onCancel={() => cancelNote(job.job_code, row.email)}
+                        />
+                      ) : (
+                        <>
+                          {row.note || ''}
+                          <button onClick={() => startNote(job.job_code, row.email, row.note)}>Comment</button>
+                        </>
+                      )}
+                    </td>
                     <td>
                       {row.status === 'placed' ? (
                         <span className="badge placed inline">Placed</span>
@@ -648,7 +681,30 @@ if (shouldRedirect) {
                   </button>
                 )}
               </td>
-              <td>{row.note || ''}</td>
+              <td>
+                {noteInputs[`${job.job_code}:${row.email}`] !== undefined ? (
+                  <NoteEditor
+                    jobCode={job.job_code}
+                    email={row.email}
+                    initialNote={noteInputs[`${job.job_code}:${row.email}`]}
+                    onSaved={(n) => {
+                      setMatches((prev) => ({
+                        ...prev,
+                        [job.job_code]: (prev[job.job_code] || []).map((m) =>
+                          m.email === row.email ? { ...m, note: n } : m
+                        ),
+                      }));
+                      cancelNote(job.job_code, row.email);
+                    }}
+                    onCancel={() => cancelNote(job.job_code, row.email)}
+                  />
+                ) : (
+                  <>
+                    {row.note || ''}
+                    <button onClick={() => startNote(job.job_code, row.email, row.note)}>Comment</button>
+                  </>
+                )}
+              </td>
               <td>
                 <span className="badge assigned inline">Assigned</span>
                 {isRecruiter && (
@@ -678,6 +734,7 @@ if (shouldRedirect) {
             <th>Name</th>
             <th>Email</th>
             <th>Score</th>
+            <th>Note</th>
           </tr>
         </thead>
         <tbody>
@@ -686,6 +743,30 @@ if (shouldRedirect) {
               <td>{row.name}</td>
               <td>{row.email}</td>
               <td>{row.score?.toFixed(2)}</td>
+              <td>
+                {noteInputs[`${job.job_code}:${row.email}`] !== undefined ? (
+                  <NoteEditor
+                    jobCode={job.job_code}
+                    email={row.email}
+                    initialNote={noteInputs[`${job.job_code}:${row.email}`]}
+                    onSaved={(n) => {
+                      setMatches((prev) => ({
+                        ...prev,
+                        [job.job_code]: (prev[job.job_code] || []).map((m) =>
+                          m.email === row.email ? { ...m, note: n } : m
+                        ),
+                      }));
+                      cancelNote(job.job_code, row.email);
+                    }}
+                    onCancel={() => cancelNote(job.job_code, row.email)}
+                  />
+                ) : (
+                  <>
+                    {row.note || ''}
+                    <button onClick={() => startNote(job.job_code, row.email, row.note)}>Comment</button>
+                  </>
+                )}
+              </td>
             </tr>
           ))}
         </tbody>

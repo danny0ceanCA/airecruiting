@@ -103,6 +103,17 @@ Job objects created with `/jobs` now include `rejected_students` and
 `assigned` or `rejected` and include the stored note, so notes are visible for
 both assigned and rejected students.
 
+### Student Notes
+
+Use `POST /student-note` with a `job_code`, the `student_email`, and a `note` to
+create or update recruiter comments for a candidate. This endpoint only updates
+the `student_notes[email]` field and does **not** change any assignment status.
+The response includes the email and saved note.
+
+In the job‑matching UI, each row in the match tables now has a **Comment**
+control. Recruiters can open an inline text area to add or edit notes, which are
+displayed for candidates in any status.
+
 ## Driving distance caching
 
 Driving distance lookups use Google's Distance Matrix API. Results are cached in
