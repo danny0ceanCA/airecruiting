@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import json
 import csv
 import os
@@ -33,6 +33,7 @@ import faiss
 from rq import Queue
 from html import unescape
 import random
+from zoneinfo import ZoneInfo
 from backend.app.schemas.resume import ResumeRequest
 from backend.app.schemas.description import DescriptionRequest
 from backend.app.services.resume import generate_resume_text
@@ -228,7 +229,7 @@ async def log_requests(request, call_next):
             user = "invalid_token"
 
     log_entry = {
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "method": request.method,
         "path": request.url.path,
         "user": user,
@@ -2285,6 +2286,18 @@ def activity_log(limit: int = 100, current_user: dict = Depends(get_current_user
     try:
         raw_entries = redis_client.lrange(ACTIVITY_LOG_KEY, -limit, -1) or []
         entries = [json.loads(e) for e in raw_entries if e]
+        pst = ZoneInfo("America/Los_Angeles")
+        for entry in entries:
+            ts = entry.get("timestamp")
+            if not ts:
+                continue
+            try:
+                dt = datetime.fromisoformat(ts)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                entry["timestamp_pst"] = dt.astimezone(pst).isoformat()
+            except Exception:
+                continue
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read activity log: {e}")
 
