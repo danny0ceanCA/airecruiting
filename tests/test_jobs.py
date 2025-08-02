@@ -797,6 +797,135 @@ def test_assign_note_persists_on_reject(monkeypatch):
     assert entry["status"] == "assigned"
     assert entry["note"] == note
 
+
+def test_student_note_unassigned(monkeypatch):
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    class FakeResp:
+        def __init__(self):
+            self.data = [type("obj", (), {"embedding": [1.0]})]
+
+    monkeypatch.setattr(main_app.client.embeddings, "create", lambda *a, **k: FakeResp())
+    monkeypatch.setattr(main_app, "get_driving_distance_miles", lambda *a, **k: 1.0)
+
+    token = login_admin()
+
+    student = {
+        "first_name": "John",
+        "last_name": "Doe",
+        "email": "john@example.com",
+        "phone": "123",
+        "education_level": "College",
+        "skills": ["python"],
+        "experience_summary": "s",
+        "interests": "i",
+        "city": "c",
+        "state": "s",
+        "lat": 0.0,
+        "lng": 0.0,
+        "max_travel": 50.0,
+    }
+    client.post("/students", json=student, headers={"Authorization": f"Bearer {token}"})
+
+    job = {
+        "job_title": "Dev",
+        "job_description": "desc",
+        "desired_skills": ["python"],
+        "min_pay": 1.0,
+        "max_pay": 2.0,
+        "city": "c",
+        "state": "s",
+        "lat": 0.0,
+        "lng": 0.0,
+    }
+    resp = client.post("/jobs", json=job, headers={"Authorization": f"Bearer {token}"})
+    job_code = resp.json()["job_code"]
+
+    note = "standalone note"
+    r = client.post(
+        "/student-note",
+        json={"job_code": job_code, "student_email": student["email"], "note": note},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 200
+
+    stored = json.loads(main_app.redis_client.get(f"job:{job_code}"))
+    assert stored.get("student_notes", {}).get(student["email"]) == note
+    assert student["email"] not in stored.get("assigned_students", [])
+    assert student["email"] not in stored.get("rejected_students", [])
+    assert student["email"] not in stored.get("placed_students", [])
+    assert student["email"] not in stored.get("uninterested_students", [])
+
+
+def test_student_note_assigned(monkeypatch):
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    class FakeResp:
+        def __init__(self):
+            self.data = [type("obj", (), {"embedding": [1.0]})]
+
+    monkeypatch.setattr(main_app.client.embeddings, "create", lambda *a, **k: FakeResp())
+    monkeypatch.setattr(main_app, "get_driving_distance_miles", lambda *a, **k: 1.0)
+
+    token = login_admin()
+
+    student = {
+        "first_name": "John",
+        "last_name": "Doe",
+        "email": "john@example.com",
+        "phone": "123",
+        "education_level": "College",
+        "skills": ["python"],
+        "experience_summary": "s",
+        "interests": "i",
+        "city": "c",
+        "state": "s",
+        "lat": 0.0,
+        "lng": 0.0,
+        "max_travel": 50.0,
+    }
+    client.post("/students", json=student, headers={"Authorization": f"Bearer {token}"})
+
+    job = {
+        "job_title": "Dev",
+        "job_description": "desc",
+        "desired_skills": ["python"],
+        "min_pay": 1.0,
+        "max_pay": 2.0,
+        "city": "c",
+        "state": "s",
+        "lat": 0.0,
+        "lng": 0.0,
+    }
+    resp = client.post("/jobs", json=job, headers={"Authorization": f"Bearer {token}"})
+    job_code = resp.json()["job_code"]
+
+    client.post(
+        "/assign",
+        json={"student_email": student["email"], "job_code": job_code},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    note = "new note"
+    r = client.post(
+        "/student-note",
+        json={"job_code": job_code, "student_email": student["email"], "note": note},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 200
+
+    stored = json.loads(main_app.redis_client.get(f"job:{job_code}"))
+    assert student["email"] in stored.get("assigned_students", [])
+    assert stored.get("student_notes", {}).get(student["email"]) == note
+
+    resp = client.get("/students/by-school", headers={"Authorization": f"Bearer {token}"})
+    data = resp.json()["students"][0]
+    entry = next(j for j in data["assigned_jobs"] if j["job_code"] == job_code)
+    assert entry["note"] == note
+    assert entry["status"] == "assigned"
+
     r = client.post(
         "/reject-assigned",
         json={"job_code": job_code, "student_email": student["email"]},

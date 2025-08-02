@@ -171,6 +171,16 @@
   background-color: #f0f0f0;
 }
 
+.note-editor textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.note-editor button {
+  margin-right: 0.25rem;
+  margin-top: 0.25rem;
+}
+
 
 .filter-box {
   margin-bottom: 1rem;

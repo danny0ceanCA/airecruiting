@@ -1,0 +1,24 @@
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import NoteEditor from './NoteEditor';
+import api from './api';
+import axios from 'axios';
+
+jest.mock('axios', () => {
+  const mockAxios = { get: jest.fn(), post: jest.fn(), create: jest.fn() };
+  mockAxios.create.mockReturnValue(mockAxios);
+  return mockAxios;
+});
+
+test('saves note via API', async () => {
+  api.post.mockResolvedValue({ data: { email: 's1@example.com', note: 'hi' } });
+  render(<NoteEditor jobCode="J1" email="s1@example.com" onSaved={() => {}} />);
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: 'hi' } });
+  fireEvent.click(screen.getByText('Save'));
+  await waitFor(() => {
+    expect(api.post).toHaveBeenCalledWith('/student-note', {
+      job_code: 'J1',
+      student_email: 's1@example.com',
+      note: 'hi',
+    });
+  });
+});
