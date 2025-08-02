@@ -152,7 +152,7 @@
 .matches-table th,
 .matches-table td {
   border: none !important;
-  padding: 0.4rem;
+  padding: 0.5rem;
 }
 
 .matches-table th {
@@ -164,6 +164,10 @@
 .matches-table td {
   background-color: white;
   color: black;
+}
+
+.match-table-row > td {
+  padding: 0.5rem 0;
 }
 
 .job-table tbody tr:nth-child(even) td,
