@@ -707,11 +707,15 @@ def test_reject_assigned(monkeypatch):
     resp = client.post("/jobs", json=job, headers={"Authorization": f"Bearer {token}"})
     job_code = resp.json()["job_code"]
 
+    assign_note = "initial note"
     client.post(
         "/assign",
-        json={"student_email": student["email"], "job_code": job_code},
+        json={"student_email": student["email"], "job_code": job_code, "note": assign_note},
         headers={"Authorization": f"Bearer {token}"},
     )
+
+    stored = json.loads(main_app.redis_client.get(f"job:{job_code}"))
+    assert stored.get("student_notes", {}).get(student["email"]) == assign_note
 
     note = "not a fit"
     r = client.post(
@@ -724,7 +728,7 @@ def test_reject_assigned(monkeypatch):
     stored = json.loads(main_app.redis_client.get(f"job:{job_code}"))
     assert student["email"] not in stored.get("assigned_students", [])
     assert student["email"] in stored.get("rejected_students", [])
-    assert stored.get("rejection_notes", {}).get(student["email"]) == note
+    assert stored.get("student_notes", {}).get(student["email"]) == note
 
     resp = client.get("/students/by-school", headers={"Authorization": f"Bearer {token}"})
     data = resp.json()["students"][0]
