@@ -3,13 +3,18 @@ import api from './api';
 
 export default function NoteEditor({ jobCode, email, initialNote = '', onSaved, onCancel }) {
   const [note, setNote] = useState(initialNote);
+  const token = localStorage.getItem('token');
 
   const save = async () => {
-    await api.post('/student-note', {
-      job_code: jobCode,
-      student_email: email,
-      note,
-    });
+    await api.post(
+      '/student-note',
+      {
+        job_code: jobCode,
+        student_email: email,
+        note,
+      },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
     onSaved && onSaved(note);
   };
 

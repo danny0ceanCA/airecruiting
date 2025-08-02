@@ -10,15 +10,22 @@ jest.mock('axios', () => {
 });
 
 test('saves note via API', async () => {
+  const token = 'test-token';
+  localStorage.setItem('token', token);
   api.post.mockResolvedValue({ data: { email: 's1@example.com', note: 'hi' } });
   render(<NoteEditor jobCode="J1" email="s1@example.com" onSaved={() => {}} />);
   fireEvent.change(screen.getByRole('textbox'), { target: { value: 'hi' } });
   fireEvent.click(screen.getByText('Save'));
   await waitFor(() => {
-    expect(api.post).toHaveBeenCalledWith('/student-note', {
-      job_code: 'J1',
-      student_email: 's1@example.com',
-      note: 'hi',
-    });
+    expect(api.post).toHaveBeenCalledWith(
+      '/student-note',
+      {
+        job_code: 'J1',
+        student_email: 's1@example.com',
+        note: 'hi',
+      },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
   });
+  localStorage.clear();
 });
