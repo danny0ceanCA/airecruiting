@@ -483,7 +483,7 @@ if (shouldRedirect) {
         newWindow.document.close();
       }
     } catch (err) {
-      console.error('Preview resume error:', err);
+      console.error('View resume error:', err);
     } finally {
       setPreviewingResumes((prev) => ({ ...prev, [key]: false }));
     }
@@ -530,7 +530,7 @@ if (shouldRedirect) {
               <th></th>
               <th>Name</th>
               <th>Score</th>
-              <th>Preview</th>
+              <th>Resume</th>
               <th>Action</th>
             </tr>
           </thead>
@@ -570,7 +570,7 @@ if (shouldRedirect) {
                           className="preview-button"
                           onClick={() => previewResume(row.email, job.job_code)}
                         >
-                          Preview Resume
+                          View Resume
                         </button>
                       )}
                     </td>
