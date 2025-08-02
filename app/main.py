@@ -2008,6 +2008,7 @@ def get_all_students(current_user: dict = Depends(get_current_user)):
         for job in all_jobs:
             status = None
             notes = job.get("student_notes", {}).get(email, [])
+            latest_note = notes[-1]["text"] if notes else None
             if email in job.get("placed_students", []):
                 status = "placed"
             elif email in job.get("assigned_students", []):
@@ -2026,6 +2027,7 @@ def get_all_students(current_user: dict = Depends(get_current_user)):
                     "job_description": job.get("job_description"),
                     "status": status,
                     "notes": notes,
+                    **({"note": latest_note} if latest_note is not None else {}),
                 })
 
         info["assigned_jobs"] = jobs_list
@@ -2096,6 +2098,7 @@ def students_by_school(current_user: dict = Depends(get_current_user)):
         for job in all_jobs:
             status = None
             notes = job.get("student_notes", {}).get(email, [])
+            latest_note = notes[-1]["text"] if notes else None
             if email in job.get("placed_students", []):
                 status = "placed"
             elif email in job.get("assigned_students", []):
@@ -2114,6 +2117,7 @@ def students_by_school(current_user: dict = Depends(get_current_user)):
                     "job_description": job.get("job_description"),
                     "status": status,
                     "notes": notes,
+                    **({"note": latest_note} if latest_note is not None else {}),
                 })
 
         info["assigned_jobs"] = jobs_list
@@ -2152,6 +2156,7 @@ def student_me(current_user: dict = Depends(get_current_user)):
             continue
         status = None
         notes = job.get("student_notes", {}).get(email, [])
+        latest_note = notes[-1]["text"] if notes else None
         if email in job.get("placed_students", []):
             placed += 1
             status = "placed"
@@ -2171,6 +2176,7 @@ def student_me(current_user: dict = Depends(get_current_user)):
                 "job_description": job.get("job_description"),
                 "status": status,
                 "notes": notes,
+                **({"note": latest_note} if latest_note is not None else {}),
             })
 
     info = {

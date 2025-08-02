@@ -12,7 +12,7 @@ jest.mock('axios', () => {
 test('saves note via API', async () => {
   const token = 'test-token';
   localStorage.setItem('token', token);
-  api.post.mockResolvedValue({ data: { email: 's1@example.com', note: 'hi' } });
+  api.post.mockResolvedValue({ data: { email: 's1@example.com', notes: [{ text: 'hi' }] } });
   render(<NoteEditor jobCode="J1" email="s1@example.com" onSaved={() => {}} />);
   fireEvent.change(screen.getByRole('textbox'), { target: { value: 'hi' } });
   fireEvent.click(screen.getByText('Save'));
