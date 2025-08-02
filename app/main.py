@@ -1418,10 +1418,18 @@ def assign_student(data: dict, token_data: dict = Depends(get_current_user)):
         job["assigned_students"].append(student_email)
 
     if note is not None:
-        job["student_notes"][student_email] = note
+        note_obj = {
+            "text": note,
+            "author": token_data["sub"],
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+        job["student_notes"].setdefault(student_email, []).append(note_obj)
 
     redis_client.set(key, json.dumps(job))
-    return {"message": f"Assigned {student_email}"}
+    resp = {"message": f"Assigned {student_email}"}
+    if note is not None:
+        resp["notes"] = job["student_notes"][student_email]
+    return resp
 
 
 @app.post("/reject-assigned")
@@ -1449,10 +1457,18 @@ def reject_assigned_student(data: dict, token_data: dict = Depends(get_current_u
         job["rejected_students"].append(student_email)
 
     if note is not None:
-        job["student_notes"][student_email] = note
+        note_obj = {
+            "text": note,
+            "author": token_data["sub"],
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+        job["student_notes"].setdefault(student_email, []).append(note_obj)
 
     redis_client.set(key, json.dumps(job))
-    return {"message": "Student rejected"}
+    resp = {"message": "Student rejected"}
+    if note is not None:
+        resp["notes"] = job["student_notes"][student_email]
+    return resp
 
 
 @app.post("/student-note")
@@ -1461,8 +1477,8 @@ def student_note(data: dict, token_data: dict = Depends(get_current_user)):
     job_code = data.get("job_code")
     student_email = data.get("student_email")
     note = data.get("note")
-    if not job_code or not student_email:
-        raise HTTPException(status_code=400, detail="Missing job_code or student_email")
+    if not job_code or not student_email or note is None:
+        raise HTTPException(status_code=400, detail="Missing job_code, student_email, or note")
 
     key = f"job:{job_code}"
     raw = redis_client.get(key)
@@ -1471,10 +1487,15 @@ def student_note(data: dict, token_data: dict = Depends(get_current_user)):
 
     job = json.loads(raw)
     job.setdefault("student_notes", {})
-    job["student_notes"][student_email] = note
+    note_obj = {
+        "text": note,
+        "author": token_data["sub"],
+        "timestamp": datetime.utcnow().isoformat(),
+    }
+    job["student_notes"].setdefault(student_email, []).append(note_obj)
 
     redis_client.set(key, json.dumps(job))
-    return {"email": student_email, "note": note}
+    return {"email": student_email, "notes": job["student_notes"][student_email]}
 
 
 @app.post("/not-interested")
@@ -1986,7 +2007,7 @@ def get_all_students(current_user: dict = Depends(get_current_user)):
         jobs_list = []
         for job in all_jobs:
             status = None
-            note = job.get("student_notes", {}).get(email)
+            notes = job.get("student_notes", {}).get(email, [])
             if email in job.get("placed_students", []):
                 status = "placed"
             elif email in job.get("assigned_students", []):
@@ -2004,7 +2025,7 @@ def get_all_students(current_user: dict = Depends(get_current_user)):
                     "max_pay": job.get("max_pay"),
                     "job_description": job.get("job_description"),
                     "status": status,
-                    "note": note,
+                    "notes": notes,
                 })
 
         info["assigned_jobs"] = jobs_list
@@ -2074,7 +2095,7 @@ def students_by_school(current_user: dict = Depends(get_current_user)):
         jobs_list = []
         for job in all_jobs:
             status = None
-            note = job.get("student_notes", {}).get(email)
+            notes = job.get("student_notes", {}).get(email, [])
             if email in job.get("placed_students", []):
                 status = "placed"
             elif email in job.get("assigned_students", []):
@@ -2092,7 +2113,7 @@ def students_by_school(current_user: dict = Depends(get_current_user)):
                     "max_pay": job.get("max_pay"),
                     "job_description": job.get("job_description"),
                     "status": status,
-                    "note": note,
+                    "notes": notes,
                 })
 
         info["assigned_jobs"] = jobs_list
@@ -2130,7 +2151,7 @@ def student_me(current_user: dict = Depends(get_current_user)):
         except Exception:
             continue
         status = None
-        note = job.get("student_notes", {}).get(email)
+        notes = job.get("student_notes", {}).get(email, [])
         if email in job.get("placed_students", []):
             placed += 1
             status = "placed"
@@ -2149,7 +2170,7 @@ def student_me(current_user: dict = Depends(get_current_user)):
                 "max_pay": job.get("max_pay"),
                 "job_description": job.get("job_description"),
                 "status": status,
-                "note": note,
+                "notes": notes,
             })
 
     info = {
