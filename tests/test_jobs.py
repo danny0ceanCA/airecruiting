@@ -715,7 +715,8 @@ def test_reject_assigned(monkeypatch):
     )
 
     stored = json.loads(main_app.redis_client.get(f"job:{job_code}"))
-    assert stored.get("student_notes", {}).get(student["email"]) == assign_note
+    notes = stored.get("student_notes", {}).get(student["email"])
+    assert notes[0]["text"] == assign_note
 
     note = "not a fit"
     r = client.post(
@@ -728,13 +729,14 @@ def test_reject_assigned(monkeypatch):
     stored = json.loads(main_app.redis_client.get(f"job:{job_code}"))
     assert student["email"] not in stored.get("assigned_students", [])
     assert student["email"] in stored.get("rejected_students", [])
-    assert stored.get("student_notes", {}).get(student["email"]) == note
+    notes = stored.get("student_notes", {}).get(student["email"])
+    assert notes[-1]["text"] == note
 
     resp = client.get("/students/by-school", headers={"Authorization": f"Bearer {token}"})
     data = resp.json()["students"][0]
     entry = next(j for j in data["assigned_jobs"] if j["job_code"] == job_code)
     assert entry["status"] == "rejected"
-    assert entry["note"] == note
+    assert entry["notes"][-1]["text"] == note
 
 
 def test_assign_note_persists_on_reject(monkeypatch):
@@ -789,13 +791,14 @@ def test_assign_note_persists_on_reject(monkeypatch):
     )
 
     stored = json.loads(main_app.redis_client.get(f"job:{job_code}"))
-    assert stored.get("student_notes", {}).get(student["email"]) == note
+    notes = stored.get("student_notes", {}).get(student["email"])
+    assert notes[0]["text"] == note
 
     resp = client.get("/students/by-school", headers={"Authorization": f"Bearer {token}"})
     data = resp.json()["students"][0]
     entry = next(j for j in data["assigned_jobs"] if j["job_code"] == job_code)
     assert entry["status"] == "assigned"
-    assert entry["note"] == note
+    assert entry["notes"][-1]["text"] == note
 
 
 def test_student_note_unassigned(monkeypatch):
@@ -851,7 +854,8 @@ def test_student_note_unassigned(monkeypatch):
     assert r.status_code == 200
 
     stored = json.loads(main_app.redis_client.get(f"job:{job_code}"))
-    assert stored.get("student_notes", {}).get(student["email"]) == note
+    notes = stored.get("student_notes", {}).get(student["email"])
+    assert notes[0]["text"] == note
     assert student["email"] not in stored.get("assigned_students", [])
     assert student["email"] not in stored.get("rejected_students", [])
     assert student["email"] not in stored.get("placed_students", [])
@@ -918,12 +922,13 @@ def test_student_note_assigned(monkeypatch):
 
     stored = json.loads(main_app.redis_client.get(f"job:{job_code}"))
     assert student["email"] in stored.get("assigned_students", [])
-    assert stored.get("student_notes", {}).get(student["email"]) == note
+    notes = stored.get("student_notes", {}).get(student["email"])
+    assert notes[0]["text"] == note
 
     resp = client.get("/students/by-school", headers={"Authorization": f"Bearer {token}"})
     data = resp.json()["students"][0]
     entry = next(j for j in data["assigned_jobs"] if j["job_code"] == job_code)
-    assert entry["note"] == note
+    assert entry["notes"][-1]["text"] == note
     assert entry["status"] == "assigned"
 
     r = client.post(
@@ -934,10 +939,11 @@ def test_student_note_assigned(monkeypatch):
     assert r.status_code == 200
 
     stored = json.loads(main_app.redis_client.get(f"job:{job_code}"))
-    assert stored.get("student_notes", {}).get(student["email"]) == note
+    notes = stored.get("student_notes", {}).get(student["email"])
+    assert notes[-1]["text"] == note
 
     resp = client.get("/students/by-school", headers={"Authorization": f"Bearer {token}"})
     data = resp.json()["students"][0]
     entry = next(j for j in data["assigned_jobs"] if j["job_code"] == job_code)
     assert entry["status"] == "rejected"
-    assert entry["note"] == note
+    assert entry["notes"][-1]["text"] == note
