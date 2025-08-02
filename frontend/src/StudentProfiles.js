@@ -680,7 +680,7 @@ function StudentProfiles() {
                                           )}
                                         </td>
                                         <td>{job.status}</td>
-                                        <td>{job.note || ''}</td>
+                                        <td>{['assigned', 'rejected'].includes(job.status) ? job.note || '' : ''}</td>
                                       </tr>
                                     ))
                                   ) : (

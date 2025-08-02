@@ -260,12 +260,15 @@ if (shouldRedirect) {
   };
 
   const handleAssign = async (job, row) => {
+    const note = window.prompt('Add a note for this assignment:');
+    if (note === null) return;
     try {
       await api.post(
         '/assign',
         {
           student_email: row.email,
           job_code: job.job_code,
+          note,
         },
         {
           headers: {
@@ -277,7 +280,7 @@ if (shouldRedirect) {
       setMatches((prev) => ({
         ...prev,
         [job.job_code]: prev[job.job_code].map((m) =>
-          m.email === row.email ? { ...m, status: 'assigned' } : m
+          m.email === row.email ? { ...m, status: 'assigned', note } : m
         ),
       }));
       setJobs((prevJobs) =>
@@ -383,17 +386,20 @@ if (shouldRedirect) {
   const bulkAssign = async (job) => {
     const emails = selectedRows[job.job_code] || [];
     for (const email of emails) {
+      const note = window.prompt(`Add a note for ${email}:`);
+      if (note === null) continue;
       try {
         await api.post('/assign', {
           student_email: email,
-          job_code: job.job_code
+          job_code: job.job_code,
+          note,
         }, {
           headers: { Authorization: `Bearer ${token}` }
         });
         setMatches((prev) => ({
           ...prev,
           [job.job_code]: prev[job.job_code].map((m) =>
-            m.email === email ? { ...m, status: 'assigned' } : m
+            m.email === email ? { ...m, status: 'assigned', note } : m
           )
         }));
       } catch (err) {
@@ -531,6 +537,7 @@ if (shouldRedirect) {
               <th>Name</th>
               <th>Score</th>
               <th>Resume</th>
+              <th>Note</th>
               <th>Action</th>
             </tr>
           </thead>
@@ -574,6 +581,7 @@ if (shouldRedirect) {
                         </button>
                       )}
                     </td>
+                    <td>{row.note || ''}</td>
                     <td>
                       {row.status === 'placed' ? (
                         <span className="badge placed inline">Placed</span>
@@ -617,6 +625,7 @@ if (shouldRedirect) {
             <th>Email</th>
             <th>Score</th>
             <th>Resume</th>
+            <th>Note</th>
             <th>Action</th>
           </tr>
         </thead>
@@ -639,6 +648,7 @@ if (shouldRedirect) {
                   </button>
                 )}
               </td>
+              <td>{row.note || ''}</td>
               <td>
                 <span className="badge assigned inline">Assigned</span>
                 {isRecruiter && (
