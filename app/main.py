@@ -2053,6 +2053,8 @@ def students_by_school(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail="Corrupted user data")
 
     institutional_code = user.get("institutional_code") or user.get("school_code")
+    if not institutional_code:
+        raise HTTPException(status_code=400, detail="Institutional code required")
 
     # Gather all job data once
     all_jobs = []
