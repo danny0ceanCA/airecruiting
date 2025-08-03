@@ -135,3 +135,20 @@ Match jobs record queue and processing time in Redis. The `/metrics` endpoint ex
 The `/generate-resume` endpoint accepts an optional `preview` flag. When `true`,
 the generated resume includes placeholder contact information and does not
 require the student to be listed in `assigned_students` for the job.
+
+## Backfilling Institutional Codes
+
+Some legacy records may still use the `school_code` field instead of the
+preferred `institutional_code`. A one-time script is provided to copy any
+missing `institutional_code` values from `school_code` for both user and student
+records stored in Redis.
+
+Run the script with:
+
+```bash
+export REDIS_URL=redis://localhost:6379/0  # or your instance
+python scripts/backfill_codes.py
+```
+
+The script scans all `user:*` and `student:*` keys and updates records where
+`institutional_code` is absent but `school_code` exists.
