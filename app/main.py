@@ -1997,7 +1997,8 @@ def get_all_students(current_user: dict = Depends(get_current_user)):
             "skills": student.get("skills"),
             "experience_summary": student.get("experience_summary"),
             "interests": student.get("interests"),
-            "institutional_code": student.get("institutional_code"),  # ✅ Added
+            "institutional_code": student.get("institutional_code")
+            or student.get("school_code"),
             "assigned_jobs": [],
             "placed_jobs": 0,
             "assigned_job_code": None,
@@ -2051,7 +2052,7 @@ def students_by_school(current_user: dict = Depends(get_current_user)):
     except Exception:
         raise HTTPException(status_code=500, detail="Corrupted user data")
 
-    institutional_code = user.get("institutional_code")
+    institutional_code = user.get("institutional_code") or user.get("school_code")
 
     # Gather all job data once
     all_jobs = []
@@ -2076,7 +2077,7 @@ def students_by_school(current_user: dict = Depends(get_current_user)):
         except Exception:
             continue
 
-        if student.get("institutional_code") != institutional_code:
+        if (student.get("institutional_code") or student.get("school_code")) != institutional_code:
             continue
 
         email = student.get("email")
