@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import Joyride from 'react-joyride';
 import api from './api';
 import loadGoogleMaps from './utils/loadGoogleMaps';
+import { useNavigate } from 'react-router-dom';
 
 import AdminMenu from './AdminMenu';
 import jwt_decode from 'jwt-decode';
@@ -123,8 +124,14 @@ function StudentProfiles() {
     loadGoogleMaps(initAutocomplete);
   }, [activeTab, isEditing]);
 
+  const navigate = useNavigate();
   const token = localStorage.getItem('token');
-  const decoded = token ? jwt_decode(token) : {};
+  let decoded = {};
+  try {
+    decoded = token ? jwt_decode(token) : {};
+  } catch (err) {
+    decoded = {};
+  }
   const userRole = decoded?.role;
 
   const fetchStudents = async () => {
@@ -136,14 +143,36 @@ function StudentProfiles() {
       });
       setSchoolStudents(resp.data?.students || []);
     } catch (err) {
-      console.error('Failed to fetch students:', err);
+      if (err.response && err.response.status === 401) {
+        localStorage.removeItem('token');
+        navigate('/login');
+      } else {
+        console.error('Failed to fetch students:', err);
+        setToast('Failed to load students. Please try again later.');
+        setTimeout(() => setToast(''), 3000);
+      }
     } finally {
       setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    if (token) fetchStudents();
+    if (!token) {
+      navigate('/login');
+      return;
+    }
+    try {
+      const { exp } = jwt_decode(token);
+      if (exp && Date.now() >= exp * 1000) {
+        localStorage.removeItem('token');
+        navigate('/login');
+        return;
+      }
+    } catch (err) {
+      navigate('/login');
+      return;
+    }
+    fetchStudents();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleChange = (e) => {
