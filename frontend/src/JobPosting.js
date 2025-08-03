@@ -38,7 +38,7 @@ function JobPosting() {
   const [generatedResumes, setGeneratedResumes] = useState({});
   const [previewingResumes, setPreviewingResumes] = useState({});
   const [activeTab, setActiveTab] = useState('jobs');
-  const [noteInputs, setNoteInputs] = useState({});
+  const [editingNotes, setEditingNotes] = useState({});
 
   const locationRef = useRef(null);
 
@@ -362,12 +362,12 @@ if (shouldRedirect) {
     }
   };
 
-  const startNote = (jobCode, email, current) => {
-    setNoteInputs((prev) => ({ ...prev, [`${jobCode}:${email}`]: current || '' }));
+  const startNote = (jobCode, email) => {
+    setEditingNotes((prev) => ({ ...prev, [`${jobCode}:${email}`]: true }));
   };
 
   const cancelNote = (jobCode, email) => {
-    setNoteInputs((prev) => {
+    setEditingNotes((prev) => {
       const key = `${jobCode}:${email}`;
       const copy = { ...prev };
       delete copy[key];
@@ -593,25 +593,24 @@ if (shouldRedirect) {
                       )}
                     </td>
                     <td>
-                      {noteInputs[`${job.job_code}:${row.email}`] !== undefined ? (
+                      {editingNotes[`${job.job_code}:${row.email}`] ? (
                         <NoteEditor
                           jobCode={job.job_code}
                           email={row.email}
-                          initialNote={noteInputs[`${job.job_code}:${row.email}`]}
-                          onSaved={(n) => {
+                          notes={row.notes || []}
+                          onSaved={(newNote) => {
                             setMatches((prev) => ({
                               ...prev,
                               [job.job_code]: (prev[job.job_code] || []).map((m) =>
                                 m.email === row.email
                                   ? {
                                       ...m,
-                                      note: n,
-                                      notes: [...(m.notes || []), { text: n }],
+                                      note: newNote.text,
+                                      notes: [...(m.notes || []), newNote],
                                     }
                                   : m
                               ),
                             }));
-                            cancelNote(job.job_code, row.email);
                           }}
                           onCancel={() => cancelNote(job.job_code, row.email)}
                         />
@@ -620,17 +619,7 @@ if (shouldRedirect) {
                           {row.notes && row.notes.length
                             ? row.notes[row.notes.length - 1].text
                             : row.note || ''}
-                          <button
-                            onClick={() =>
-                              startNote(
-                                job.job_code,
-                                row.email,
-                                row.notes && row.notes.length
-                                  ? row.notes[row.notes.length - 1].text
-                                  : row.note
-                              )
-                            }
-                          >
+                          <button onClick={() => startNote(job.job_code, row.email)}>
                             Comment
                           </button>
                         </>
@@ -705,25 +694,24 @@ if (shouldRedirect) {
                 )}
               </td>
               <td>
-                {noteInputs[`${job.job_code}:${row.email}`] !== undefined ? (
+                {editingNotes[`${job.job_code}:${row.email}`] ? (
                   <NoteEditor
                     jobCode={job.job_code}
                     email={row.email}
-                    initialNote={noteInputs[`${job.job_code}:${row.email}`]}
-                    onSaved={(n) => {
+                    notes={row.notes || []}
+                    onSaved={(newNote) => {
                       setMatches((prev) => ({
                         ...prev,
                         [job.job_code]: (prev[job.job_code] || []).map((m) =>
                           m.email === row.email
                             ? {
                                 ...m,
-                                note: n,
-                                notes: [...(m.notes || []), { text: n }],
+                                note: newNote.text,
+                                notes: [...(m.notes || []), newNote],
                               }
                             : m
                         ),
                       }));
-                      cancelNote(job.job_code, row.email);
                     }}
                     onCancel={() => cancelNote(job.job_code, row.email)}
                   />
@@ -732,17 +720,7 @@ if (shouldRedirect) {
                     {row.notes && row.notes.length
                       ? row.notes[row.notes.length - 1].text
                       : row.note || ''}
-                    <button
-                      onClick={() =>
-                        startNote(
-                          job.job_code,
-                          row.email,
-                          row.notes && row.notes.length
-                            ? row.notes[row.notes.length - 1].text
-                            : row.note
-                        )
-                      }
-                    >
+                    <button onClick={() => startNote(job.job_code, row.email)}>
                       Comment
                     </button>
                   </>
@@ -789,25 +767,24 @@ if (shouldRedirect) {
               <td>{row.email}</td>
               <td>{row.score?.toFixed(2)}</td>
               <td>
-                {noteInputs[`${job.job_code}:${row.email}`] !== undefined ? (
+                {editingNotes[`${job.job_code}:${row.email}`] ? (
                   <NoteEditor
                     jobCode={job.job_code}
                     email={row.email}
-                    initialNote={noteInputs[`${job.job_code}:${row.email}`]}
-                    onSaved={(n) => {
+                    notes={row.notes || []}
+                    onSaved={(newNote) => {
                       setMatches((prev) => ({
                         ...prev,
                         [job.job_code]: (prev[job.job_code] || []).map((m) =>
                           m.email === row.email
                             ? {
                                 ...m,
-                                note: n,
-                                notes: [...(m.notes || []), { text: n }],
+                                note: newNote.text,
+                                notes: [...(m.notes || []), newNote],
                               }
                             : m
                         ),
                       }));
-                      cancelNote(job.job_code, row.email);
                     }}
                     onCancel={() => cancelNote(job.job_code, row.email)}
                   />
@@ -816,17 +793,7 @@ if (shouldRedirect) {
                     {row.notes && row.notes.length
                       ? row.notes[row.notes.length - 1].text
                       : row.note || ''}
-                    <button
-                      onClick={() =>
-                        startNote(
-                          job.job_code,
-                          row.email,
-                          row.notes && row.notes.length
-                            ? row.notes[row.notes.length - 1].text
-                            : row.note
-                        )
-                      }
-                    >
+                    <button onClick={() => startNote(job.job_code, row.email)}>
                       Comment
                     </button>
                   </>

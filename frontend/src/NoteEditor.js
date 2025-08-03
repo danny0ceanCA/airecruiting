@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import api from './api';
 
-export default function NoteEditor({ jobCode, email, initialNote = '', onSaved, onCancel }) {
-  const [note, setNote] = useState(initialNote);
+export default function NoteEditor({ jobCode, email, notes = [], onSaved, onCancel }) {
+  const [note, setNote] = useState('');
   const token = localStorage.getItem('token');
 
   const save = async () => {
-    await api.post(
+    const resp = await api.post(
       '/student-note',
       {
         job_code: jobCode,
@@ -15,7 +15,9 @@ export default function NoteEditor({ jobCode, email, initialNote = '', onSaved, 
       },
       { headers: { Authorization: `Bearer ${token}` } }
     );
-    onSaved && onSaved(note);
+    const newNote = resp.data.notes[resp.data.notes.length - 1];
+    setNote('');
+    onSaved && onSaved(newNote);
   };
 
   return (
@@ -26,6 +28,15 @@ export default function NoteEditor({ jobCode, email, initialNote = '', onSaved, 
       />
       <button onClick={save}>Save</button>
       {onCancel && <button onClick={onCancel}>Cancel</button>}
+      {notes.length > 0 && (
+        <div className="note-history">
+          {notes.map((n, i) => (
+            <div key={i} className="note-history-item">
+              {n.text}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
