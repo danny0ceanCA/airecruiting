@@ -133,6 +133,7 @@ function StudentProfiles() {
     decoded = {};
   }
   const userRole = decoded?.role;
+  const isAdmin = userRole === 'admin';
 
   const fetchStudents = async () => {
     setIsLoading(true);
@@ -714,7 +715,13 @@ function StudentProfiles() {
                                         <td>
                                           <button
                                             className="view-notes-btn"
-                                            onClick={() => setModalNotes(job.notes || [])}
+                                            onClick={() =>
+                                              setModalNotes({
+                                                notes: job.notes || [],
+                                                jobCode: job.job_code,
+                                                studentEmail: s.email,
+                                              })
+                                              }
                                             type="button"
                                           >
                                             View Notes
@@ -747,7 +754,10 @@ function StudentProfiles() {
       </div>
       {modalNotes && (
         <NotesHistoryModal
-          notes={modalNotes}
+          notes={modalNotes.notes}
+          jobCode={modalNotes.jobCode}
+          studentEmail={modalNotes.studentEmail}
+          isAdmin={isAdmin}
           onClose={() => setModalNotes(null)}
         />
       )}
