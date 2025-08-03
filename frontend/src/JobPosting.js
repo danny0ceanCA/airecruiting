@@ -548,6 +548,7 @@ if (shouldRedirect) {
               <th>Score</th>
               <th>Resume</th>
               <th>Note</th>
+              <th>Status</th>
               <th>Action</th>
             </tr>
           </thead>
@@ -635,19 +636,17 @@ if (shouldRedirect) {
                         </>
                       )}
                     </td>
-                    <td>
+                    <td className="status-cell">
                       {row.status === 'placed' ? (
                         <span className="badge placed inline">Placed</span>
                       ) : row.status === 'assigned' ? (
-                        <>
-                          <span className="badge assigned inline">Assigned</span>
-                          {!isRecruiter && (
-                            <button onClick={() => handlePlace(job, row)}>Place</button>
-                          )}
-                        </>
+                        <span className="badge assigned inline">Assigned</span>
                       ) : row.status === 'rejected' ? (
                         <span className="badge rejected inline">Rejected</span>
-                      ) : (
+                      ) : null}
+                    </td>
+                    <td>
+                      {row.status === null && (
                         <>
                           <button onClick={() => handleAssign(job, row)}>Interested</button>
                           <button onClick={() => markNotInterested(job.job_code, row.email)}>Not Interested</button>
@@ -655,6 +654,9 @@ if (shouldRedirect) {
                             <button onClick={() => handlePlace(job, row)}>Place</button>
                           )}
                         </>
+                      )}
+                      {row.status === 'assigned' && !isRecruiter && (
+                        <button onClick={() => handlePlace(job, row)}>Place</button>
                       )}
                     </td>
                   </tr>
@@ -679,6 +681,7 @@ if (shouldRedirect) {
             <th>Score</th>
             <th>Resume</th>
             <th>Note</th>
+            <th>Status</th>
             <th>Action</th>
           </tr>
         </thead>
@@ -745,8 +748,10 @@ if (shouldRedirect) {
                   </>
                 )}
               </td>
-              <td>
+              <td className="status-cell">
                 <span className="badge assigned inline">Assigned</span>
+              </td>
+              <td>
                 {isRecruiter && (
                   <button onClick={() => notifyInterest(job.job_code, row.email)}>Notify Candidate</button>
                 )}
