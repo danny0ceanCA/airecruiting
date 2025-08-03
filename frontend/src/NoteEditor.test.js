@@ -12,11 +12,17 @@ jest.mock('axios', () => {
 test('saves note via API', async () => {
   const token = 'test-token';
   localStorage.setItem('token', token);
-  api.post.mockResolvedValue({ data: { email: 's1@example.com', notes: [{ text: 'hi' }] } });
+  api.post.mockResolvedValue({
+    data: {
+      email: 's1@example.com',
+      notes: [{ text: 'old' }, { text: 'hi' }],
+    },
+  });
   const onSaved = jest.fn();
   render(
-    <NoteEditor jobCode="J1" email="s1@example.com" onSaved={onSaved} notes={[]} />
+    <NoteEditor jobCode="J1" email="s1@example.com" onSaved={onSaved} notes={[{ text: 'old' }]} />
   );
+  expect(screen.getByRole('textbox').value).toBe('');
   fireEvent.change(screen.getByRole('textbox'), { target: { value: 'hi' } });
   fireEvent.click(screen.getByText('Save'));
   await waitFor(() => {
@@ -33,4 +39,11 @@ test('saves note via API', async () => {
     expect(screen.getByRole('textbox').value).toBe('');
   });
   localStorage.clear();
+});
+
+test('starts with blank note even when history exists', () => {
+  render(
+    <NoteEditor jobCode="J1" email="s1@example.com" notes={[{ text: 'old note' }]} />
+  );
+  expect(screen.getByRole('textbox').value).toBe('');
 });
