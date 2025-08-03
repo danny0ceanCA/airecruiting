@@ -7,6 +7,7 @@ import AdminMenu from './AdminMenu';
 import jwt_decode from 'jwt-decode';
 import './StudentProfiles.css';
 import './Tour.css';
+import NotesHistoryModal from './NotesHistoryModal';
 
 function StudentProfiles() {
   const [formData, setFormData] = useState({
@@ -91,6 +92,7 @@ function StudentProfiles() {
   const [jobDescriptionStatus, setJobDescriptionStatus] = useState({});
 
   const [expandedRows, setExpandedRows] = useState({});
+  const [modalNotes, setModalNotes] = useState(null);
 
   const handleTourCallback = (data) => {
     const { status, type } = data;
@@ -681,9 +683,14 @@ function StudentProfiles() {
                                         </td>
                                         <td>{job.status}</td>
                                         <td>
-                                          {job.notes && job.notes.length
-                                            ? job.notes[job.notes.length - 1].text
-                                            : job.note || ''}
+                                          <button
+                                            className="view-notes-btn"
+                                            onClick={() => setModalNotes(job.notes || [])}
+                                            type="button"
+                                          >
+                                            View Notes
+                                            {job.notes && ` (${job.notes.length})`}
+                                          </button>
                                         </td>
                                       </tr>
                                     ))
@@ -709,6 +716,12 @@ function StudentProfiles() {
         </div>
         )}
       </div>
+      {modalNotes && (
+        <NotesHistoryModal
+          notes={modalNotes}
+          onClose={() => setModalNotes(null)}
+        />
+      )}
     </div>
   );
 }
