@@ -1445,7 +1445,13 @@ def assign_student(data: dict, token_data: dict = Depends(get_current_user)):
         else:
             raise HTTPException(status_code=400, detail="Invalid student_notes format")
 
-        notes_map.setdefault(student_email, []).append(note_obj)
+        existing = notes_map.get(student_email)
+        if isinstance(existing, str):
+            existing = [{"text": existing}]
+        elif not isinstance(existing, list):
+            existing = []
+        existing.append(note_obj)
+        notes_map[student_email] = existing
         job["student_notes"] = notes_map
 
     try:
@@ -1508,7 +1514,13 @@ def reject_assigned_student(data: dict, token_data: dict = Depends(get_current_u
         else:
             raise HTTPException(status_code=400, detail="Invalid student_notes format")
 
-        notes_map.setdefault(student_email, []).append(note_obj)
+        existing = notes_map.get(student_email)
+        if isinstance(existing, str):
+            existing = [{"text": existing}]
+        elif not isinstance(existing, list):
+            existing = []
+        existing.append(note_obj)
+        notes_map[student_email] = existing
         job["student_notes"] = notes_map
 
     try:
@@ -1564,7 +1576,13 @@ def student_note(data: dict, token_data: dict = Depends(get_current_user)):
         "author": token_data["sub"],
         "timestamp": datetime.utcnow().isoformat(),
     }
-    notes_map.setdefault(student_email, []).append(note_obj)
+    existing = notes_map.get(student_email)
+    if isinstance(existing, str):
+        existing = [{"text": existing}]
+    elif not isinstance(existing, list):
+        existing = []
+    existing.append(note_obj)
+    notes_map[student_email] = existing
     job["student_notes"] = notes_map
 
     try:
