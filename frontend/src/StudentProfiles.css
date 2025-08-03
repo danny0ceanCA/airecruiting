@@ -415,3 +415,70 @@
   color: #333;
 }
 
+.view-notes-btn {
+  background-color: #0074d9;
+  color: white;
+  border: none;
+  padding: 0.4rem 0.8rem;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.view-notes-btn:hover {
+  background-color: #005fa3;
+}
+
+.notes-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.notes-modal {
+  background: white;
+  padding: 1rem;
+  border-radius: 8px;
+  max-height: 80vh;
+  overflow-y: auto;
+  min-width: 300px;
+  color: #002244;
+}
+
+.notes-modal table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.notes-modal th,
+.notes-modal td {
+  border: 1px solid #ccc;
+  padding: 0.25rem 0.5rem;
+  text-align: left;
+}
+
+.notes-modal th {
+  background-color: #003366;
+  color: white;
+}
+
+.notes-modal td {
+  background-color: white;
+  color: black;
+}
+
+.notes-modal .close-button {
+  float: right;
+  background: transparent;
+  border: none;
+  font-size: 1.2rem;
+  cursor: pointer;
+}
+
