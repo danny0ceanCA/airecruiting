@@ -1409,13 +1409,20 @@ def assign_student(data: dict, token_data: dict = Depends(get_current_user)):
     student_email = data["student_email"]
     note = data.get("note")
     key = f"job:{job_code}"
-    raw = redis_client.get(key)
+    try:
+        raw = redis_client.get(key)
+    except redis.exceptions.RedisError:
+        raise HTTPException(status_code=503, detail="Storage unavailable")
     if not raw:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    job = json.loads(raw)
+    try:
+        job = json.loads(raw)
+        if not isinstance(job, dict):
+            raise ValueError
+    except (json.JSONDecodeError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid student_notes format")
     job.setdefault("assigned_students", [])
-    job.setdefault("student_notes", {})
     if student_email not in job["assigned_students"]:
         job["assigned_students"].append(student_email)
 
@@ -1425,9 +1432,26 @@ def assign_student(data: dict, token_data: dict = Depends(get_current_user)):
             "author": token_data["sub"],
             "timestamp": datetime.utcnow().isoformat(),
         }
-        job["student_notes"].setdefault(student_email, []).append(note_obj)
+        raw_notes = job.get("student_notes", {})
+        if isinstance(raw_notes, str):
+            try:
+                notes_map = json.loads(raw_notes)
+                if not isinstance(notes_map, dict):
+                    raise ValueError
+            except (json.JSONDecodeError, ValueError):
+                raise HTTPException(status_code=400, detail="Invalid student_notes format")
+        elif isinstance(raw_notes, dict):
+            notes_map = raw_notes
+        else:
+            raise HTTPException(status_code=400, detail="Invalid student_notes format")
 
-    redis_client.set(key, json.dumps(job))
+        notes_map.setdefault(student_email, []).append(note_obj)
+        job["student_notes"] = notes_map
+
+    try:
+        redis_client.set(key, json.dumps(job))
+    except redis.exceptions.RedisError:
+        raise HTTPException(status_code=503, detail="Storage unavailable")
     resp = {"message": f"Assigned {student_email}"}
     if note is not None:
         resp["notes"] = job["student_notes"][student_email]
@@ -1444,14 +1468,21 @@ def reject_assigned_student(data: dict, token_data: dict = Depends(get_current_u
         raise HTTPException(status_code=400, detail="Missing job_code or student_email")
 
     key = f"job:{job_code}"
-    raw = redis_client.get(key)
+    try:
+        raw = redis_client.get(key)
+    except redis.exceptions.RedisError:
+        raise HTTPException(status_code=503, detail="Storage unavailable")
     if not raw:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    job = json.loads(raw)
+    try:
+        job = json.loads(raw)
+        if not isinstance(job, dict):
+            raise ValueError
+    except (json.JSONDecodeError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid student_notes format")
     job.setdefault("assigned_students", [])
     job.setdefault("rejected_students", [])
-    job.setdefault("student_notes", {})
 
     if student_email in job["assigned_students"]:
         job["assigned_students"].remove(student_email)
@@ -1464,9 +1495,26 @@ def reject_assigned_student(data: dict, token_data: dict = Depends(get_current_u
             "author": token_data["sub"],
             "timestamp": datetime.utcnow().isoformat(),
         }
-        job["student_notes"].setdefault(student_email, []).append(note_obj)
+        raw_notes = job.get("student_notes", {})
+        if isinstance(raw_notes, str):
+            try:
+                notes_map = json.loads(raw_notes)
+                if not isinstance(notes_map, dict):
+                    raise ValueError
+            except (json.JSONDecodeError, ValueError):
+                raise HTTPException(status_code=400, detail="Invalid student_notes format")
+        elif isinstance(raw_notes, dict):
+            notes_map = raw_notes
+        else:
+            raise HTTPException(status_code=400, detail="Invalid student_notes format")
 
-    redis_client.set(key, json.dumps(job))
+        notes_map.setdefault(student_email, []).append(note_obj)
+        job["student_notes"] = notes_map
+
+    try:
+        redis_client.set(key, json.dumps(job))
+    except redis.exceptions.RedisError:
+        raise HTTPException(status_code=503, detail="Storage unavailable")
     resp = {"message": "Student rejected"}
     if note is not None:
         resp["notes"] = job["student_notes"][student_email]
@@ -1483,11 +1531,19 @@ def student_note(data: dict, token_data: dict = Depends(get_current_user)):
         raise HTTPException(status_code=400, detail="Missing job_code, student_email, or note")
 
     key = f"job:{job_code}"
-    raw = redis_client.get(key)
+    try:
+        raw = redis_client.get(key)
+    except redis.exceptions.RedisError:
+        raise HTTPException(status_code=503, detail="Storage unavailable")
     if not raw:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    job = json.loads(raw)
+    try:
+        job = json.loads(raw)
+        if not isinstance(job, dict):
+            raise ValueError
+    except (json.JSONDecodeError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid student_notes format")
 
     # Ensure student_notes is a dict; handle both dict and JSON string forms
     raw_notes = job.get("student_notes", {})
@@ -1495,13 +1551,13 @@ def student_note(data: dict, token_data: dict = Depends(get_current_user)):
         try:
             notes_map = json.loads(raw_notes)
             if not isinstance(notes_map, dict):
-                notes_map = {}
-        except json.JSONDecodeError:
-            notes_map = {}
+                raise ValueError
+        except (json.JSONDecodeError, ValueError):
+            raise HTTPException(status_code=400, detail="Invalid student_notes format")
     elif isinstance(raw_notes, dict):
         notes_map = raw_notes
     else:
-        notes_map = {}
+        raise HTTPException(status_code=400, detail="Invalid student_notes format")
 
     note_obj = {
         "text": note,
@@ -1511,7 +1567,10 @@ def student_note(data: dict, token_data: dict = Depends(get_current_user)):
     notes_map.setdefault(student_email, []).append(note_obj)
     job["student_notes"] = notes_map
 
-    redis_client.set(key, json.dumps(job))
+    try:
+        redis_client.set(key, json.dumps(job))
+    except redis.exceptions.RedisError:
+        raise HTTPException(status_code=503, detail="Storage unavailable")
     return {"email": student_email, "notes": notes_map[student_email]}
 
 
