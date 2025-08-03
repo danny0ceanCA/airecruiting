@@ -1962,6 +1962,16 @@ def delete_student(email: str, current_user: dict = Depends(get_current_user)):
 
     return {"message": f"Student {email} and related data deleted successfully"}
 
+
+def _normalize_notes(value):
+    """Return a list of note objects and the latest note text."""
+    if isinstance(value, str):
+        return [{"text": value}], value
+    if isinstance(value, list):
+        latest = value[-1].get("text") if value else None
+        return value, latest
+    return [], None
+
 @app.get("/students/all")
 def get_all_students(current_user: dict = Depends(get_current_user)):
     if current_user.get("role") != "admin":
@@ -2010,8 +2020,8 @@ def get_all_students(current_user: dict = Depends(get_current_user)):
         jobs_list = []
         for job in all_jobs:
             status = None
-            notes = job.get("student_notes", {}).get(email, [])
-            latest_note = notes[-1]["text"] if notes else None
+            notes_raw = job.get("student_notes", {}).get(email, [])
+            notes, latest_note = _normalize_notes(notes_raw)
             if email in job.get("placed_students", []):
                 status = "placed"
             elif email in job.get("assigned_students", []):
@@ -2102,8 +2112,8 @@ def students_by_school(current_user: dict = Depends(get_current_user)):
         jobs_list = []
         for job in all_jobs:
             status = None
-            notes = job.get("student_notes", {}).get(email, [])
-            latest_note = notes[-1]["text"] if notes else None
+            notes_raw = job.get("student_notes", {}).get(email, [])
+            notes, latest_note = _normalize_notes(notes_raw)
             if email in job.get("placed_students", []):
                 status = "placed"
             elif email in job.get("assigned_students", []):
@@ -2160,8 +2170,8 @@ def student_me(current_user: dict = Depends(get_current_user)):
         except Exception:
             continue
         status = None
-        notes = job.get("student_notes", {}).get(email, [])
-        latest_note = notes[-1]["text"] if notes else None
+        notes_raw = job.get("student_notes", {}).get(email, [])
+        notes, latest_note = _normalize_notes(notes_raw)
         if email in job.get("placed_students", []):
             placed += 1
             status = "placed"

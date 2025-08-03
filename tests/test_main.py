@@ -1644,3 +1644,70 @@ def test_students_by_school_requires_code():
     assert resp.status_code == 400
     assert resp.json()["detail"] == "Institutional code required"
 
+
+def test_student_endpoints_handle_string_notes():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    student = {
+        "first_name": "Stu",
+        "last_name": "Dent",
+        "email": "student@example.com",
+        "institutional_code": "001",
+    }
+    main_app.redis_client.set("student:student@example.com", json.dumps(student))
+
+    job = {
+        "job_code": "J1",
+        "job_title": "Test",
+        "student_notes": {"student@example.com": "legacy"},
+        "assigned_students": ["student@example.com"],
+    }
+    main_app.redis_client.set("job:J1", json.dumps(job))
+
+    login_resp = client.post(
+        "/login", json={"email": "admin@example.com", "password": "admin123"}
+    )
+    token_admin = login_resp.json()["token"]
+    resp_all = client.get(
+        "/students/all", headers={"Authorization": f"Bearer {token_admin}"}
+    )
+    entry = resp_all.json()["students"][0]["assigned_jobs"][0]
+    assert entry["notes"] == [{"text": "legacy"}]
+    assert entry["note"] == "legacy"
+
+    counselor = {"role": "career", "approved": True, "institutional_code": "001"}
+    main_app.redis_client.set("user:counselor@example.com", json.dumps(counselor))
+    token_counselor = jwt.encode(
+        {
+            "sub": "counselor@example.com",
+            "role": "career",
+            "exp": datetime.utcnow() + timedelta(hours=1),
+        },
+        JWT_SECRET,
+        algorithm=ALGORITHM,
+    )
+    resp_school = client.get(
+        "/students/by-school",
+        headers={"Authorization": f"Bearer {token_counselor}"},
+    )
+    entry = resp_school.json()["students"][0]["assigned_jobs"][0]
+    assert entry["notes"] == [{"text": "legacy"}]
+    assert entry["note"] == "legacy"
+
+    token_student = jwt.encode(
+        {
+            "sub": "student@example.com",
+            "role": "applicant",
+            "exp": datetime.utcnow() + timedelta(hours=1),
+        },
+        JWT_SECRET,
+        algorithm=ALGORITHM,
+    )
+    resp_me = client.get(
+        "/students/me", headers={"Authorization": f"Bearer {token_student}"}
+    )
+    entry = resp_me.json()["assigned_jobs"][0]
+    assert entry["notes"] == [{"text": "legacy"}]
+    assert entry["note"] == "legacy"
+
