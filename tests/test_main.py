@@ -1617,3 +1617,30 @@ def test_students_by_school_fallback():
     data = resp.json()
     assert any(s["email"] == "student@example.com" for s in data["students"])
 
+
+def test_students_by_school_requires_code():
+    main_app.redis_client.flushdb()
+
+    user = {
+        "role": "career",
+        "approved": True,
+    }
+    main_app.redis_client.set("user:counselor@example.com", json.dumps(user))
+
+    token = jwt.encode(
+        {
+            "sub": "counselor@example.com",
+            "role": "career",
+            "exp": datetime.utcnow() + timedelta(hours=1),
+        },
+        JWT_SECRET,
+        algorithm=ALGORITHM,
+    )
+
+    resp = client.get(
+        "/students/by-school",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "Institutional code required"
+
