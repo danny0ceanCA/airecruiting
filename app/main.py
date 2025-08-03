@@ -248,16 +248,18 @@ def list_routes():
     return [route.path for route in app.routes]
 
 # Add CORS middleware BEFORE defining routes
+ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://localhost:3002",
+    "https://airecruiting-frontend.onrender.com",
+    "https://talentmatch-frontend-nacw.onrender.com",
+    "https://talentmatch-ai.com",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:3001",
-        "http://localhost:3002",
-        "https://airecruiting-frontend.onrender.com",
-        "https://talentmatch-frontend-nacw.onrender.com",
-        "https://talentmatch-ai.com"
-    ],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
