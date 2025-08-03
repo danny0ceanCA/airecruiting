@@ -90,29 +90,80 @@ remove a user from the system.
 Recruiters can assign a candidate to a job via `POST /assign`. Provide the
 `job_code`, the student's email, and optionally a `note`. The student will be
 added to the job's `assigned_students` list and, if provided, the note will be
-stored under `student_notes[email]`.
+stored under `student_notes[email]` as a note object containing the text, the
+author's email, and an ISO timestamp.
 
 If an assigned candidate is no longer interested, use `POST /reject-assigned`.
 Include the `job_code`, the student's email, and an optional `note`. The student
 will be removed from `assigned_students`, added to `rejected_students`, and any
-note will be recorded in `student_notes[email]`.
+note will be appended to the `student_notes[email]` list with its author and
+timestamp.
 
 Job objects created with `/jobs` now include `rejected_students` and
 `student_notes` fields by default. Student listing endpoints (`/students/all`,
 `/students/by-school`, and `/students/me`) return jobs with a status of either
-`assigned` or `rejected` and include the stored note, so notes are visible for
+`assigned` or `rejected` and include all stored notes, so notes are visible for
 both assigned and rejected students.
 
 ### Student Notes
 
 Use `POST /student-note` with a `job_code`, the `student_email`, and a `note` to
-create or update recruiter comments for a candidate. This endpoint only updates
-the `student_notes[email]` field and does **not** change any assignment status.
-The response includes the email and saved note.
+create or update recruiter comments for a candidate. Each note is stored as an
+object containing the note text, the authenticated user's email, and an ISO
+timestamp. Notes are accumulated in `student_notes[email]`, which is now a list
+of these objects. This endpoint only updates the `student_notes[email]` field
+and does **not** change any assignment status. The response includes the email
+and the updated list of notes.
+
+Example request:
+
+```json
+{
+  "job_code": "job123",
+  "student_email": "alice@example.com",
+  "note": "Left a voicemail"
+}
+```
+
+Example response:
+
+```json
+{
+  "email": "alice@example.com",
+  "notes": [
+    {
+      "text": "Left a voicemail",
+      "author": "recruiter@example.com",
+      "timestamp": "2024-05-01T12:34:56.000000"
+    }
+  ]
+}
+```
+
+Student listing endpoints return this expanded structure. A typical job entry
+may look like:
+
+```json
+{
+  "job_code": "job123",
+  "status": "assigned",
+  "student_notes": {
+    "alice@example.com": [
+      {
+        "text": "Left a voicemail",
+        "author": "recruiter@example.com",
+        "timestamp": "2024-05-01T12:34:56.000000"
+      }
+    ]
+  }
+}
+```
 
 In the job‑matching UI, each row in the match tables now has a **Comment**
 control. Recruiters can open an inline text area to add or edit notes, which are
-displayed for candidates in any status.
+displayed for candidates in any status. Career services staff can also view a
+complete history of notes for a student through a new notes history modal on the
+career services interface.
 
 ## Driving distance caching
 
