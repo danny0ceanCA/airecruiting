@@ -1415,7 +1415,6 @@ def assign_student(data: dict, token_data: dict = Depends(get_current_user)):
 
     job = json.loads(raw)
     job.setdefault("assigned_students", [])
-    job.setdefault("student_notes", {})
     if student_email not in job["assigned_students"]:
         job["assigned_students"].append(student_email)
 
@@ -1425,7 +1424,19 @@ def assign_student(data: dict, token_data: dict = Depends(get_current_user)):
             "author": token_data["sub"],
             "timestamp": datetime.utcnow().isoformat(),
         }
-        job["student_notes"].setdefault(student_email, []).append(note_obj)
+        raw_notes = job.get("student_notes", {})
+        if isinstance(raw_notes, str):
+            try:
+                notes_map = json.loads(raw_notes)
+            except Exception:
+                notes_map = {}
+        elif isinstance(raw_notes, dict):
+            notes_map = raw_notes
+        else:
+            notes_map = {}
+
+        notes_map.setdefault(student_email, []).append(note_obj)
+        job["student_notes"] = notes_map
 
     redis_client.set(key, json.dumps(job))
     resp = {"message": f"Assigned {student_email}"}
@@ -1451,7 +1462,6 @@ def reject_assigned_student(data: dict, token_data: dict = Depends(get_current_u
     job = json.loads(raw)
     job.setdefault("assigned_students", [])
     job.setdefault("rejected_students", [])
-    job.setdefault("student_notes", {})
 
     if student_email in job["assigned_students"]:
         job["assigned_students"].remove(student_email)
@@ -1464,7 +1474,19 @@ def reject_assigned_student(data: dict, token_data: dict = Depends(get_current_u
             "author": token_data["sub"],
             "timestamp": datetime.utcnow().isoformat(),
         }
-        job["student_notes"].setdefault(student_email, []).append(note_obj)
+        raw_notes = job.get("student_notes", {})
+        if isinstance(raw_notes, str):
+            try:
+                notes_map = json.loads(raw_notes)
+            except Exception:
+                notes_map = {}
+        elif isinstance(raw_notes, dict):
+            notes_map = raw_notes
+        else:
+            notes_map = {}
+
+        notes_map.setdefault(student_email, []).append(note_obj)
+        job["student_notes"] = notes_map
 
     redis_client.set(key, json.dumps(job))
     resp = {"message": "Student rejected"}
