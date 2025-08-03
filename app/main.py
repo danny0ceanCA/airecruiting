@@ -1488,16 +1488,31 @@ def student_note(data: dict, token_data: dict = Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="Job not found")
 
     job = json.loads(raw)
-    job.setdefault("student_notes", {})
+
+    # Ensure student_notes is a dict; handle both dict and JSON string forms
+    raw_notes = job.get("student_notes", {})
+    if isinstance(raw_notes, str):
+        try:
+            notes_map = json.loads(raw_notes)
+            if not isinstance(notes_map, dict):
+                notes_map = {}
+        except json.JSONDecodeError:
+            notes_map = {}
+    elif isinstance(raw_notes, dict):
+        notes_map = raw_notes
+    else:
+        notes_map = {}
+
     note_obj = {
         "text": note,
         "author": token_data["sub"],
         "timestamp": datetime.utcnow().isoformat(),
     }
-    job["student_notes"].setdefault(student_email, []).append(note_obj)
+    notes_map.setdefault(student_email, []).append(note_obj)
+    job["student_notes"] = notes_map
 
     redis_client.set(key, json.dumps(job))
-    return {"email": student_email, "notes": job["student_notes"][student_email]}
+    return {"email": student_email, "notes": notes_map[student_email]}
 
 
 @app.post("/not-interested")
