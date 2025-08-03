@@ -800,10 +800,13 @@ def test_student_note_school_code_fallback():
     )
 
     note = "hello"
+    admin_token = client.post(
+        "/login", json={"email": "admin@example.com", "password": "admin123"}
+    ).json()["token"]
     r = client.post(
         "/student-note",
         json={"job_code": job_code, "student_email": student["email"], "note": note},
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"Authorization": f"Bearer {admin_token}"},
     )
     assert r.status_code == 200
 

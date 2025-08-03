@@ -1536,6 +1536,8 @@ def reject_assigned_student(data: dict, token_data: dict = Depends(get_current_u
 @app.post("/student-note")
 def student_note(data: dict, token_data: dict = Depends(get_current_user)):
     """Create or update a note for a student on a job."""
+    if token_data.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
     job_code = data.get("job_code")
     student_email = data.get("student_email")
     note = data.get("note")
@@ -1590,6 +1592,141 @@ def student_note(data: dict, token_data: dict = Depends(get_current_user)):
     except redis.exceptions.RedisError:
         raise HTTPException(status_code=503, detail="Storage unavailable")
     return {"email": student_email, "notes": notes_map[student_email]}
+
+
+@app.put("/student-note")
+def update_student_note(data: dict, token_data: dict = Depends(get_current_user)):
+    """Update an existing note for a student on a job."""
+    if token_data.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+    job_code = data.get("job_code")
+    student_email = data.get("student_email")
+    index = data.get("index")
+    note = data.get("note")
+    if not job_code or not student_email or note is None or index is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Missing job_code, student_email, index, or note",
+        )
+    try:
+        index = int(index)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid index")
+
+    key = f"job:{job_code}"
+    try:
+        raw = redis_client.get(key)
+    except redis.exceptions.RedisError:
+        raise HTTPException(status_code=503, detail="Storage unavailable")
+    if not raw:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    try:
+        job = json.loads(raw)
+        if not isinstance(job, dict):
+            raise ValueError
+    except (json.JSONDecodeError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid student_notes format")
+
+    raw_notes = job.get("student_notes", {})
+    if isinstance(raw_notes, str):
+        try:
+            notes_map = json.loads(raw_notes)
+            if not isinstance(notes_map, dict):
+                raise ValueError
+        except (json.JSONDecodeError, ValueError):
+            raise HTTPException(status_code=400, detail="Invalid student_notes format")
+    elif isinstance(raw_notes, dict):
+        notes_map = raw_notes
+    else:
+        raise HTTPException(status_code=400, detail="Invalid student_notes format")
+
+    existing = notes_map.get(student_email)
+    if isinstance(existing, str):
+        existing = [{"text": existing}]
+    elif not isinstance(existing, list):
+        existing = []
+    if index < 0 or index >= len(existing):
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    note_obj = {
+        "text": note,
+        "author": token_data["sub"],
+        "timestamp": datetime.utcnow().isoformat(),
+    }
+    existing[index] = note_obj
+    notes_map[student_email] = existing
+    job["student_notes"] = notes_map
+
+    try:
+        redis_client.set(key, json.dumps(job))
+    except redis.exceptions.RedisError:
+        raise HTTPException(status_code=503, detail="Storage unavailable")
+    return {"email": student_email, "notes": notes_map[student_email]}
+
+
+@app.delete("/student-note")
+def delete_student_note(data: dict, token_data: dict = Depends(get_current_user)):
+    """Delete a note for a student on a job by index."""
+    if token_data.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+    job_code = data.get("job_code")
+    student_email = data.get("student_email")
+    index = data.get("index")
+    if not job_code or not student_email or index is None:
+        raise HTTPException(
+            status_code=400, detail="Missing job_code, student_email, or index"
+        )
+    try:
+        index = int(index)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid index")
+
+    key = f"job:{job_code}"
+    try:
+        raw = redis_client.get(key)
+    except redis.exceptions.RedisError:
+        raise HTTPException(status_code=503, detail="Storage unavailable")
+    if not raw:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    try:
+        job = json.loads(raw)
+        if not isinstance(job, dict):
+            raise ValueError
+    except (json.JSONDecodeError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid student_notes format")
+
+    raw_notes = job.get("student_notes", {})
+    if isinstance(raw_notes, str):
+        try:
+            notes_map = json.loads(raw_notes)
+            if not isinstance(notes_map, dict):
+                raise ValueError
+        except (json.JSONDecodeError, ValueError):
+            raise HTTPException(status_code=400, detail="Invalid student_notes format")
+    elif isinstance(raw_notes, dict):
+        notes_map = raw_notes
+    else:
+        raise HTTPException(status_code=400, detail="Invalid student_notes format")
+
+    existing = notes_map.get(student_email)
+    if isinstance(existing, str):
+        existing = [{"text": existing}]
+    elif not isinstance(existing, list):
+        existing = []
+    if index < 0 or index >= len(existing):
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    existing.pop(index)
+    notes_map[student_email] = existing
+    job["student_notes"] = notes_map
+
+    try:
+        redis_client.set(key, json.dumps(job))
+    except redis.exceptions.RedisError:
+        raise HTTPException(status_code=503, detail="Storage unavailable")
+    return {"email": student_email, "notes": notes_map.get(student_email, [])}
 
 
 @app.post("/not-interested")
