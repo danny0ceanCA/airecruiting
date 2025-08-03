@@ -14,7 +14,12 @@ def backfill_institutional_codes():
 
     for pattern in ("user:*", "student:*"):
         for key in client.scan_iter(pattern):
-            raw = client.get(key)
+            if client.type(key) != "string":
+                continue
+            try:
+                raw = client.get(key)
+            except redis.exceptions.ResponseError:
+                continue
             if not raw:
                 continue
             try:
@@ -25,7 +30,10 @@ def backfill_institutional_codes():
             school = data.get("school_code")
             if (not inst) and school:
                 data["institutional_code"] = school
-                client.set(key, json.dumps(data))
+                try:
+                    client.set(key, json.dumps(data))
+                except redis.exceptions.ResponseError:
+                    continue
                 total_updated += 1
     print(f"Backfill complete. Updated {total_updated} records.")
 
