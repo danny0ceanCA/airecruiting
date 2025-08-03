@@ -85,18 +85,85 @@ email address.
 Administrators can manage user accounts. Use `DELETE /admin/users/{email}` to
 remove a user from the system.
 
-## Rejection Workflow
+## Assignment and Rejection Workflow
 
-Recruiters can mark an assigned candidate as no longer interested via
-`POST /reject-assigned`. Provide the `job_code`, the candidate's email, and a
-note explaining the reason. The student will be removed from the job's
-`assigned_students` list and recorded in `rejected_students` with the note stored
-under `rejection_notes[email]`.
+Recruiters can assign a candidate to a job via `POST /assign`. Provide the
+`job_code`, the student's email, and optionally a `note`. The student will be
+added to the job's `assigned_students` list and, if provided, the note will be
+stored under `student_notes[email]` as a note object containing the text, the
+author's email, and an ISO timestamp.
+
+If an assigned candidate is no longer interested, use `POST /reject-assigned`.
+Include the `job_code`, the student's email, and an optional `note`. The student
+will be removed from `assigned_students`, added to `rejected_students`, and any
+note will be appended to the `student_notes[email]` list with its author and
+timestamp.
 
 Job objects created with `/jobs` now include `rejected_students` and
-`rejection_notes` fields by default. Student listing endpoints
-(`/students/all`, `/students/by-school`, and `/students/me`) return these jobs
-with a `status` of `rejected` and the stored note.
+`student_notes` fields by default. Student listing endpoints (`/students/all`,
+`/students/by-school`, and `/students/me`) return jobs with a status of either
+`assigned` or `rejected` and include all stored notes, so notes are visible for
+both assigned and rejected students.
+
+### Student Notes
+
+Use `POST /student-note` with a `job_code`, the `student_email`, and a `note` to
+create or update recruiter comments for a candidate. Each note is stored as an
+object containing the note text, the authenticated user's email, and an ISO
+timestamp. Notes are accumulated in `student_notes[email]`, which is now a list
+of these objects. This endpoint only updates the `student_notes[email]` field
+and does **not** change any assignment status. The response includes the email
+and the updated list of notes.
+
+Example request:
+
+```json
+{
+  "job_code": "job123",
+  "student_email": "alice@example.com",
+  "note": "Left a voicemail"
+}
+```
+
+Example response:
+
+```json
+{
+  "email": "alice@example.com",
+  "notes": [
+    {
+      "text": "Left a voicemail",
+      "author": "recruiter@example.com",
+      "timestamp": "2024-05-01T12:34:56.000000"
+    }
+  ]
+}
+```
+
+Student listing endpoints return this expanded structure. A typical job entry
+may look like:
+
+```json
+{
+  "job_code": "job123",
+  "status": "assigned",
+  "student_notes": {
+    "alice@example.com": [
+      {
+        "text": "Left a voicemail",
+        "author": "recruiter@example.com",
+        "timestamp": "2024-05-01T12:34:56.000000"
+      }
+    ]
+  }
+}
+```
+
+In the job‑matching UI, each row in the match tables now has a **Comment**
+control. Recruiters can open an inline text area to add or edit notes, which are
+displayed for candidates in any status. Career services staff can also view a
+complete history of notes for a student through a new notes history modal on the
+career services interface.
 
 ## Driving distance caching
 
@@ -119,3 +186,20 @@ Match jobs record queue and processing time in Redis. The `/metrics` endpoint ex
 The `/generate-resume` endpoint accepts an optional `preview` flag. When `true`,
 the generated resume includes placeholder contact information and does not
 require the student to be listed in `assigned_students` for the job.
+
+## Backfilling Institutional Codes
+
+Some legacy records may still use the `school_code` field instead of the
+preferred `institutional_code`. A one-time script is provided to copy any
+missing `institutional_code` values from `school_code` for both user and student
+records stored in Redis.
+
+Run the script with:
+
+```bash
+export REDIS_URL=redis://localhost:6379/0  # or your instance
+python scripts/backfill_codes.py
+```
+
+The script scans all `user:*` and `student:*` keys and updates records where
+`institutional_code` is absent but `school_code` exists.

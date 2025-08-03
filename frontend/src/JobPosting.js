@@ -5,6 +5,7 @@ import api from './api';
 import AdminMenu from './AdminMenu';
 import loadGoogleMaps from './utils/loadGoogleMaps';
 import './JobPosting.css';
+import NoteEditor from './NoteEditor';
 
 function JobPosting() {
   const [formData, setFormData] = useState({
@@ -37,6 +38,7 @@ function JobPosting() {
   const [generatedResumes, setGeneratedResumes] = useState({});
   const [previewingResumes, setPreviewingResumes] = useState({});
   const [activeTab, setActiveTab] = useState('jobs');
+  const [editingNotes, setEditingNotes] = useState({});
 
   const locationRef = useRef(null);
 
@@ -360,19 +362,31 @@ if (shouldRedirect) {
     }
   };
 
+  const startNote = (jobCode, email) => {
+    setEditingNotes((prev) => ({ ...prev, [`${jobCode}:${email}`]: true }));
+  };
+
+  const cancelNote = (jobCode, email) => {
+    setEditingNotes((prev) => {
+      const key = `${jobCode}:${email}`;
+      const copy = { ...prev };
+      delete copy[key];
+      return copy;
+    });
+  };
+
+
   const rejectAssigned = async (jobCode, email) => {
-    const note = window.prompt('Add a note for this rejection:');
-    if (note === null) return;
     try {
       await api.post(
         '/reject-assigned',
-        { job_code: jobCode, student_email: email, note },
+        { job_code: jobCode, student_email: email },
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setMatches((prev) => ({
         ...prev,
         [jobCode]: prev[jobCode].map((m) =>
-          m.email === email ? { ...m, status: 'rejected', note } : m
+          m.email === email ? { ...m, status: 'rejected' } : m
         )
       }));
     } catch (err) {
@@ -384,12 +398,14 @@ if (shouldRedirect) {
     const emails = selectedRows[job.job_code] || [];
     for (const email of emails) {
       try {
-        await api.post('/assign', {
-          student_email: email,
-          job_code: job.job_code
-        }, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        await api.post(
+          '/assign',
+          {
+            student_email: email,
+            job_code: job.job_code,
+          },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
         setMatches((prev) => ({
           ...prev,
           [job.job_code]: prev[job.job_code].map((m) =>
@@ -483,7 +499,7 @@ if (shouldRedirect) {
         newWindow.document.close();
       }
     } catch (err) {
-      console.error('Preview resume error:', err);
+      console.error('View resume error:', err);
     } finally {
       setPreviewingResumes((prev) => ({ ...prev, [key]: false }));
     }
@@ -530,7 +546,9 @@ if (shouldRedirect) {
               <th></th>
               <th>Name</th>
               <th>Score</th>
-              <th>Preview</th>
+              <th>Resume</th>
+              <th>Note</th>
+              <th>Status</th>
               <th>Action</th>
             </tr>
           </thead>
@@ -570,23 +588,54 @@ if (shouldRedirect) {
                           className="preview-button"
                           onClick={() => previewResume(row.email, job.job_code)}
                         >
-                          Preview Resume
+                          View Resume
                         </button>
                       )}
                     </td>
                     <td>
+                      {editingNotes[`${job.job_code}:${row.email}`] ? (
+                        <NoteEditor
+                          jobCode={job.job_code}
+                          email={row.email}
+                          notes={row.notes || []}
+                          onSaved={(newNote) => {
+                            setMatches((prev) => ({
+                              ...prev,
+                              [job.job_code]: (prev[job.job_code] || []).map((m) =>
+                                m.email === row.email
+                                  ? {
+                                      ...m,
+                                      note: newNote.text,
+                                      notes: [...(m.notes || []), newNote],
+                                    }
+                                  : m
+                              ),
+                            }));
+                          }}
+                          onCancel={() => cancelNote(job.job_code, row.email)}
+                        />
+                      ) : (
+                        <>
+                          {row.notes && row.notes.length
+                            ? row.notes[row.notes.length - 1].text
+                            : row.note || ''}
+                          <button onClick={() => startNote(job.job_code, row.email)}>
+                            Comment
+                          </button>
+                        </>
+                      )}
+                    </td>
+                    <td className="status-cell">
                       {row.status === 'placed' ? (
                         <span className="badge placed inline">Placed</span>
                       ) : row.status === 'assigned' ? (
-                        <>
-                          <span className="badge assigned inline">Assigned</span>
-                          {!isRecruiter && (
-                            <button onClick={() => handlePlace(job, row)}>Place</button>
-                          )}
-                        </>
+                        <span className="badge assigned inline">Assigned</span>
                       ) : row.status === 'rejected' ? (
                         <span className="badge rejected inline">Rejected</span>
-                      ) : (
+                      ) : null}
+                    </td>
+                    <td>
+                      {row.status === null && (
                         <>
                           <button onClick={() => handleAssign(job, row)}>Interested</button>
                           <button onClick={() => markNotInterested(job.job_code, row.email)}>Not Interested</button>
@@ -594,6 +643,9 @@ if (shouldRedirect) {
                             <button onClick={() => handlePlace(job, row)}>Place</button>
                           )}
                         </>
+                      )}
+                      {row.status === 'assigned' && !isRecruiter && (
+                        <button onClick={() => handlePlace(job, row)}>Place</button>
                       )}
                     </td>
                   </tr>
@@ -617,6 +669,8 @@ if (shouldRedirect) {
             <th>Email</th>
             <th>Score</th>
             <th>Resume</th>
+            <th>Note</th>
+            <th>Status</th>
             <th>Action</th>
           </tr>
         </thead>
@@ -640,7 +694,42 @@ if (shouldRedirect) {
                 )}
               </td>
               <td>
+                {editingNotes[`${job.job_code}:${row.email}`] ? (
+                  <NoteEditor
+                    jobCode={job.job_code}
+                    email={row.email}
+                    notes={row.notes || []}
+                    onSaved={(newNote) => {
+                      setMatches((prev) => ({
+                        ...prev,
+                        [job.job_code]: (prev[job.job_code] || []).map((m) =>
+                          m.email === row.email
+                            ? {
+                                ...m,
+                                note: newNote.text,
+                                notes: [...(m.notes || []), newNote],
+                              }
+                            : m
+                        ),
+                      }));
+                    }}
+                    onCancel={() => cancelNote(job.job_code, row.email)}
+                  />
+                ) : (
+                  <>
+                    {row.notes && row.notes.length
+                      ? row.notes[row.notes.length - 1].text
+                      : row.note || ''}
+                    <button onClick={() => startNote(job.job_code, row.email)}>
+                      Comment
+                    </button>
+                  </>
+                )}
+              </td>
+              <td className="status-cell">
                 <span className="badge assigned inline">Assigned</span>
+              </td>
+              <td>
                 {isRecruiter && (
                   <button onClick={() => notifyInterest(job.job_code, row.email)}>Notify Candidate</button>
                 )}
@@ -668,6 +757,7 @@ if (shouldRedirect) {
             <th>Name</th>
             <th>Email</th>
             <th>Score</th>
+            <th>Note</th>
           </tr>
         </thead>
         <tbody>
@@ -676,6 +766,39 @@ if (shouldRedirect) {
               <td>{row.name}</td>
               <td>{row.email}</td>
               <td>{row.score?.toFixed(2)}</td>
+              <td>
+                {editingNotes[`${job.job_code}:${row.email}`] ? (
+                  <NoteEditor
+                    jobCode={job.job_code}
+                    email={row.email}
+                    notes={row.notes || []}
+                    onSaved={(newNote) => {
+                      setMatches((prev) => ({
+                        ...prev,
+                        [job.job_code]: (prev[job.job_code] || []).map((m) =>
+                          m.email === row.email
+                            ? {
+                                ...m,
+                                note: newNote.text,
+                                notes: [...(m.notes || []), newNote],
+                              }
+                            : m
+                        ),
+                      }));
+                    }}
+                    onCancel={() => cancelNote(job.job_code, row.email)}
+                  />
+                ) : (
+                  <>
+                    {row.notes && row.notes.length
+                      ? row.notes[row.notes.length - 1].text
+                      : row.note || ''}
+                    <button onClick={() => startNote(job.job_code, row.email)}>
+                      Comment
+                    </button>
+                  </>
+                )}
+              </td>
             </tr>
           ))}
         </tbody>

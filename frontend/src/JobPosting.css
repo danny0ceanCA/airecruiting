@@ -152,7 +152,7 @@
 .matches-table th,
 .matches-table td {
   border: none !important;
-  padding: 0.4rem;
+  padding: 0.5rem;
 }
 
 .matches-table th {
@@ -166,9 +166,23 @@
   color: black;
 }
 
+.match-table-row > td {
+  padding: 0.5rem 0;
+}
+
 .job-table tbody tr:nth-child(even) td,
 .matches-table tbody tr:nth-child(even) td {
   background-color: #f0f0f0;
+}
+
+.note-editor textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.note-editor button {
+  margin-right: 0.25rem;
+  margin-top: 0.25rem;
 }
 
 

@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from jose import jwt
 import json
 import app.main as main_app
-from datetime import datetime
+from datetime import datetime, timedelta
 
 
 class DummyRedis:
@@ -1574,4 +1574,73 @@ def test_match_metrics_increment(monkeypatch):
     queue = float(main_app.redis_client.get("metrics:match_queue_time") or 0)
     assert process > 0
     assert queue >= 0
+
+
+def test_students_by_school_fallback():
+    main_app.redis_client.flushdb()
+
+    user = {
+        "role": "career",
+        "approved": True,
+        "school_code": "1001",
+    }
+    main_app.redis_client.set("user:counselor@example.com", json.dumps(user))
+
+    student = {
+        "first_name": "Stu",
+        "last_name": "Dent",
+        "email": "student@example.com",
+        "phone": "123",
+        "education_level": "HS",
+        "skills": [],
+        "experience_summary": "",
+        "interests": "",
+        "school_code": "1001",
+    }
+    main_app.redis_client.set("student:student@example.com", json.dumps(student))
+
+    token = jwt.encode(
+        {
+            "sub": "counselor@example.com",
+            "role": "career",
+            "exp": datetime.utcnow() + timedelta(hours=1),
+        },
+        JWT_SECRET,
+        algorithm=ALGORITHM,
+    )
+
+    resp = client.get(
+        "/students/by-school",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert any(s["email"] == "student@example.com" for s in data["students"])
+
+
+def test_students_by_school_requires_code():
+    main_app.redis_client.flushdb()
+
+    user = {
+        "role": "career",
+        "approved": True,
+    }
+    main_app.redis_client.set("user:counselor@example.com", json.dumps(user))
+
+    token = jwt.encode(
+        {
+            "sub": "counselor@example.com",
+            "role": "career",
+            "exp": datetime.utcnow() + timedelta(hours=1),
+        },
+        JWT_SECRET,
+        algorithm=ALGORITHM,
+    )
+
+    resp = client.get(
+        "/students/by-school",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "Institutional code required"
 

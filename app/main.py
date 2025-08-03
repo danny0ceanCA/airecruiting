@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import json
 import csv
 import os
@@ -33,6 +33,7 @@ import faiss
 from rq import Queue
 from html import unescape
 import random
+from zoneinfo import ZoneInfo
 from backend.app.schemas.resume import ResumeRequest
 from backend.app.schemas.description import DescriptionRequest
 from backend.app.services.resume import generate_resume_text
@@ -228,7 +229,7 @@ async def log_requests(request, call_next):
             user = "invalid_token"
 
     log_entry = {
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "method": request.method,
         "path": request.url.path,
         "user": user,
@@ -932,7 +933,7 @@ def create_job(job: JobRequest, current_user: dict = Depends(get_current_user)):
     data.setdefault("placed_students", [])
     data.setdefault("uninterested_students", [])
     data.setdefault("rejected_students", [])
-    data.setdefault("rejection_notes", {})
+    data.setdefault("student_notes", {})
 
     redis_client.set(key, json.dumps(data))
     print(f"Stored job at {key}: {data}")
@@ -1240,7 +1241,7 @@ def list_jobs(current_user: dict = Depends(get_current_user)):
             job.setdefault("placed_students", [])
             job.setdefault("uninterested_students", [])
             job.setdefault("rejected_students", [])
-            job.setdefault("rejection_notes", {})
+            job.setdefault("student_notes", {})
             jobs.append(job)
     print(f"Returning {len(jobs)} jobs from Redis")
     return {"jobs": jobs}
@@ -1404,6 +1405,7 @@ def place_student(data: dict, token_data: dict = Depends(get_current_user)):
 def assign_student(data: dict, token_data: dict = Depends(get_current_user)):
     job_code = data["job_code"]
     student_email = data["student_email"]
+    note = data.get("note")
     key = f"job:{job_code}"
     raw = redis_client.get(key)
     if not raw:
@@ -1411,19 +1413,31 @@ def assign_student(data: dict, token_data: dict = Depends(get_current_user)):
 
     job = json.loads(raw)
     job.setdefault("assigned_students", [])
+    job.setdefault("student_notes", {})
     if student_email not in job["assigned_students"]:
         job["assigned_students"].append(student_email)
 
+    if note is not None:
+        note_obj = {
+            "text": note,
+            "author": token_data["sub"],
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+        job["student_notes"].setdefault(student_email, []).append(note_obj)
+
     redis_client.set(key, json.dumps(job))
-    return {"message": f"Assigned {student_email}"}
+    resp = {"message": f"Assigned {student_email}"}
+    if note is not None:
+        resp["notes"] = job["student_notes"][student_email]
+    return resp
 
 
 @app.post("/reject-assigned")
 def reject_assigned_student(data: dict, token_data: dict = Depends(get_current_user)):
-    """Remove an assigned student from a job and record a rejection note."""
+    """Remove an assigned student from a job and record a note."""
     job_code = data.get("job_code")
     student_email = data.get("student_email")
-    note = data.get("note", "")
+    note = data.get("note")
     if not job_code or not student_email:
         raise HTTPException(status_code=400, detail="Missing job_code or student_email")
 
@@ -1435,19 +1449,53 @@ def reject_assigned_student(data: dict, token_data: dict = Depends(get_current_u
     job = json.loads(raw)
     job.setdefault("assigned_students", [])
     job.setdefault("rejected_students", [])
-    job.setdefault("rejection_notes", {})
+    job.setdefault("student_notes", {})
 
     if student_email in job["assigned_students"]:
         job["assigned_students"].remove(student_email)
     if student_email not in job["rejected_students"]:
         job["rejected_students"].append(student_email)
 
-    notes = job.get("rejection_notes", {})
-    notes[student_email] = note
-    job["rejection_notes"] = notes
+    if note is not None:
+        note_obj = {
+            "text": note,
+            "author": token_data["sub"],
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+        job["student_notes"].setdefault(student_email, []).append(note_obj)
 
     redis_client.set(key, json.dumps(job))
-    return {"message": "Student rejected"}
+    resp = {"message": "Student rejected"}
+    if note is not None:
+        resp["notes"] = job["student_notes"][student_email]
+    return resp
+
+
+@app.post("/student-note")
+def student_note(data: dict, token_data: dict = Depends(get_current_user)):
+    """Create or update a note for a student on a job."""
+    job_code = data.get("job_code")
+    student_email = data.get("student_email")
+    note = data.get("note")
+    if not job_code or not student_email or note is None:
+        raise HTTPException(status_code=400, detail="Missing job_code, student_email, or note")
+
+    key = f"job:{job_code}"
+    raw = redis_client.get(key)
+    if not raw:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    job = json.loads(raw)
+    job.setdefault("student_notes", {})
+    note_obj = {
+        "text": note,
+        "author": token_data["sub"],
+        "timestamp": datetime.utcnow().isoformat(),
+    }
+    job["student_notes"].setdefault(student_email, []).append(note_obj)
+
+    redis_client.set(key, json.dumps(job))
+    return {"email": student_email, "notes": job["student_notes"][student_email]}
 
 
 @app.post("/not-interested")
@@ -1949,7 +1997,8 @@ def get_all_students(current_user: dict = Depends(get_current_user)):
             "skills": student.get("skills"),
             "experience_summary": student.get("experience_summary"),
             "interests": student.get("interests"),
-            "institutional_code": student.get("institutional_code"),  # ✅ Added
+            "institutional_code": student.get("institutional_code")
+            or student.get("school_code"),
             "assigned_jobs": [],
             "placed_jobs": 0,
             "assigned_job_code": None,
@@ -1959,14 +2008,16 @@ def get_all_students(current_user: dict = Depends(get_current_user)):
         jobs_list = []
         for job in all_jobs:
             status = None
-            note = None
+            notes = job.get("student_notes", {}).get(email, [])
+            latest_note = notes[-1]["text"] if notes else None
             if email in job.get("placed_students", []):
                 status = "placed"
             elif email in job.get("assigned_students", []):
                 status = "assigned"
             elif email in job.get("rejected_students", []):
                 status = "rejected"
-                note = job.get("rejection_notes", {}).get(email)
+            elif email in job.get("uninterested_students", []):
+                status = "uninterested"
             if status:
                 jobs_list.append({
                     "job_code": job.get("job_code"),
@@ -1976,7 +2027,8 @@ def get_all_students(current_user: dict = Depends(get_current_user)):
                     "max_pay": job.get("max_pay"),
                     "job_description": job.get("job_description"),
                     "status": status,
-                    "note": note,
+                    "notes": notes,
+                    **({"note": latest_note} if latest_note is not None else {}),
                 })
 
         info["assigned_jobs"] = jobs_list
@@ -2000,7 +2052,9 @@ def students_by_school(current_user: dict = Depends(get_current_user)):
     except Exception:
         raise HTTPException(status_code=500, detail="Corrupted user data")
 
-    institutional_code = user.get("institutional_code")
+    institutional_code = user.get("institutional_code") or user.get("school_code")
+    if not institutional_code:
+        raise HTTPException(status_code=400, detail="Institutional code required")
 
     # Gather all job data once
     all_jobs = []
@@ -2025,7 +2079,7 @@ def students_by_school(current_user: dict = Depends(get_current_user)):
         except Exception:
             continue
 
-        if student.get("institutional_code") != institutional_code:
+        if (student.get("institutional_code") or student.get("school_code")) != institutional_code:
             continue
 
         email = student.get("email")
@@ -2046,14 +2100,16 @@ def students_by_school(current_user: dict = Depends(get_current_user)):
         jobs_list = []
         for job in all_jobs:
             status = None
-            note = None
+            notes = job.get("student_notes", {}).get(email, [])
+            latest_note = notes[-1]["text"] if notes else None
             if email in job.get("placed_students", []):
                 status = "placed"
             elif email in job.get("assigned_students", []):
                 status = "assigned"
             elif email in job.get("rejected_students", []):
                 status = "rejected"
-                note = job.get("rejection_notes", {}).get(email)
+            elif email in job.get("uninterested_students", []):
+                status = "uninterested"
             if status:
                 jobs_list.append({
                     "job_code": job.get("job_code"),
@@ -2063,7 +2119,8 @@ def students_by_school(current_user: dict = Depends(get_current_user)):
                     "max_pay": job.get("max_pay"),
                     "job_description": job.get("job_description"),
                     "status": status,
-                    "note": note,
+                    "notes": notes,
+                    **({"note": latest_note} if latest_note is not None else {}),
                 })
 
         info["assigned_jobs"] = jobs_list
@@ -2101,7 +2158,8 @@ def student_me(current_user: dict = Depends(get_current_user)):
         except Exception:
             continue
         status = None
-        note = None
+        notes = job.get("student_notes", {}).get(email, [])
+        latest_note = notes[-1]["text"] if notes else None
         if email in job.get("placed_students", []):
             placed += 1
             status = "placed"
@@ -2109,7 +2167,8 @@ def student_me(current_user: dict = Depends(get_current_user)):
             status = "assigned"
         elif email in job.get("rejected_students", []):
             status = "rejected"
-            note = job.get("rejection_notes", {}).get(email)
+        elif email in job.get("uninterested_students", []):
+            status = "uninterested"
         if status:
             assigned_jobs.append({
                 "job_code": job.get("job_code"),
@@ -2119,7 +2178,8 @@ def student_me(current_user: dict = Depends(get_current_user)):
                 "max_pay": job.get("max_pay"),
                 "job_description": job.get("job_description"),
                 "status": status,
-                "note": note,
+                "notes": notes,
+                **({"note": latest_note} if latest_note is not None else {}),
             })
 
     info = {
@@ -2285,6 +2345,18 @@ def activity_log(limit: int = 100, current_user: dict = Depends(get_current_user
     try:
         raw_entries = redis_client.lrange(ACTIVITY_LOG_KEY, -limit, -1) or []
         entries = [json.loads(e) for e in raw_entries if e]
+        pst = ZoneInfo("America/Los_Angeles")
+        for entry in entries:
+            ts = entry.get("timestamp")
+            if not ts:
+                continue
+            try:
+                dt = datetime.fromisoformat(ts)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                entry["timestamp_pst"] = dt.astimezone(pst).isoformat()
+            except Exception:
+                continue
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read activity log: {e}")
 
