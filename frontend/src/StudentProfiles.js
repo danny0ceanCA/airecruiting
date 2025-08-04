@@ -720,8 +720,13 @@ function StudentProfiles() {
                                                 notes: job.notes || [],
                                                 jobCode: job.job_code,
                                                 studentEmail: s.email,
+                                                canAdd:
+                                                  isAdmin ||
+                                                  (userRole === 'recruiter' &&
+                                                    job.posted_by === decoded.sub &&
+                                                    job.status === 'assigned'),
                                               })
-                                              }
+                                            }
                                             type="button"
                                           >
                                             View Notes
@@ -757,6 +762,7 @@ function StudentProfiles() {
           notes={modalNotes.notes}
           jobCode={modalNotes.jobCode}
           studentEmail={modalNotes.studentEmail}
+          canAdd={modalNotes.canAdd}
           isAdmin={isAdmin}
           onClose={() => setModalNotes(null)}
         />
