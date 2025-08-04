@@ -737,28 +737,29 @@ def test_reject_assigned(monkeypatch):
     entry = next(j for j in data["assigned_jobs"] if j["job_code"] == job_code)
     assert entry["status"] == "rejected"
     assert entry["notes"][-1]["text"] == note
+    assert "posted_by" in entry
 
 
 def test_student_note_school_code_fallback():
     main_app.redis_client.flushdb()
     init_default_admin()
 
-    counselor = {
-        "email": "counselor@example.com",
-        "first_name": "Coun",
-        "last_name": "Selor",
+    recruiter = {
+        "email": "recruiter@example.com",
+        "first_name": "Rec",
+        "last_name": "R",
         "school_code": "1001",
         "password": "pw",
-        "role": "career",
+        "role": "recruiter",
     }
-    client.post("/register", json=counselor)
-    ck = f"user:{counselor['email']}"
+    client.post("/register", json=recruiter)
+    ck = f"user:{recruiter['email']}"
     cdata = json.loads(main_app.redis_client.get(ck))
     cdata["approved"] = True
-    cdata["role"] = "career"
+    cdata["role"] = "recruiter"
     main_app.redis_client.set(ck, json.dumps(cdata))
     token = client.post(
-        "/login", json={"email": counselor["email"], "password": counselor["password"]}
+        "/login", json={"email": recruiter["email"], "password": recruiter["password"]}
     ).json()["token"]
 
     job = {
@@ -820,6 +821,7 @@ def test_student_note_school_code_fallback():
     stu = next(s for s in data if s["email"] == student["email"])
     entry = next(j for j in stu["assigned_jobs"] if j["job_code"] == job_code)
     assert entry["notes"][-1]["text"] == note
+    assert "posted_by" in entry
 
 
 def test_assign_note_persists_on_reject(monkeypatch):
@@ -882,6 +884,7 @@ def test_assign_note_persists_on_reject(monkeypatch):
     entry = next(j for j in data["assigned_jobs"] if j["job_code"] == job_code)
     assert entry["status"] == "assigned"
     assert entry["notes"][-1]["text"] == note
+    assert "posted_by" in entry
 
 
 def test_student_note_unassigned(monkeypatch):
@@ -1013,6 +1016,7 @@ def test_student_note_assigned(monkeypatch):
     entry = next(j for j in data["assigned_jobs"] if j["job_code"] == job_code)
     assert entry["notes"][-1]["text"] == note
     assert entry["status"] == "assigned"
+    assert "posted_by" in entry
 
     r = client.post(
         "/reject-assigned",
@@ -1030,6 +1034,7 @@ def test_student_note_assigned(monkeypatch):
     entry = next(j for j in data["assigned_jobs"] if j["job_code"] == job_code)
     assert entry["status"] == "rejected"
     assert entry["notes"][-1]["text"] == note
+    assert "posted_by" in entry
 
 
 def test_student_note_multiple_posts_unassigned(monkeypatch):
@@ -1094,6 +1099,255 @@ def test_student_note_multiple_posts_unassigned(monkeypatch):
     assert len(notes) == 2
     assert notes[0]["text"] == note1
     assert notes[-1]["text"] == note2
+
+
+def test_recruiter_can_add_note_for_assigned_student():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    recruiter = {
+        "email": "rec@example.com",
+        "first_name": "Rec",
+        "last_name": "R",
+        "school_code": "1001",
+        "password": "pw",
+        "role": "recruiter",
+    }
+    client.post("/register", json=recruiter)
+    rk = f"user:{recruiter['email']}"
+    rdata = json.loads(main_app.redis_client.get(rk))
+    rdata["approved"] = True
+    rdata["role"] = "recruiter"
+    main_app.redis_client.set(rk, json.dumps(rdata))
+    token = client.post(
+        "/login", json={"email": recruiter["email"], "password": recruiter["password"]}
+    ).json()["token"]
+
+    student = {
+        "first_name": "Stu",
+        "last_name": "Dent",
+        "email": "stu@example.com",
+        "phone": "1",
+        "education_level": "HS",
+        "skills": ["python"],
+        "experience_summary": "s",
+        "interests": "i",
+        "city": "c",
+        "state": "s",
+        "lat": 0.0,
+        "lng": 0.0,
+        "max_travel": 10.0,
+        "school_code": "1001",
+    }
+    main_app.redis_client.set(f"student:{student['email']}", json.dumps(student))
+
+    job = {
+        "job_title": "Dev",
+        "job_description": "desc",
+        "desired_skills": ["python"],
+        "min_pay": 1.0,
+        "max_pay": 2.0,
+        "city": "c",
+        "state": "s",
+        "lat": 0.0,
+        "lng": 0.0,
+    }
+    resp = client.post("/jobs", json=job, headers={"Authorization": f"Bearer {token}"})
+    job_code = resp.json()["job_code"]
+
+    client.post(
+        "/assign",
+        json={"student_email": student["email"], "job_code": job_code},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    note = "follow up"
+    r = client.post(
+        "/student-note",
+        json={"job_code": job_code, "student_email": student["email"], "note": note},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 200
+    stored = json.loads(main_app.redis_client.get(f"job:{job_code}"))
+    notes = stored.get("student_notes", {}).get(student["email"])
+    assert notes[-1]["text"] == note
+
+
+def test_recruiter_note_forbidden_unassigned_or_unowned():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    rec1 = {
+        "email": "rec1@example.com",
+        "first_name": "R1",
+        "last_name": "One",
+        "school_code": "1001",
+        "password": "pw",
+        "role": "recruiter",
+    }
+    rec2 = {
+        "email": "rec2@example.com",
+        "first_name": "R2",
+        "last_name": "Two",
+        "school_code": "1001",
+        "password": "pw",
+        "role": "recruiter",
+    }
+    for rec in (rec1, rec2):
+        client.post("/register", json=rec)
+        rk = f"user:{rec['email']}"
+        rdata = json.loads(main_app.redis_client.get(rk))
+        rdata["approved"] = True
+        rdata["role"] = "recruiter"
+        main_app.redis_client.set(rk, json.dumps(rdata))
+    token1 = client.post(
+        "/login", json={"email": rec1["email"], "password": rec1["password"]}
+    ).json()["token"]
+    token2 = client.post(
+        "/login", json={"email": rec2["email"], "password": rec2["password"]}
+    ).json()["token"]
+
+    student1 = {
+        "first_name": "Stu",
+        "last_name": "One",
+        "email": "s1@example.com",
+        "phone": "1",
+        "education_level": "HS",
+        "skills": ["python"],
+        "experience_summary": "s",
+        "interests": "i",
+        "city": "c",
+        "state": "s",
+        "lat": 0.0,
+        "lng": 0.0,
+        "max_travel": 10.0,
+        "school_code": "1001",
+    }
+    student2 = {**student1, "email": "s2@example.com"}
+    main_app.redis_client.set(f"student:{student1['email']}", json.dumps(student1))
+    main_app.redis_client.set(f"student:{student2['email']}", json.dumps(student2))
+
+    job = {
+        "job_title": "Dev",
+        "job_description": "desc",
+        "desired_skills": ["python"],
+        "min_pay": 1.0,
+        "max_pay": 2.0,
+        "city": "c",
+        "state": "s",
+        "lat": 0.0,
+        "lng": 0.0,
+    }
+    resp = client.post("/jobs", json=job, headers={"Authorization": f"Bearer {token1}"})
+    job_code = resp.json()["job_code"]
+
+    client.post(
+        "/assign",
+        json={"student_email": student1["email"], "job_code": job_code},
+        headers={"Authorization": f"Bearer {token1}"},
+    )
+
+    note = "check"
+    r_unassigned = client.post(
+        "/student-note",
+        json={"job_code": job_code, "student_email": student2["email"], "note": note},
+        headers={"Authorization": f"Bearer {token1}"},
+    )
+    assert r_unassigned.status_code == 403
+
+    r_unowned = client.post(
+        "/student-note",
+        json={"job_code": job_code, "student_email": student1["email"], "note": note},
+        headers={"Authorization": f"Bearer {token2}"},
+    )
+    assert r_unowned.status_code == 403
+
+
+def test_recruiter_cannot_modify_unowned_job():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    rec1 = {
+        "email": "rec1@example.com",
+        "first_name": "R1",
+        "last_name": "One",
+        "school_code": "1001",
+        "password": "pw",
+        "role": "recruiter",
+    }
+    rec2 = {
+        "email": "rec2@example.com",
+        "first_name": "R2",
+        "last_name": "Two",
+        "school_code": "1001",
+        "password": "pw",
+        "role": "recruiter",
+    }
+    for rec in (rec1, rec2):
+        client.post("/register", json=rec)
+        rk = f"user:{rec['email']}"
+        rdata = json.loads(main_app.redis_client.get(rk))
+        rdata["approved"] = True
+        rdata["role"] = "recruiter"
+        main_app.redis_client.set(rk, json.dumps(rdata))
+    token1 = client.post(
+        "/login", json={"email": rec1["email"], "password": rec1["password"]}
+    ).json()["token"]
+    token2 = client.post(
+        "/login", json={"email": rec2["email"], "password": rec2["password"]}
+    ).json()["token"]
+
+    student = {
+        "first_name": "Stu",
+        "last_name": "Dent",
+        "email": "stu@example.com",
+        "phone": "1",
+        "education_level": "HS",
+        "skills": ["python"],
+        "experience_summary": "s",
+        "interests": "i",
+        "city": "c",
+        "state": "s",
+        "lat": 0.0,
+        "lng": 0.0,
+        "max_travel": 10.0,
+        "school_code": "1001",
+    }
+    main_app.redis_client.set(f"student:{student['email']}", json.dumps(student))
+
+    job = {
+        "job_title": "Dev",
+        "job_description": "desc",
+        "desired_skills": ["python"],
+        "min_pay": 1.0,
+        "max_pay": 2.0,
+        "city": "c",
+        "state": "s",
+        "lat": 0.0,
+        "lng": 0.0,
+    }
+    resp = client.post("/jobs", json=job, headers={"Authorization": f"Bearer {token1}"})
+    job_code = resp.json()["job_code"]
+
+    r_assign = client.post(
+        "/assign",
+        json={"student_email": student["email"], "job_code": job_code},
+        headers={"Authorization": f"Bearer {token2}"},
+    )
+    assert r_assign.status_code == 403
+
+    client.post(
+        "/assign",
+        json={"student_email": student["email"], "job_code": job_code},
+        headers={"Authorization": f"Bearer {token1}"},
+    )
+
+    r_reject = client.post(
+        "/reject-assigned",
+        json={"student_email": student["email"], "job_code": job_code},
+        headers={"Authorization": f"Bearer {token2}"},
+    )
+    assert r_reject.status_code == 403
 
 
 def test_student_note_multiple_posts_assigned(monkeypatch):

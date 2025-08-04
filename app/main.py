@@ -1422,6 +1422,11 @@ def assign_student(data: dict, token_data: dict = Depends(get_current_user)):
             raise ValueError
     except (json.JSONDecodeError, ValueError):
         raise HTTPException(status_code=400, detail="Invalid student_notes format")
+    role = token_data.get("role")
+    if role == "recruiter" and job.get("posted_by") != token_data.get("sub"):
+        raise HTTPException(status_code=403, detail="Not authorized to modify this job")
+    if role not in ("admin", "recruiter"):
+        raise HTTPException(status_code=403, detail="Admin privileges required")
     job.setdefault("assigned_students", [])
     if student_email not in job["assigned_students"]:
         job["assigned_students"].append(student_email)
@@ -1487,6 +1492,11 @@ def reject_assigned_student(data: dict, token_data: dict = Depends(get_current_u
             raise ValueError
     except (json.JSONDecodeError, ValueError):
         raise HTTPException(status_code=400, detail="Invalid student_notes format")
+    role = token_data.get("role")
+    if role == "recruiter" and job.get("posted_by") != token_data.get("sub"):
+        raise HTTPException(status_code=403, detail="Not authorized to modify this job")
+    if role not in ("admin", "recruiter"):
+        raise HTTPException(status_code=403, detail="Admin privileges required")
     job.setdefault("assigned_students", [])
     job.setdefault("rejected_students", [])
 
@@ -1536,8 +1546,6 @@ def reject_assigned_student(data: dict, token_data: dict = Depends(get_current_u
 @app.post("/student-note")
 def student_note(data: dict, token_data: dict = Depends(get_current_user)):
     """Create or update a note for a student on a job."""
-    if token_data.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Admin privileges required")
     job_code = data.get("job_code")
     student_email = data.get("student_email")
     note = data.get("note")
@@ -1558,6 +1566,17 @@ def student_note(data: dict, token_data: dict = Depends(get_current_user)):
             raise ValueError
     except (json.JSONDecodeError, ValueError):
         raise HTTPException(status_code=400, detail="Invalid student_notes format")
+
+    role = token_data.get("role")
+    if role == "admin":
+        pass
+    elif role == "recruiter" and (
+        job.get("posted_by") == token_data.get("sub")
+        and student_email in job.get("assigned_students", [])
+    ):
+        pass
+    else:
+        raise HTTPException(status_code=403, detail="Admin privileges required")
 
     # Ensure student_notes is a dict; handle both dict and JSON string forms
     raw_notes = job.get("student_notes", {})
@@ -2268,6 +2287,7 @@ def get_all_students(current_user: dict = Depends(get_current_user)):
                     "max_pay": job.get("max_pay"),
                     "job_description": job.get("job_description"),
                     "status": status,
+                    "posted_by": job.get("posted_by"),
                     "notes": notes,
                     **({"note": latest_note} if latest_note is not None else {}),
                 })
@@ -2360,6 +2380,7 @@ def students_by_school(current_user: dict = Depends(get_current_user)):
                     "max_pay": job.get("max_pay"),
                     "job_description": job.get("job_description"),
                     "status": status,
+                    "posted_by": job.get("posted_by"),
                     "notes": notes,
                     **({"note": latest_note} if latest_note is not None else {}),
                 })
@@ -2419,6 +2440,7 @@ def student_me(current_user: dict = Depends(get_current_user)):
                 "max_pay": job.get("max_pay"),
                 "job_description": job.get("job_description"),
                 "status": status,
+                "posted_by": job.get("posted_by"),
                 "notes": notes,
                 **({"note": latest_note} if latest_note is not None else {}),
             })

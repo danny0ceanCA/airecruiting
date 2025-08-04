@@ -108,20 +108,31 @@ both assigned and rejected students.
 ### Student Notes
 
 Use `POST /student-note` with a `job_code`, the `student_email`, and a `note` to
-create or update recruiter comments for a candidate. Each note is stored as an
-object containing the note text, the authenticated user's email, and an ISO
-timestamp. Notes are accumulated in `student_notes[email]`, which is now a list
-of these objects. This endpoint only updates the `student_notes[email]` field
-and does **not** change any assignment status. The response includes the email
-and the updated list of notes.
+record comments for a candidate. Recruiters may add notes only for jobs they
+created **and** students they have assigned to those jobs. Administrators may
+add notes for any job and are the only role permitted to edit or delete
+existing notes. Each note is stored as an object containing the text, the
+author's email, and an ISO timestamp. The endpoint does not change assignment
+status and returns the updated list of notes.
 
-Example request:
+Example recruiter request:
 
 ```json
 {
   "job_code": "job123",
   "student_email": "alice@example.com",
   "note": "Left a voicemail"
+}
+```
+
+Example admin edit request (`PUT /student-note`):
+
+```json
+{
+  "job_code": "job123",
+  "student_email": "alice@example.com",
+  "index": 0,
+  "note": "Spoke with candidate"
 }
 ```
 
