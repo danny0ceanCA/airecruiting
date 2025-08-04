@@ -1675,6 +1675,7 @@ def test_student_endpoints_handle_string_notes():
     entry = resp_all.json()["students"][0]["assigned_jobs"][0]
     assert entry["notes"] == [{"text": "legacy"}]
     assert entry["note"] == "legacy"
+    assert "posted_by" in entry
 
     counselor = {"role": "career", "approved": True, "institutional_code": "001"}
     main_app.redis_client.set("user:counselor@example.com", json.dumps(counselor))
@@ -1694,6 +1695,7 @@ def test_student_endpoints_handle_string_notes():
     entry = resp_school.json()["students"][0]["assigned_jobs"][0]
     assert entry["notes"] == [{"text": "legacy"}]
     assert entry["note"] == "legacy"
+    assert "posted_by" in entry
 
     token_student = jwt.encode(
         {
@@ -1710,4 +1712,5 @@ def test_student_endpoints_handle_string_notes():
     entry = resp_me.json()["assigned_jobs"][0]
     assert entry["notes"] == [{"text": "legacy"}]
     assert entry["note"] == "legacy"
+    assert "posted_by" in entry
 

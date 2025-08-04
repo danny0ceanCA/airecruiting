@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import api from './api';
 import NoteEditor from './NoteEditor';
 
-function NotesHistoryModal({ notes = [], onClose, isAdmin = false, jobCode, studentEmail }) {
+function NotesHistoryModal({ notes = [], onClose, isAdmin = false, canAdd = false, jobCode, studentEmail }) {
   const [localNotes, setLocalNotes] = useState(notes);
   const [adding, setAdding] = useState(false);
   const [editingIndex, setEditingIndex] = useState(null);
@@ -67,10 +67,10 @@ function NotesHistoryModal({ notes = [], onClose, isAdmin = false, jobCode, stud
       <div className="notes-modal">
         <button className="close-button" onClick={onClose}>X</button>
         <h3>Notes History</h3>
-        {isAdmin && !adding && (
+        {canAdd && !adding && (
           <button onClick={() => setAdding(true)}>Add Note</button>
         )}
-        {isAdmin && adding && (
+        {canAdd && adding && (
           <NoteEditor
             jobCode={jobCode}
             email={studentEmail}
