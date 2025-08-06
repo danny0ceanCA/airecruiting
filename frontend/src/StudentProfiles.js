@@ -467,7 +467,7 @@ function StudentProfiles() {
       <div className="tab-content">
         {activeTab === 'new' && (
           <div className="form-panel">
-            <form onSubmit={handleSubmit}>
+            <form className="profile-form" onSubmit={handleSubmit}>
               <h2>{isEditing ? 'Edit Student Profile' : 'New Student Profile'}</h2>
             <label htmlFor="first_name">First Name</label>
             <input id="first_name" name="first_name" type="text" value={formData.first_name} onChange={handleChange} />
