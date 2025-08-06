@@ -1175,7 +1175,7 @@ if (shouldRedirect) {
                               <div className="form-row">
                                 <label>License</label>
                                 <select
-                                  value={editedJobs[job.job_code]?.required_license ?? job.required_license || ''}
+                                  value={editedJobs[job.job_code]?.required_license ?? (job.required_license || '')}
                                   onChange={(e) =>
                                     setEditedJobs((prev) => ({
                                       ...prev,
