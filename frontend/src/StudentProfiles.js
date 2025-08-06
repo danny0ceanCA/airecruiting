@@ -467,7 +467,8 @@ function StudentProfiles() {
       <div className="tab-content">
         {activeTab === 'new' && (
           <div className="form-panel">
-            <h2>{isEditing ? 'Edit Student Profile' : 'New Student Profile'}</h2>
+            <form onSubmit={handleSubmit}>
+              <h2>{isEditing ? 'Edit Student Profile' : 'New Student Profile'}</h2>
             <label htmlFor="first_name">First Name</label>
             <input id="first_name" name="first_name" type="text" value={formData.first_name} onChange={handleChange} />
             <label htmlFor="last_name">Last Name</label>
@@ -514,8 +515,8 @@ function StudentProfiles() {
               )}
             </button>
             {formError && <p className="error">{formError}</p>}
-          </form>
-        </div>
+            </form>
+          </div>
         )}
         {activeTab === 'students' && (
         <div
