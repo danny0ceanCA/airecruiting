@@ -1279,7 +1279,7 @@ if (shouldRedirect) {
                     </tr>
                   ) : (
                     <tr className="match-table-row">
-                      <td colSpan={!isRecruiter ? 8 : 7}>
+                      <td colSpan={!isRecruiter ? 9 : 8}>
                         {activeSubtab[job.job_code] === 'matches' && renderMatches(job)}
                         {activeSubtab[job.job_code] === 'assigned' && renderAssigned(job)}
                         {activeSubtab[job.job_code] === 'placed' && renderPlaced(job)}
