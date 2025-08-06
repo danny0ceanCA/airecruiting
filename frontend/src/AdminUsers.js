@@ -9,6 +9,10 @@ function AdminUsers() {
   const [message, setMessage] = useState('');
   const [newCode, setNewCode] = useState('');
   const [newLabel, setNewLabel] = useState('');
+  const [licenses, setLicenses] = useState([]);
+  const [newLicenseCode, setNewLicenseCode] = useState('');
+  const [newLicenseLabel, setNewLicenseLabel] = useState('');
+  const [editLicenseLabels, setEditLicenseLabels] = useState({});
   const [activeTab, setActiveTab] = useState('users');
   const [editLabels, setEditLabels] = useState({});
   const [feeds, setFeeds] = useState([]);
@@ -42,6 +46,15 @@ function AdminUsers() {
     }
   };
 
+  const fetchLicenses = async () => {
+    try {
+      const resp = await api.get('/licenses');
+      setLicenses(resp.data.licenses || []);
+    } catch (err) {
+      console.error('Failed to fetch licenses', err);
+    }
+  };
+
   const fetchFeeds = async () => {
     try {
       const resp = await api.get('/rss-feeds');
@@ -55,6 +68,7 @@ function AdminUsers() {
     if (token) fetchUsers();
     fetchCodes();
     fetchFeeds();
+    fetchLicenses();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleChange = (email, field, value) => {
@@ -173,6 +187,49 @@ function AdminUsers() {
     }
   };
 
+  const handleAddLicense = async () => {
+    try {
+      await api.post(
+        '/admin/licenses',
+        { code: newLicenseCode, label: newLicenseLabel },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setNewLicenseCode('');
+      setNewLicenseLabel('');
+      fetchLicenses();
+      showToast('License added!');
+    } catch (err) {
+      console.error('Failed to add license', err);
+    }
+  };
+
+  const handleUpdateLicense = async (code) => {
+    try {
+      await api.put(
+        `/admin/licenses/${code}`,
+        { label: editLicenseLabels[code] },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      fetchLicenses();
+      showToast('License updated!');
+    } catch (err) {
+      console.error('Failed to update license', err);
+    }
+  };
+
+  const handleDeleteLicense = async (code) => {
+    if (!window.confirm(`Delete license ${code}?`)) return;
+    try {
+      await api.delete(`/admin/licenses/${code}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      fetchLicenses();
+      showToast('License deleted!');
+    } catch (err) {
+      console.error('Failed to delete license', err);
+    }
+  };
+
   const handleRefreshFeeds = async () => {
     try {
       await api.get('/nursing-news?force_refresh=true');
@@ -229,6 +286,12 @@ function AdminUsers() {
           onClick={() => setActiveTab('feeds')}
         >
           RSS Feeds
+        </button>
+        <button
+          className={`tab ${activeTab === 'licenses' ? 'active' : ''}`}
+          onClick={() => setActiveTab('licenses')}
+        >
+          Licenses
         </button>
         <button
           className={`tab ${activeTab === 'tests' ? 'active' : ''}`}
@@ -413,6 +476,60 @@ function AdminUsers() {
                       <button
                         className="delete-button"
                         onClick={() => handleDeleteFeed(f.name)}
+                        style={{ marginLeft: '0.5rem' }}
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {activeTab === 'licenses' && (
+          <div>
+            <div className="add-code-form">
+              <input
+                type="text"
+                placeholder="Code"
+                value={newLicenseCode}
+                onChange={(e) => setNewLicenseCode(e.target.value)}
+              />
+              <input
+                type="text"
+                placeholder="Label"
+                value={newLicenseLabel}
+                onChange={(e) => setNewLicenseLabel(e.target.value)}
+              />
+              <button onClick={handleAddLicense}>Add License</button>
+            </div>
+            <table className="users-table">
+              <thead>
+                <tr>
+                  <th>Code</th>
+                  <th>Label</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {licenses.map((l) => (
+                  <tr key={l.code}>
+                    <td>{l.code}</td>
+                    <td>
+                      <input
+                        type="text"
+                        value={editLicenseLabels[l.code] ?? l.label}
+                        onChange={(e) =>
+                          setEditLicenseLabels((prev) => ({ ...prev, [l.code]: e.target.value }))
+                        }
+                      />
+                    </td>
+                    <td>
+                      <button onClick={() => handleUpdateLicense(l.code)}>Save</button>
+                      <button
+                        className="delete-button"
+                        onClick={() => handleDeleteLicense(l.code)}
                         style={{ marginLeft: '0.5rem' }}
                       >
                         Delete

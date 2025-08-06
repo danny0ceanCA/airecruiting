@@ -105,7 +105,7 @@ def test_create_job_and_match(monkeypatch):
         "last_name": "Doe",
         "email": "john@example.com",
         "phone": "123",
-        "education_level": "College",
+        "license": "lvn",
         "skills": ["python"],
         "experience_summary": "summary1",
         "interests": "A",
@@ -120,7 +120,7 @@ def test_create_job_and_match(monkeypatch):
         "last_name": "Roe",
         "email": "jane@example.com",
         "phone": "456",
-        "education_level": "College",
+        "license": "lvn",
         "skills": ["java"],
         "experience_summary": "summary2",
         "interests": "B",
@@ -219,6 +219,74 @@ def test_get_match_results_status_placed(monkeypatch):
     assert data["status"] == "placed"
 
 
+def test_match_filters_by_license(monkeypatch):
+    token = login_admin()
+
+    class FakeResp:
+        def __init__(self, emb):
+            self.data = [type("obj", (object,), {"embedding": emb})]
+
+    monkeypatch.setattr(main_app, "get_driving_distance_miles", lambda *a, **k: 10.0)
+    monkeypatch.setattr(main_app.client.embeddings, "create", lambda input, model: FakeResp([1.0, 0.0]))
+
+    s1 = {
+        "first_name": "John",
+        "last_name": "Doe",
+        "email": "john2@example.com",
+        "phone": "123",
+        "license": "lvn",
+        "skills": ["python"],
+        "experience_summary": "summary1",
+        "interests": "A",
+        "city": "City",
+        "state": "ST",
+        "lat": 0.0,
+        "lng": 0.0,
+        "max_travel": 100.0,
+    }
+    s2 = {
+        "first_name": "Jane",
+        "last_name": "Roe",
+        "email": "jane2@example.com",
+        "phone": "456",
+        "license": "ma",
+        "skills": ["python"],
+        "experience_summary": "summary2",
+        "interests": "B",
+        "city": "City",
+        "state": "ST",
+        "lat": 0.0,
+        "lng": 0.0,
+        "max_travel": 100.0,
+    }
+
+    client.post("/students", json=s1, headers={"Authorization": f"Bearer {token}"})
+    client.post("/students", json=s2, headers={"Authorization": f"Bearer {token}"})
+
+    job = {
+        "job_title": "Dev",
+        "job_description": "Need python dev",
+        "desired_skills": ["python"],
+        "min_pay": 1.0,
+        "max_pay": 2.0,
+        "city": "City",
+        "state": "ST",
+        "lat": 0.0,
+        "lng": 0.0,
+        "required_license": "lvn",
+    }
+
+    resp = client.post("/jobs", json=job, headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200
+    job_code = resp.json()["job_code"]
+
+    match_resp = client.post("/match", json={"job_code": job_code}, headers={"Authorization": f"Bearer {token}"})
+    assert match_resp.status_code == 200
+    data = match_resp.json()["matches"]
+    assert len(data) == 1
+    assert data[0]["email"] == "john2@example.com"
+
+
 def test_match_respects_travel_distance(monkeypatch):
     token = login_admin()
 
@@ -259,7 +327,7 @@ def test_match_respects_travel_distance(monkeypatch):
         "last_name": "Doe",
         "email": "john@example.com",
         "phone": "123",
-        "education_level": "College",
+        "license": "lvn",
         "skills": ["python"],
         "experience_summary": "summary1",
         "interests": "A",
@@ -275,7 +343,7 @@ def test_match_respects_travel_distance(monkeypatch):
         "last_name": "Roe",
         "email": "jane@example.com",
         "phone": "456",
-        "education_level": "College",
+        "license": "lvn",
         "skills": ["java"],
         "experience_summary": "summary2",
         "interests": "B",
@@ -377,7 +445,7 @@ def test_match_ignores_label_changes(monkeypatch):
         "last_name": "D",
         "email": applicant["email"],
         "phone": "123",
-        "education_level": "College",
+        "license": "lvn",
         "skills": ["python"],
         "experience_summary": "exp",
         "interests": "int",
@@ -506,7 +574,7 @@ def test_rematches_endpoint(monkeypatch):
         "last_name": "Doe",
         "email": "john@example.com",
         "phone": "123",
-        "education_level": "College",
+        "license": "lvn",
         "skills": ["python"],
         "experience_summary": "summary",
         "interests": "i",
@@ -558,7 +626,7 @@ def test_not_interested_filters_out_student(monkeypatch):
         "last_name": "Doe",
         "email": "john@example.com",
         "phone": "123",
-        "education_level": "College",
+        "license": "lvn",
         "skills": ["python"],
         "experience_summary": "s1",
         "interests": "i",
@@ -574,7 +642,7 @@ def test_not_interested_filters_out_student(monkeypatch):
         "last_name": "Roe",
         "email": "jane@example.com",
         "phone": "456",
-        "education_level": "College",
+        "license": "lvn",
         "skills": ["java"],
         "experience_summary": "s2",
         "interests": "i",
@@ -681,7 +749,7 @@ def test_reject_assigned(monkeypatch):
         "last_name": "Doe",
         "email": "john@example.com",
         "phone": "123",
-        "education_level": "College",
+        "license": "lvn",
         "skills": ["python"],
         "experience_summary": "s",
         "interests": "i",
@@ -781,7 +849,7 @@ def test_student_note_school_code_fallback():
         "last_name": "Dent",
         "email": "student@example.com",
         "phone": "123",
-        "education_level": "HS",
+        "license": "ma",
         "skills": ["python"],
         "experience_summary": "s",
         "interests": "i",
@@ -842,7 +910,7 @@ def test_assign_note_persists_on_reject(monkeypatch):
         "last_name": "Doe",
         "email": "john@example.com",
         "phone": "123",
-        "education_level": "College",
+        "license": "lvn",
         "skills": ["python"],
         "experience_summary": "s",
         "interests": "i",
@@ -905,7 +973,7 @@ def test_student_note_unassigned(monkeypatch):
         "last_name": "Doe",
         "email": "john@example.com",
         "phone": "123",
-        "education_level": "College",
+        "license": "lvn",
         "skills": ["python"],
         "experience_summary": "s",
         "interests": "i",
@@ -966,7 +1034,7 @@ def test_student_note_assigned(monkeypatch):
         "last_name": "Doe",
         "email": "john@example.com",
         "phone": "123",
-        "education_level": "College",
+        "license": "lvn",
         "skills": ["python"],
         "experience_summary": "s",
         "interests": "i",
@@ -1055,7 +1123,7 @@ def test_student_note_multiple_posts_unassigned(monkeypatch):
         "last_name": "Doe",
         "email": "john@example.com",
         "phone": "123",
-        "education_level": "College",
+        "license": "lvn",
         "skills": ["python"],
         "experience_summary": "s",
         "interests": "i",
@@ -1128,7 +1196,7 @@ def test_recruiter_can_add_note_for_assigned_student():
         "last_name": "Dent",
         "email": "stu@example.com",
         "phone": "1",
-        "education_level": "HS",
+        "license": "ma",
         "skills": ["python"],
         "experience_summary": "s",
         "interests": "i",
@@ -1212,7 +1280,7 @@ def test_recruiter_note_forbidden_unassigned_or_unowned():
         "last_name": "One",
         "email": "s1@example.com",
         "phone": "1",
-        "education_level": "HS",
+        "license": "ma",
         "skills": ["python"],
         "experience_summary": "s",
         "interests": "i",
@@ -1302,7 +1370,7 @@ def test_recruiter_cannot_modify_unowned_job():
         "last_name": "Dent",
         "email": "stu@example.com",
         "phone": "1",
-        "education_level": "HS",
+        "license": "ma",
         "skills": ["python"],
         "experience_summary": "s",
         "interests": "i",
@@ -1368,7 +1436,7 @@ def test_student_note_multiple_posts_assigned(monkeypatch):
         "last_name": "Doe",
         "email": "john@example.com",
         "phone": "123",
-        "education_level": "College",
+        "license": "lvn",
         "skills": ["python"],
         "experience_summary": "s",
         "interests": "i",
