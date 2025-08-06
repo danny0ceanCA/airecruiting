@@ -23,14 +23,14 @@ lists. Include these sections:
    strengths and fit for the role.
 3. **Skills** - present as a bullet list.
 4. **Experience** - bullet points for each relevant job or role.
-5. **Education** - mention the education level.
+5. **License** - mention the license type.
 
 Return only valid HTML using <h2> and <ul> elements. Do not include outer
 <html> or <body> tags.
 
 Student Profile:
 Name: {student.get('first_name', '')} {student.get('last_name', '')}
-{contact_lines}Education Level: {student.get('education_level', '')}
+{contact_lines}License: {student.get('license') or student.get('education_level', '')}
 Skills: {', '.join(student.get('skills', []))}
 Experience Summary: {student.get('experience_summary', '')}
 Interests: {student.get('interests', '')}

@@ -12,8 +12,17 @@ jest.mock('axios', () => {
 
 jest.mock('./utils/loadGoogleMaps', () => jest.fn(cb => cb && cb()));
 
+beforeEach(() => {
+  localStorage.setItem('studentTourSeen', 'true');
+  api.get.mockImplementation((url) => {
+    if (url === '/licenses') {
+      return Promise.resolve({ data: { licenses: [] } });
+    }
+    return Promise.resolve({ data: { students: [] } });
+  });
+});
+
 test('renders StudentProfiles without errors', () => {
-  api.get.mockResolvedValueOnce({ data: { students: [] } });
   expect(() => {
     render(
       <BrowserRouter>
@@ -26,26 +35,31 @@ test('renders StudentProfiles without errors', () => {
 test('opens notes history modal when View Notes clicked', async () => {
   const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYWRtaW4ifQ.signature';
   localStorage.setItem('token', token);
-  api.get.mockResolvedValueOnce({
-    data: {
-      students: [
-        {
-          first_name: 'F',
-          last_name: 'L',
-          email: 's@example.com',
-          institutional_code: 'ABC',
-          assigned_jobs: [
-            {
-              job_code: 'J1',
-              job_title: 'Job 1',
-              status: 'open',
-              notes: [{ text: 'Test note' }]
-            }
-          ],
-          placed_jobs: []
-        }
-      ]
+  api.get.mockImplementation((url) => {
+    if (url === '/licenses') {
+      return Promise.resolve({ data: { licenses: [] } });
     }
+    return Promise.resolve({
+      data: {
+        students: [
+          {
+            first_name: 'F',
+            last_name: 'L',
+            email: 's@example.com',
+            institutional_code: 'ABC',
+            assigned_jobs: [
+              {
+                job_code: 'J1',
+                job_title: 'Job 1',
+                status: 'open',
+                notes: [{ text: 'Test note' }]
+              }
+            ],
+            placed_jobs: []
+          }
+        ]
+      }
+    });
   });
   render(
     <BrowserRouter>

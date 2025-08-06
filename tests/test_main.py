@@ -358,7 +358,7 @@ def test_upload_students(monkeypatch):
     monkeypatch.setattr(main_app.redis_client, "exists", lambda key: False)
 
     csv_data = (
-        "first_name,last_name,email,phone,education_level,skills,experience_summary,interests,city,state,lat,lng,max_travel\n"
+        "first_name,last_name,email,phone,license,skills,experience_summary,interests,city,state,lat,lng,max_travel\n"
         "John,Doe,john@example.com,123,College,python,summary,coding,City,ST,0,0,100\n"
         "Jane,Smith,jane@example.com,456,College,sql,summary2,data,City,ST,0,0,100\n"
     )
@@ -457,8 +457,8 @@ def test_students_all_admin_access():
     init_default_admin()
 
     # Seed some students
-    s1 = {"first_name": "One", "last_name": "A", "email": "one@example.com", "education_level": "College"}
-    s2 = {"first_name": "Two", "last_name": "B", "email": "two@example.com", "education_level": "HS"}
+    s1 = {"first_name": "One", "last_name": "A", "email": "one@example.com", "license": "lvn"}
+    s2 = {"first_name": "Two", "last_name": "B", "email": "two@example.com", "license": "ma"}
     main_app.redis_client.set("student:one@example.com", json.dumps(s1))
     main_app.redis_client.set("student:two@example.com", json.dumps(s2))
 
@@ -508,7 +508,7 @@ def test_update_student(monkeypatch):
         "last_name": "Name",
         "email": "stud@example.com",
         "phone": "000",
-        "education_level": "HS",
+        "license": "ma",
         "skills": ["c"],
         "experience_summary": "old",
         "interests": "old",
@@ -536,7 +536,7 @@ def test_update_student(monkeypatch):
         "last_name": "Name",
         "email": "stud@example.com",
         "phone": "111",
-        "education_level": "College",
+        "license": "lvn",
         "skills": ["python"],
         "experience_summary": "new summary",
         "interests": "coding",
@@ -557,7 +557,7 @@ def test_update_student(monkeypatch):
 
     saved = json.loads(main_app.redis_client.get("student:stud@example.com"))
     assert saved["first_name"] == "New"
-    assert saved["education_level"] == "College"
+    assert saved["license"] == "lvn"
     assert saved["embedding"] == [1.0, 2.0]
     assert saved["school_code"] == "SC1"
 
@@ -1180,7 +1180,7 @@ def test_students_me_endpoint(monkeypatch):
         "last_name": "User",
         "email": applicant["email"],
         "phone": "123",
-        "education_level": "College",
+        "license": "lvn",
         "skills": ["python"],
         "experience_summary": "summary",
         "interests": "dev",
@@ -1591,7 +1591,7 @@ def test_students_by_school_fallback():
         "last_name": "Dent",
         "email": "student@example.com",
         "phone": "123",
-        "education_level": "HS",
+        "license": "ma",
         "skills": [],
         "experience_summary": "",
         "interests": "",

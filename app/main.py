@@ -50,6 +50,34 @@ def init_default_school_codes():
             redis_client.set(key, label)
 
 
+DEFAULT_LICENSES: dict[str, str] = {
+    "lvn": "Licensed Vocational Nurse",
+    "ma": "Medical Assistant",
+}
+
+
+def init_default_licenses() -> None:
+    """Seed Redis with default license codes."""
+    for code, label in DEFAULT_LICENSES.items():
+        key = f"license:{code}"
+        existing = redis_client.get(key)
+        if existing != label:
+            redis_client.set(key, label)
+
+
+def all_licenses() -> dict[str, str]:
+    """Return mapping of all configured licenses."""
+    licenses: dict[str, str] = {}
+    for key in redis_client.scan_iter("license:*"):
+        label = redis_client.get(key)
+        if label is not None:
+            code = key.split("license:", 1)[1]
+            licenses[code] = label
+    for c, l in DEFAULT_LICENSES.items():
+        licenses.setdefault(c, l)
+    return licenses
+
+
 def get_school_label(code: str) -> str | None:
     """Return label for a school code from redis or defaults."""
     label = redis_client.get(f"school_code:{code}")
@@ -304,6 +332,7 @@ def init_default_admin():
         )
         print("Default admin user created")
     init_default_school_codes()
+    init_default_licenses()
 
 @app.on_event("startup")
 def on_startup():
@@ -322,6 +351,7 @@ def on_startup():
         print(f"[startup] Using SITE_BASE_URL={SITE_BASE_URL}")
     init_default_admin()
     init_default_school_codes()
+    init_default_licenses()
     init_default_rss_feeds()
     keys = redis_client.keys("match_results:*")
     print(f"🔎 Found {len(keys)} saved match sets at startup.")
@@ -358,7 +388,7 @@ class StudentRequest(BaseModel):
     last_name: str
     email: EmailStr
     phone: str
-    education_level: str
+    license: str = Field(alias="education_level")
     skills: list[str]
     experience_summary: str
     interests: str
@@ -367,6 +397,8 @@ class StudentRequest(BaseModel):
     lat: float
     lng: float
     max_travel: float
+
+    model_config = ConfigDict(populate_by_name=True)
 
     @field_validator("max_travel")
     @classmethod
@@ -381,6 +413,7 @@ class JobRequest(BaseModel):
     desired_skills: list[str]
     job_code: Optional[str] = None
     source: str | None = None
+    required_license: str | None = None
     min_pay: float
     max_pay: float
     city: str
@@ -645,6 +678,54 @@ def delete_school_code(code: str, current_user: dict = Depends(get_current_user)
     return {"message": "School code deleted"}
 
 
+class LicenseRequest(BaseModel):
+    code: str
+    label: str
+
+
+class UpdateLicenseRequest(BaseModel):
+    label: str
+
+
+@app.get("/licenses")
+def list_licenses():
+    licenses = [{"code": c, "label": l} for c, l in all_licenses().items()]
+    return {"licenses": licenses}
+
+
+@app.post("/admin/licenses")
+def add_license(req: LicenseRequest, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+    key = f"license:{req.code}"
+    if redis_client.exists(key):
+        raise HTTPException(status_code=400, detail="License already exists")
+    redis_client.set(key, req.label)
+    return {"message": "License added"}
+
+
+@app.put("/admin/licenses/{code}")
+def update_license(code: str, req: UpdateLicenseRequest, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+    key = f"license:{code}"
+    if not redis_client.exists(key):
+        raise HTTPException(status_code=404, detail="License not found")
+    redis_client.set(key, req.label)
+    return {"message": "License updated"}
+
+
+@app.delete("/admin/licenses/{code}")
+def delete_license(code: str, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+    key = f"license:{code}"
+    if not redis_client.exists(key):
+        raise HTTPException(status_code=404, detail="License not found")
+    redis_client.delete(key)
+    return {"message": "License deleted"}
+
+
 class RSSFeedRequest(BaseModel):
     name: str
     url: str
@@ -706,7 +787,7 @@ async def create_student(request: Request, current_user: dict = Depends(get_curr
             last_name=form.get("last_name"),
             email=form.get("email"),
             phone=form.get("phone"),
-            education_level=form.get("education_level"),
+            license=form.get("license") or form.get("education_level"),
             skills=[s.strip() for s in skills_field.split(",") if s.strip()],
             experience_summary=form.get("experience_summary"),
             interests=form.get("interests"),
@@ -754,7 +835,7 @@ async def create_student(request: Request, current_user: dict = Depends(get_curr
             instructions = (
                 "Extract a student profile from the following resume text. "
                 "Return JSON with these fields: first_name, last_name, email, phone, "
-                "education_level, skills (as a list), experience_summary, and interests (as a list)."
+                "license, skills (as a list), experience_summary, and interests (as a list)."
             )
             completion = client.chat.completions.create(
                 model="gpt-4o",
@@ -864,7 +945,7 @@ def upload_students(file: UploadFile = File(...), current_user: dict = Depends(g
                 last_name=row["last_name"],
                 email=row["email"],
                 phone=row["phone"],
-                education_level=row["education_level"],
+                license=row.get("license") or row.get("education_level"),
                 skills=skills,
                 experience_summary=row["experience_summary"],
                 interests=row["interests"],
@@ -997,6 +1078,8 @@ async def _perform_match_async(job_code: str, send_emails: bool = True, enq_time
     job = json.loads(raw)
     job.setdefault("uninterested_students", [])
 
+    required_license = job.get("required_license")
+
     poster_code = None
     poster_raw = redis_client.get(f"user:{job.get('posted_by')}")
     if poster_raw:
@@ -1040,6 +1123,9 @@ async def _perform_match_async(job_code: str, send_emails: bool = True, enq_time
             if not emb:
                 continue
             if student.get("email") in job.get("uninterested_students", []):
+                continue
+            student_license = student.get("license") or student.get("education_level")
+            if required_license and student_license != required_license:
                 continue
             student_user_raw = redis_client.get(f"user:{student.get('email')}")
             if student_user_raw and poster_code:
@@ -1100,6 +1186,9 @@ async def _perform_match_async(job_code: str, send_emails: bool = True, enq_time
             continue
         ucode = udata.get("institutional_code") or udata.get("school_code")
         if ucode != poster_code:
+            continue
+        user_license = udata.get("license") or udata.get("education_level")
+        if required_license and user_license != required_license:
             continue
         email = ukey.split("user:", 1)[1]
         if email in job.get("uninterested_students", []):
@@ -1294,6 +1383,7 @@ def get_metrics(current_user: dict = Depends(get_current_user)):
             or skey.startswith("job:")
             or skey.startswith("metrics:")
             or skey.startswith("school_code:")
+            or skey.startswith("license:")
         ):
             continue
         if redis_client.get(key):
@@ -2253,7 +2343,7 @@ def get_all_students(current_user: dict = Depends(get_current_user)):
             "last_name": student.get("last_name"),
             "email": email,
             "phone": student.get("phone"),
-            "education_level": student.get("education_level"),
+            "license": student.get("license") or student.get("education_level"),
             "skills": student.get("skills"),
             "experience_summary": student.get("experience_summary"),
             "interests": student.get("interests"),
@@ -2349,7 +2439,7 @@ def students_by_school(current_user: dict = Depends(get_current_user)):
             "last_name": student.get("last_name"),
             "email": email,
             "phone": student.get("phone"),
-            "education_level": student.get("education_level"),
+            "license": student.get("license") or student.get("education_level"),
             "skills": student.get("skills"),
             "experience_summary": student.get("experience_summary"),
             "interests": student.get("interests"),
@@ -2446,17 +2536,15 @@ def student_me(current_user: dict = Depends(get_current_user)):
             })
 
     info = {
-        **{k: student.get(k) for k in [
-            "first_name",
-            "last_name",
-            "email",
-            "phone",
-            "education_level",
-            "skills",
-            "experience_summary",
-            "interests",
-            "institutional_code",
-        ]},
+        "first_name": student.get("first_name"),
+        "last_name": student.get("last_name"),
+        "email": student.get("email"),
+        "phone": student.get("phone"),
+        "license": student.get("license") or student.get("education_level"),
+        "skills": student.get("skills"),
+        "experience_summary": student.get("experience_summary"),
+        "interests": student.get("interests"),
+        "institutional_code": student.get("institutional_code"),
         "assigned_jobs": assigned_jobs,
         "placed_jobs": placed,
         "assigned_job_code": next((j["job_code"] for j in assigned_jobs if j["status"] == "assigned"), None),
