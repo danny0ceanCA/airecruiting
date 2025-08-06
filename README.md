@@ -74,7 +74,7 @@ register directly.
 
 Authenticated users can submit student information using `POST /students`.
 Required fields now include location and travel distance:
-`first_name`, `last_name`, `email`, `phone`, `education_level`, `skills`
+`first_name`, `last_name`, `email`, `phone`, `license`, `skills`
 (list of strings), `experience_summary`, `interests`, `city`, `state`, `lat`,
 `lng`, and `max_travel` (in miles). The endpoint combines these details,
 generates an OpenAI embedding and stores the result in Redis keyed by the

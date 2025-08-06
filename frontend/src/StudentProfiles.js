@@ -16,7 +16,7 @@ function StudentProfiles() {
     last_name: '',
     email: '',
     phone: '',
-    education_level: '',
+    license: '',
     skills: '',
     experience_summary: '',
     interests: '',
@@ -26,6 +26,7 @@ function StudentProfiles() {
     lng: '',
     max_travel: ''
   });
+  const [licenses, setLicenses] = useState([]);
   const [formError, setFormError] = useState('');
   const [resumeFile, setResumeFile] = useState(null);
   const [toast, setToast] = useState('');
@@ -157,6 +158,15 @@ function StudentProfiles() {
     }
   };
 
+  const fetchLicenses = async () => {
+    try {
+      const resp = await api.get('/licenses');
+      setLicenses(resp.data.licenses || []);
+    } catch (err) {
+      console.error('Failed to fetch licenses:', err);
+    }
+  };
+
   useEffect(() => {
     if (!token) {
       navigate('/login');
@@ -173,6 +183,7 @@ function StudentProfiles() {
       navigate('/login');
       return;
     }
+    fetchLicenses();
     fetchStudents();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -200,7 +211,7 @@ function StudentProfiles() {
         last_name: student.last_name || '',
         email: student.email || '',
         phone: student.phone || '',
-        education_level: student.education_level || '',
+        license: student.license || student.education_level || '',
         skills: Array.isArray(student.skills)
           ? student.skills.join(', ')
           : student.skills || '',
@@ -316,7 +327,7 @@ function StudentProfiles() {
       last_name: formData.last_name,
       email: formData.email,
       phone: formData.phone,
-      education_level: formData.education_level,
+      license: formData.license,
       skills: formData.skills.split(',').map((s) => s.trim()),
       experience_summary: formData.experience_summary,
       interests: formData.interests.trim(),
@@ -343,7 +354,7 @@ function StudentProfiles() {
         last_name: '',
         email: '',
         phone: '',
-        education_level: '',
+        license: '',
         skills: '',
         experience_summary: '',
         interests: '',
@@ -457,30 +468,33 @@ function StudentProfiles() {
         {activeTab === 'new' && (
           <div className="form-panel">
             <h2>{isEditing ? 'Edit Student Profile' : 'New Student Profile'}</h2>
-            <form className="profile-form" onSubmit={handleSubmit}>
-            {['first_name', 'last_name', 'email', 'phone', 'education_level', 'skills', 'experience_summary', 'interests', 'city', 'state', 'max_travel'].map((field) => (
-              <React.Fragment key={field}>
-                <label htmlFor={field}>{field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</label>
-                {field === 'experience_summary' ? (
-                  <textarea
-                    id={field}
-                    name={field}
-                    value={formData[field]}
-                    onChange={handleChange}
-                  />
-                ) : (
-                  <input
-                    id={field}
-                    name={field}
-                    type={field === 'max_travel' ? 'number' : 'text'}
-                    value={formData[field]}
-                    onChange={handleChange}
-                    readOnly={['state'].includes(field)}
-                    ref={field === 'city' ? cityRef : null}
-                  />
-                )}
-              </React.Fragment>
-            ))}
+            <label htmlFor="first_name">First Name</label>
+            <input id="first_name" name="first_name" type="text" value={formData.first_name} onChange={handleChange} />
+            <label htmlFor="last_name">Last Name</label>
+            <input id="last_name" name="last_name" type="text" value={formData.last_name} onChange={handleChange} />
+            <label htmlFor="email">Email</label>
+            <input id="email" name="email" type="text" value={formData.email} onChange={handleChange} />
+            <label htmlFor="phone">Phone</label>
+            <input id="phone" name="phone" type="text" value={formData.phone} onChange={handleChange} />
+            <label htmlFor="license">License</label>
+            <select id="license" name="license" value={formData.license} onChange={handleChange}>
+              <option value="">Select...</option>
+              {licenses.map((l) => (
+                <option key={l.code} value={l.code}>{l.label}</option>
+              ))}
+            </select>
+            <label htmlFor="skills">Skills</label>
+            <input id="skills" name="skills" type="text" value={formData.skills} onChange={handleChange} />
+            <label htmlFor="experience_summary">Experience Summary</label>
+            <textarea id="experience_summary" name="experience_summary" value={formData.experience_summary} onChange={handleChange} />
+            <label htmlFor="interests">Interests</label>
+            <input id="interests" name="interests" type="text" value={formData.interests} onChange={handleChange} />
+            <label htmlFor="city">City</label>
+            <input id="city" name="city" type="text" value={formData.city} onChange={handleChange} ref={cityRef} />
+            <label htmlFor="state">State</label>
+            <input id="state" name="state" type="text" value={formData.state} onChange={handleChange} readOnly />
+            <label htmlFor="max_travel">Max Travel</label>
+            <input id="max_travel" name="max_travel" type="number" value={formData.max_travel} onChange={handleChange} />
             <input type="hidden" id="lat" name="lat" value={formData.lat} readOnly />
             <input type="hidden" id="lng" name="lng" value={formData.lng} readOnly />
             {/* Uploading documents is temporarily disabled */}

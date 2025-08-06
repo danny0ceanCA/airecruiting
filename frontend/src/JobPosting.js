@@ -12,6 +12,7 @@ function JobPosting() {
     job_title: '',
     job_description: '',
     desired_skills: '',
+    required_license: '',
     source: '',
     min_pay: '',
     max_pay: '',
@@ -38,6 +39,12 @@ function JobPosting() {
   const [generatedResumes, setGeneratedResumes] = useState({});
   const [previewingResumes, setPreviewingResumes] = useState({});
   const [activeTab, setActiveTab] = useState('jobs');
+  const [licenses, setLicenses] = useState([]);
+
+  const licenseLabel = (code) => {
+    const l = licenses.find((x) => x.code === code);
+    return l ? l.label : code;
+  };
   const [editingNotes, setEditingNotes] = useState({});
 
   const locationRef = useRef(null);
@@ -60,6 +67,18 @@ function JobPosting() {
   useEffect(() => {
     loadGoogleMaps(initLocationAutocomplete);
   }, [activeTab]);
+
+  useEffect(() => {
+    const loadLicenses = async () => {
+      try {
+        const resp = await api.get('/licenses');
+        setLicenses(resp.data.licenses || []);
+      } catch (err) {
+        console.error('Failed to fetch licenses', err);
+      }
+    };
+    loadLicenses();
+  }, []);
 
   const token = localStorage.getItem('token');
   const decoded = token ? jwtDecode(token) : {};
@@ -152,6 +171,7 @@ if (shouldRedirect) {
         job_title: formData.job_title,
         job_description: formData.job_description,
         desired_skills: formData.desired_skills.split(',').map((s) => s.trim()).filter(Boolean),
+        required_license: formData.required_license,
         min_pay: min,
         max_pay: max,
         city: formData.city,
@@ -167,7 +187,7 @@ if (shouldRedirect) {
       });
       setMessage(`Job posted successfully! Job code: ${resp.data.job_code}`);
       setFormData({
-        job_title: '', job_description: '', desired_skills: '', source: '', min_pay: '', max_pay: '', city: '', state: '', lat: '', lng: ''
+        job_title: '', job_description: '', desired_skills: '', required_license: '', source: '', min_pay: '', max_pay: '', city: '', state: '', lat: '', lng: ''
       });
       fetchJobs();
     } catch (err) {
@@ -891,6 +911,20 @@ if (shouldRedirect) {
                   onChange={handleChange}
                 />
               </div>
+              <div className="form-field">
+                <label htmlFor="required_license">License</label>
+                <select
+                  id="required_license"
+                  name="required_license"
+                  value={formData.required_license}
+                  onChange={handleChange}
+                >
+                  <option value="">Select...</option>
+                  {licenses.map((l) => (
+                    <option key={l.code} value={l.code}>{l.label}</option>
+                  ))}
+                </select>
+              </div>
               {!isRecruiter && (
                 <div className="form-field">
                   <label htmlFor="source">Source</label>
@@ -960,20 +994,22 @@ if (shouldRedirect) {
               <tr>
                 <th></th>
                 <th>Job Code</th>
-              <th>Title</th>
-              <th>Source</th>
-              <th>Pay Range</th>
-              <th>Assigned</th>
-              {!isRecruiter && <th>Placed</th>}
-              <th>Action</th>
-            </tr>
-            <tr className="filter-row">
-              <th></th>
-              <th><input className="column-filter" type="text" value={codeFilter} onChange={(e) => setCodeFilter(e.target.value)} placeholder="Filter" /></th>
-              <th><input className="column-filter" type="text" value={titleFilter} onChange={(e) => setTitleFilter(e.target.value)} placeholder="Filter" /></th>
-              <th><input className="column-filter" type="text" value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)} placeholder="Filter" /></th>
-              <th colSpan={!isRecruiter ? 4 : 3}></th>
-            </tr>
+                <th>Title</th>
+                <th>License</th>
+                <th>Source</th>
+                <th>Pay Range</th>
+                <th>Assigned</th>
+                {!isRecruiter && <th>Placed</th>}
+                <th>Action</th>
+              </tr>
+              <tr className="filter-row">
+                <th></th>
+                <th><input className="column-filter" type="text" value={codeFilter} onChange={(e) => setCodeFilter(e.target.value)} placeholder="Filter" /></th>
+                <th><input className="column-filter" type="text" value={titleFilter} onChange={(e) => setTitleFilter(e.target.value)} placeholder="Filter" /></th>
+                <th></th>
+                <th><input className="column-filter" type="text" value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)} placeholder="Filter" /></th>
+                <th colSpan={!isRecruiter ? 4 : 3}></th>
+              </tr>
           </thead>
           <tbody>
             {filteredJobs.map((job) => (
@@ -1012,10 +1048,11 @@ if (shouldRedirect) {
                         e.stopPropagation();
                         setActiveSubtab((prev) => ({ ...prev, [job.job_code]: 'details' }));
                       }}
-                    >
-                      {job.job_title}
-                    </span>
-                  </td>
+                  >
+                    {job.job_title}
+                  </span>
+                </td>
+                  <td>{licenseLabel(job.required_license)}</td>
                   <td>{job.source}</td>
                   <td>
                     {job.min_pay !== undefined && job.max_pay !== undefined
@@ -1098,7 +1135,7 @@ if (shouldRedirect) {
                 {expandedJob === job.job_code && (
                   activeSubtab[job.job_code] === 'details' ? (
                     <tr className="job-details-row">
-                      <td colSpan={!isRecruiter ? 8 : 7}>
+                      <td colSpan={!isRecruiter ? 9 : 8}>
                         <div className="job-description-panel">
                           <h3>{job.job_title}</h3>
                           {editMode[job.job_code] ? (
@@ -1134,6 +1171,26 @@ if (shouldRedirect) {
                                     }))
                                   }
                                 />
+                              </div>
+                              <div className="form-row">
+                                <label>License</label>
+                                <select
+                                  value={editedJobs[job.job_code]?.required_license ?? job.required_license || ''}
+                                  onChange={(e) =>
+                                    setEditedJobs((prev) => ({
+                                      ...prev,
+                                      [job.job_code]: {
+                                        ...prev[job.job_code],
+                                        required_license: e.target.value,
+                                      },
+                                    }))
+                                  }
+                                >
+                                  <option value="">Select...</option>
+                                  {licenses.map((l) => (
+                                    <option key={l.code} value={l.code}>{l.label}</option>
+                                  ))}
+                                </select>
                               </div>
                               <div className="form-row">
                                 <label>Source</label>
@@ -1195,6 +1252,9 @@ if (shouldRedirect) {
                                 <p>
                                   Skills: {Array.isArray(job.desired_skills) ? job.desired_skills.join(', ') : job.desired_skills}
                                 </p>
+                              )}
+                              {job.required_license && (
+                                <p>License: {licenseLabel(job.required_license)}</p>
                               )}
                               <p>Source: {job.source}</p>
                               <p>

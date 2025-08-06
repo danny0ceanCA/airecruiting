@@ -16,7 +16,7 @@ function ApplicantProfile() {
     last_name: '',
     email: email || '',
     phone: '',
-    education_level: '',
+    license: '',
     skills: '',
     experience_summary: '',
     interests: '',
@@ -26,6 +26,7 @@ function ApplicantProfile() {
     lng: '',
     max_travel: ''
   });
+  const [licenses, setLicenses] = useState([]);
   const [assignedJobs, setAssignedJobs] = useState([]);
   const [isEditing, setIsEditing] = useState(false);
   const [jobDescriptionStatus, setJobDescriptionStatus] = useState({});
@@ -62,6 +63,18 @@ function ApplicantProfile() {
     }
   }, [token]);
 
+  useEffect(() => {
+    const loadLicenses = async () => {
+      try {
+        const resp = await api.get('/licenses');
+        setLicenses(resp.data.licenses || []);
+      } catch (err) {
+        console.error('Failed to fetch licenses', err);
+      }
+    };
+    loadLicenses();
+  }, []);
+
   const fetchProfile = async () => {
     try {
       const resp = await api.get('/students/me', { headers: { Authorization: `Bearer ${token}` } });
@@ -71,7 +84,7 @@ function ApplicantProfile() {
         last_name: data.last_name || '',
         email: data.email || email,
         phone: data.phone || '',
-        education_level: data.education_level || '',
+        license: data.license || data.education_level || '',
         skills: Array.isArray(data.skills) ? data.skills.join(', ') : data.skills || '',
         experience_summary: data.experience_summary || '',
         interests: Array.isArray(data.interests) ? data.interests.join(', ') : data.interests || '',
@@ -208,26 +221,33 @@ function ApplicantProfile() {
           <div className="form-panel">
             <h2>Applicant Profile</h2>
             <form className="profile-form" onSubmit={handleSubmit}>
-              {['first_name','last_name','email','phone','education_level','skills','experience_summary','interests','city','state','max_travel'].map(field => (
-                <React.Fragment key={field}>
-                  <label htmlFor={field}>{field.replace(/_/g, ' ').replace(/\b\w/g,l=>l.toUpperCase())}</label>
-                  {field === 'experience_summary' ? (
-                    <textarea id={field} name={field} value={formData[field]} onChange={handleChange} />
-                  ) : (
-                    <input
-                      id={field}
-                      name={field}
-                      type={field === 'max_travel' ? 'number' : 'text'}
-                      value={formData[field]}
-                      onChange={handleChange}
-                      disabled={field === 'email'}
-                      readOnly={['state'].includes(field)}
-                      ref={field === 'city' ? cityRef : null}
-                      required={['city', 'state', 'max_travel'].includes(field)}
-                    />
-                  )}
-                </React.Fragment>
-              ))}
+              <label htmlFor="first_name">First Name</label>
+              <input id="first_name" name="first_name" type="text" value={formData.first_name} onChange={handleChange} />
+              <label htmlFor="last_name">Last Name</label>
+              <input id="last_name" name="last_name" type="text" value={formData.last_name} onChange={handleChange} />
+              <label htmlFor="email">Email</label>
+              <input id="email" name="email" type="text" value={formData.email} onChange={handleChange} disabled />
+              <label htmlFor="phone">Phone</label>
+              <input id="phone" name="phone" type="text" value={formData.phone} onChange={handleChange} />
+              <label htmlFor="license">License</label>
+              <select id="license" name="license" value={formData.license} onChange={handleChange}>
+                <option value="">Select...</option>
+                {licenses.map((l) => (
+                  <option key={l.code} value={l.code}>{l.label}</option>
+                ))}
+              </select>
+              <label htmlFor="skills">Skills</label>
+              <input id="skills" name="skills" type="text" value={formData.skills} onChange={handleChange} />
+              <label htmlFor="experience_summary">Experience Summary</label>
+              <textarea id="experience_summary" name="experience_summary" value={formData.experience_summary} onChange={handleChange} />
+              <label htmlFor="interests">Interests</label>
+              <input id="interests" name="interests" type="text" value={formData.interests} onChange={handleChange} />
+              <label htmlFor="city">City</label>
+              <input id="city" name="city" type="text" value={formData.city} onChange={handleChange} ref={cityRef} required />
+              <label htmlFor="state">State</label>
+              <input id="state" name="state" type="text" value={formData.state} onChange={handleChange} readOnly required />
+              <label htmlFor="max_travel">Max Travel</label>
+              <input id="max_travel" name="max_travel" type="number" value={formData.max_travel} onChange={handleChange} required />
               <input type="hidden" id="lat" name="lat" value={formData.lat} readOnly />
               <input type="hidden" id="lng" name="lng" value={formData.lng} readOnly />
               <button type="submit">{isEditing ? 'Update Profile' : 'Save Profile'}</button>
