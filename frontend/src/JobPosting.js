@@ -198,7 +198,8 @@ if (shouldRedirect) {
   const pollForMatch = (code) => {
     const check = async () => {
       try {
-        const resp = await api.get(`/has-match/${code}`);
+        const resp = await api.get(`/has-match/${code}`,
+          { headers: { Authorization: `Bearer ${token}` } });
         if (resp.data.has_match) {
           await loadMatchResults(code);
           setLoadingMatches((prev) => ({ ...prev, [code]: false }));
@@ -318,6 +319,11 @@ if (shouldRedirect) {
     } catch (err) {
       console.error('Assign failed', err.response?.data || err.message);
     }
+  };
+
+  const handleNotifyCandidate = async (job, row) => {
+    await handleAssign(job, row);
+    await notifyInterest(job.job_code, row.email);
   };
 
   const handlePlace = async (job, row) => {
@@ -657,7 +663,7 @@ if (shouldRedirect) {
                     <td>
                       {row.status === null && (
                         <>
-                          <button onClick={() => handleAssign(job, row)}>Interested</button>
+                          <button onClick={() => handleNotifyCandidate(job, row)}>Notify Candidate</button>
                           <button onClick={() => markNotInterested(job.job_code, row.email)}>Not Interested</button>
                           {!isRecruiter && (
                             <button onClick={() => handlePlace(job, row)}>Place</button>
