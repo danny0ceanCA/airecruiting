@@ -27,6 +27,10 @@ function StudentProfiles() {
     max_travel: ''
   });
   const [licenses, setLicenses] = useState([]);
+  const licenseLabel = (code) => {
+    const l = licenses.find((x) => x.code === code);
+    return l ? l.label : code;
+  };
   const [formError, setFormError] = useState('');
   const [resumeFile, setResumeFile] = useState(null);
   const [toast, setToast] = useState('');
@@ -544,6 +548,7 @@ function StudentProfiles() {
                     <th>Last Name</th>
                     <th>Email</th>
                     {userRole === 'admin' && <th>School</th>}
+                    <th>License</th>
                     <th className="edit-col">Edit</th>
                     <th className="assigned-col">Assigned Jobs</th>
                     <th className="placement-status-col">Placement Status</th>
@@ -591,6 +596,7 @@ function StudentProfiles() {
                     )}
                     <th></th>
                     <th></th>
+                    <th></th>
                     <th>
                       <select
                         className="column-filter"
@@ -619,13 +625,14 @@ function StudentProfiles() {
                               title={expandedRows[s.email] ? 'Collapse' : 'Expand'}
                               type="button"
                             >
-                              {expandedRows[s.email] ? '–' : '+'}
+                            {expandedRows[s.email] ? '–' : '+'}
                             </button>
                           </td>
                           <td>{s.first_name}</td>
                           <td>{s.last_name}</td>
                           <td>{s.email}</td>
                           {userRole === 'admin' && <td>{s.institutional_code}</td>}
+                          <td>{licenseLabel(s.license)}</td>
                           <td className="edit-col">
                             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                               <button
