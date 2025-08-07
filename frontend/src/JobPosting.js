@@ -586,13 +586,13 @@ if (shouldRedirect) {
                 </td>
               </tr>
             ) : (
-              unassignedMatches.map((row, idx) => {
+              unassignedMatches.map((row) => {
                 const selectedCount = selectedRows[job.job_code]?.length || 0;
                 const checked = selectedRows[job.job_code]?.includes(row.email);
                 const disableCheckbox =
                   row.status !== null || (selectedCount >= 3 && !checked);
                 return (
-                  <tr key={idx}>
+                  <tr key={row.email}>
                     <td>
                       <input
                         type="checkbox"
@@ -701,8 +701,8 @@ if (shouldRedirect) {
           </tr>
         </thead>
         <tbody>
-          {assignedMatches.map((row, i) => (
-            <tr key={i}>
+          {assignedMatches.map((row) => (
+            <tr key={row.email}>
               <td>{row.first_name || row.name?.split(' ')[0]} {row.last_name || row.name?.split(' ')[1]}</td>
               <td>{row.email}</td>
               <td>{row.score?.toFixed(2)}</td>
@@ -787,8 +787,8 @@ if (shouldRedirect) {
           </tr>
         </thead>
         <tbody>
-          {placedMatches.map((row, i) => (
-            <tr key={i}>
+          {placedMatches.map((row) => (
+            <tr key={row.email}>
               <td>{row.name}</td>
               <td>{row.email}</td>
               <td>{row.score?.toFixed(2)}</td>
