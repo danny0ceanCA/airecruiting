@@ -1237,7 +1237,7 @@ async def _perform_match_async(job_code: str, send_emails: bool = True, enq_time
                 (
                     f"Hello {m['name']},\n\n"
                     f"You have been matched with the job '{job.get('job_title')}'. "
-                    "Log in to view details."
+                    "This means that your resume is being reviewed by a recruiter to determine compatibility with any open assignments within their organization."
                 ),
             )
 
