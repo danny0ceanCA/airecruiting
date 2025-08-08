@@ -457,8 +457,22 @@ def test_students_all_admin_access():
     init_default_admin()
 
     # Seed some students
-    s1 = {"first_name": "One", "last_name": "A", "email": "one@example.com", "license": "lvn"}
-    s2 = {"first_name": "Two", "last_name": "B", "email": "two@example.com", "license": "ma"}
+    s1 = {
+        "first_name": "One",
+        "last_name": "A",
+        "email": "one@example.com",
+        "license": "lvn",
+        "city": "City1",
+        "state": "ST",
+    }
+    s2 = {
+        "first_name": "Two",
+        "last_name": "B",
+        "email": "two@example.com",
+        "license": "ma",
+        "city": "City2",
+        "state": "ST",
+    }
     main_app.redis_client.set("student:one@example.com", json.dumps(s1))
     main_app.redis_client.set("student:two@example.com", json.dumps(s2))
 
@@ -470,6 +484,11 @@ def test_students_all_admin_access():
     data = resp.json()["students"]
     emails = {s["email"] for s in data}
     assert {"one@example.com", "two@example.com"} <= emails
+    student_map = {s["email"]: s for s in data}
+    assert student_map["one@example.com"]["city"] == "City1"
+    assert student_map["one@example.com"]["state"] == "ST"
+    assert student_map["two@example.com"]["city"] == "City2"
+    assert student_map["two@example.com"]["state"] == "ST"
 
 
 def test_students_all_forbidden_for_non_admin():
@@ -1204,7 +1223,10 @@ def test_students_me_endpoint(monkeypatch):
 
     resp = client.get("/students/me", headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 200
-    assert resp.json()["email"] == applicant["email"]
+    data = resp.json()
+    assert data["email"] == applicant["email"]
+    assert data["city"] == "City"
+    assert data["state"] == "ST"
 
 
 def test_admin_user_management_flow():
@@ -1596,6 +1618,8 @@ def test_students_by_school_fallback():
         "experience_summary": "",
         "interests": "",
         "school_code": "1001",
+        "city": "City",
+        "state": "ST",
     }
     main_app.redis_client.set("student:student@example.com", json.dumps(student))
 
@@ -1616,6 +1640,9 @@ def test_students_by_school_fallback():
     assert resp.status_code == 200
     data = resp.json()
     assert any(s["email"] == "student@example.com" for s in data["students"])
+    entry = next(s for s in data["students"] if s["email"] == "student@example.com")
+    assert entry["city"] == "City"
+    assert entry["state"] == "ST"
 
 
 def test_students_by_school_requires_code():
@@ -1654,6 +1681,8 @@ def test_student_endpoints_handle_string_notes():
         "last_name": "Dent",
         "email": "student@example.com",
         "institutional_code": "001",
+        "city": "City",
+        "state": "ST",
     }
     main_app.redis_client.set("student:student@example.com", json.dumps(student))
 
@@ -1672,7 +1701,10 @@ def test_student_endpoints_handle_string_notes():
     resp_all = client.get(
         "/students/all", headers={"Authorization": f"Bearer {token_admin}"}
     )
-    entry = resp_all.json()["students"][0]["assigned_jobs"][0]
+    student_entry = resp_all.json()["students"][0]
+    assert student_entry["city"] == "City"
+    assert student_entry["state"] == "ST"
+    entry = student_entry["assigned_jobs"][0]
     assert entry["notes"] == [{"text": "legacy"}]
     assert entry["note"] == "legacy"
     assert "posted_by" in entry
@@ -1692,7 +1724,10 @@ def test_student_endpoints_handle_string_notes():
         "/students/by-school",
         headers={"Authorization": f"Bearer {token_counselor}"},
     )
-    entry = resp_school.json()["students"][0]["assigned_jobs"][0]
+    school_entry = resp_school.json()["students"][0]
+    assert school_entry["city"] == "City"
+    assert school_entry["state"] == "ST"
+    entry = school_entry["assigned_jobs"][0]
     assert entry["notes"] == [{"text": "legacy"}]
     assert entry["note"] == "legacy"
     assert "posted_by" in entry
@@ -1709,7 +1744,10 @@ def test_student_endpoints_handle_string_notes():
     resp_me = client.get(
         "/students/me", headers={"Authorization": f"Bearer {token_student}"}
     )
-    entry = resp_me.json()["assigned_jobs"][0]
+    me_entry = resp_me.json()
+    assert me_entry["city"] == "City"
+    assert me_entry["state"] == "ST"
+    entry = me_entry["assigned_jobs"][0]
     assert entry["notes"] == [{"text": "legacy"}]
     assert entry["note"] == "legacy"
     assert "posted_by" in entry

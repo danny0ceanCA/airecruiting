@@ -547,6 +547,7 @@ function StudentProfiles() {
                     <th>First Name</th>
                     <th>Last Name</th>
                     <th>Email</th>
+                    <th>Location</th>
                     {userRole === 'admin' && <th>School</th>}
                     <th>License</th>
                     <th className="edit-col">Edit</th>
@@ -583,6 +584,7 @@ function StudentProfiles() {
                         placeholder="Filter"
                       />
                     </th>
+                    <th></th>
                     {userRole === 'admin' && (
                       <th>
                         <input
@@ -631,6 +633,7 @@ function StudentProfiles() {
                           <td>{s.first_name}</td>
                           <td>{s.last_name}</td>
                           <td>{s.email}</td>
+                          <td>{[s.city, s.state].filter(Boolean).join(', ')}</td>
                           {userRole === 'admin' && <td>{s.institutional_code}</td>}
                           <td>{licenseLabel(s.license)}</td>
                           <td className="edit-col">
