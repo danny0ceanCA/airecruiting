@@ -46,6 +46,8 @@ test('opens notes history modal when View Notes clicked', async () => {
             first_name: 'F',
             last_name: 'L',
             email: 's@example.com',
+            city: 'City',
+            state: 'ST',
             institutional_code: 'ABC',
             assigned_jobs: [
               {
