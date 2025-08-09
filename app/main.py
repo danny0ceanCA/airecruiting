@@ -39,6 +39,7 @@ from backend.app.schemas.description import DescriptionRequest
 from backend.app.services.resume import generate_resume_text
 from backend.app.services.description import generate_description_text
 from backend.app.school_codes import SCHOOL_CODE_MAP
+from backend.app.services.summary import send_weekly_summary
 
 
 def init_default_school_codes():
@@ -2691,6 +2692,16 @@ def admin_test_notification(current_user: dict = Depends(get_current_user)):
         ),
     )
     return {"message": "Test email sent"}
+
+
+@app.post("/admin/test-weekly-summary")
+def admin_test_weekly_summary(current_user: dict = Depends(get_current_user)):
+    """Manually trigger a weekly summary email to the admin's address."""
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+
+    send_weekly_summary(current_user["sub"])
+    return {"message": "Weekly summary sent"}
 
 
 @app.get("/activity-log")

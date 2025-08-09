@@ -85,6 +85,11 @@ email address.
 Administrators can manage user accounts. Use `DELETE /admin/users/{email}` to
 remove a user from the system.
 
+For testing purposes, administrators may manually trigger the weekly summary
+email with `POST /admin/test-weekly-summary`. The admin interface includes a
+"Send Weekly Summary Email" button under the **Tests** tab that calls this
+endpoint.
+
 ## Assignment and Rejection Workflow
 
 Recruiters can assign a candidate to a job via `POST /assign`. Provide the
