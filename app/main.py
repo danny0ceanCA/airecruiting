@@ -1,3 +1,7 @@
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from datetime import datetime, timedelta, timezone
 import json
 import csv
@@ -19,7 +23,6 @@ from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr, Field, ConfigDict, field_validator, model_validator
 from jose import jwt, JWTError
-from dotenv import load_dotenv
 import bcrypt
 for _p in ["http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY"]:
     os.environ.pop(_p, None)
@@ -100,7 +103,7 @@ def all_school_codes() -> dict[str, str]:
     return codes
 
 # Load environment variables
-load_dotenv()
+# (Handled at top of file)
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"), http_client=httpx.Client())
 redis_url = os.getenv("REDIS_URL")
 
