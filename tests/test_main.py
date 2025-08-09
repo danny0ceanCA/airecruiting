@@ -486,6 +486,31 @@ def test_metrics_filtered_by_school():
     assert data["placement_rate"] == 1
 
 
+def test_metrics_career_login_token():
+    main_app.redis_client.flushdb()
+    import bcrypt
+    hashed = bcrypt.hashpw(b"pw", bcrypt.gensalt()).decode()
+    user = {
+        "role": "career",
+        "approved": True,
+        "institutional_code": "001",
+        "password": hashed,
+    }
+    main_app.redis_client.set("user:c@example.com", json.dumps(user))
+
+    resp = client.post("/login", json={"email": "c@example.com", "password": "pw"})
+    assert resp.status_code == 200
+    token = resp.json()["token"]
+    payload = jwt.decode(token, main_app.JWT_SECRET, algorithms=[main_app.ALGORITHM])
+    assert payload.get("institutional_code") == "001"
+
+    resp2 = client.get("/metrics", headers={"Authorization": f"Bearer {token}"})
+    assert resp2.status_code == 200
+    data = resp2.json()
+    assert data["total_users"] == 1
+    assert data["total_student_profiles"] == 0
+
+
 def test_admin_reset_jobs():
     main_app.redis_client.flushdb()
     init_default_admin()
