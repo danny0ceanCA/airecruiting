@@ -44,6 +44,7 @@ function AdminMenu({ children }) {
             <>
               <Link to="/students">Student Profiles</Link>
               <Link to="/career-info">Career Staff Info</Link>
+              <Link to="/metrics">School Metrics</Link>
             </>
           )}
           {children}

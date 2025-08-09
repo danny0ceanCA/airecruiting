@@ -428,6 +428,64 @@ def test_metrics_endpoint():
     assert data["rematch_rate"] == 0.5
 
 
+def test_metrics_filtered_by_school():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    user1 = {"role": "career", "approved": True, "institutional_code": "001"}
+    user2 = {"role": "career", "approved": True, "institutional_code": "002"}
+    main_app.redis_client.set("user:c1@example.com", json.dumps(user1))
+    main_app.redis_client.set("user:c2@example.com", json.dumps(user2))
+
+    s1 = {"email": "s1@example.com", "institutional_code": "001", "license": "lvn"}
+    s2 = {"email": "s2@example.com", "institutional_code": "002", "license": "ma"}
+    main_app.redis_client.set("student:s1@example.com", json.dumps(s1))
+    main_app.redis_client.set("student:s2@example.com", json.dumps(s2))
+
+    j1 = {
+        "job_code": "J1",
+        "posted_by": "c1@example.com",
+        "placed_students": ["s1@example.com"],
+        "assigned_students": ["s1@example.com"],
+    }
+    j2 = {
+        "job_code": "J2",
+        "posted_by": "c2@example.com",
+        "placed_students": ["s2@example.com"],
+        "assigned_students": [],
+    }
+    main_app.redis_client.set("job:J1", json.dumps(j1))
+    main_app.redis_client.set("job:J2", json.dumps(j2))
+
+    main_app.redis_client.set(
+        "match_results:J1", json.dumps([{ "email": "s1@example.com", "score": 0.8 }])
+    )
+    main_app.redis_client.set(
+        "match_results:J2", json.dumps([{ "email": "s2@example.com", "score": 0.6 }])
+    )
+
+    token = jwt.encode(
+        {
+            "sub": "c1@example.com",
+            "role": "career",
+            "institutional_code": "001",
+            "exp": datetime.utcnow() + timedelta(hours=1),
+        },
+        JWT_SECRET,
+        algorithm=ALGORITHM,
+    )
+
+    resp = client.get("/metrics", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total_users"] == 1
+    assert data["total_student_profiles"] == 1
+    assert data["total_jobs_posted"] == 1
+    assert data["total_matches"] == 1
+    assert data["license_breakdown"] == {"lvn": 1}
+    assert data["placement_rate"] == 1
+
+
 def test_admin_reset_jobs():
     main_app.redis_client.flushdb()
     init_default_admin()

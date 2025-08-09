@@ -50,3 +50,48 @@ test('admin metrics shows placement rate', async () => {
   expect(await screen.findByText(/Placement Rate/i)).toBeInTheDocument();
   localStorage.clear();
 });
+
+test('career metrics shows no match message', async () => {
+  api.get.mockResolvedValueOnce({
+    data: {
+      total_student_profiles: 2,
+      total_jobs_posted: 1,
+      total_matches: 0,
+      average_match_score: null,
+      license_breakdown: { lvn: 1 },
+    },
+  });
+
+  const payload = {
+    role: 'career',
+    institutional_code: '001',
+    exp: Math.floor(Date.now() / 1000) + 1000,
+  };
+  const token = `header.${btoa(JSON.stringify(payload))}.sig`;
+  localStorage.setItem('token', token);
+  render(
+    <BrowserRouter>
+      <Metrics />
+    </BrowserRouter>
+  );
+  expect(await screen.findByText(/No match data yet/i)).toBeInTheDocument();
+  localStorage.clear();
+});
+
+test('metrics error renders message', async () => {
+  api.get.mockRejectedValueOnce(new Error('fail'));
+  const payload = {
+    role: 'career',
+    institutional_code: '001',
+    exp: Math.floor(Date.now() / 1000) + 1000,
+  };
+  const token = `header.${btoa(JSON.stringify(payload))}.sig`;
+  localStorage.setItem('token', token);
+  render(
+    <BrowserRouter>
+      <Metrics />
+    </BrowserRouter>
+  );
+  expect(await screen.findByText(/Failed to load metrics/i)).toBeInTheDocument();
+  localStorage.clear();
+});

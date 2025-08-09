@@ -1356,18 +1356,142 @@ def delete_job(job_code: str, token_data: dict = Depends(get_current_user)):
 
 
 @app.get("/metrics")
-def get_metrics(current_user: dict = Depends(get_current_user)):
+def get_metrics(
+    school_code: str | None = None, current_user: dict = Depends(get_current_user)
+):
     """Return various application metrics."""
-    total_users = 0
-    approved = 0
-    rejected = 0
-    pending = 0
+    role = current_user.get("role")
+    if role not in {"admin", "career"}:
+        raise HTTPException(status_code=403, detail="Not authorized to view metrics")
+
+    filter_code = school_code
+    if role == "career":
+        filter_code = current_user.get("institutional_code") or school_code
+        if not filter_code:
+            raise HTTPException(status_code=400, detail="School code required")
+
+    # Global aggregation path for admins with no filter
+    if not filter_code:
+        total_users = 0
+        approved = 0
+        rejected = 0
+        pending = 0
+        for key in redis_client.scan_iter("user:*"):
+            raw = redis_client.get(key)
+            if not raw:
+                continue
+            total_users += 1
+            info = json.loads(raw)
+            if info.get("approved"):
+                approved += 1
+            elif info.get("rejected"):
+                rejected += 1
+            else:
+                pending += 1
+
+        students = 0
+        for key in redis_client.scan_iter("student:*"):
+            if redis_client.get(key):
+                students += 1
+        for key in redis_client.scan_iter("*"):
+            skey = str(key)
+            if (
+                skey.startswith("user:")
+                or skey.startswith("job:")
+                or skey.startswith("metrics:")
+                or skey.startswith("school_code:")
+                or skey.startswith("license:")
+                or skey.startswith("student:")
+            ):
+                continue
+            if redis_client.get(key):
+                students += 1
+
+        jobs = 0
+        for key in redis_client.scan_iter("job:*"):
+            if redis_client.get(key):
+                jobs += 1
+
+        (
+            total_matches,
+            total_match_score,
+            total_placements,
+            total_rematches,
+            sum_time_to_place,
+            match_queue_time,
+            match_process_time,
+        ) = [
+            redis_client.get(k)
+            for k in [
+                "metrics:total_matches",
+                "metrics:total_match_score",
+                "metrics:total_placements",
+                "metrics:total_rematches",
+                "metrics:sum_time_to_place",
+                "metrics:match_queue_time",
+                "metrics:match_process_time",
+            ]
+        ]
+        total_matches = int(total_matches or 0)
+        total_match_score = float(total_match_score or 0.0)
+        total_placements = int(total_placements or 0)
+        total_rematches = int(total_rematches or 0)
+        sum_time_to_place = float(sum_time_to_place or 0.0)
+        match_queue_time = float(match_queue_time or 0.0)
+        match_process_time = float(match_process_time or 0.0)
+
+        avg_match_score = (
+            total_match_score / total_matches if total_matches else None
+        )
+        latest_match_timestamp = redis_client.get("metrics:last_match_timestamp")
+
+        placement_rate = (
+            total_placements / students if students else 0
+        )
+        avg_time_to_place = (
+            sum_time_to_place / total_placements if total_placements else 0.0
+        )
+        avg_time_to_place = round(avg_time_to_place, 1)
+        rematch_rate = (
+            total_rematches / total_placements if total_placements else 0
+        )
+
+        license_counts: dict[str, int] = {}
+        license_keys = list(redis_client.scan_iter("metrics:licensed:*"))
+        if license_keys:
+            values = redis_client.mget(license_keys)
+            for k, v in zip(license_keys, values):
+                lic = k.split("metrics:licensed:", 1)[1]
+                license_counts[lic] = int(v or 0)
+
+        return {
+            "total_users": total_users,
+            "approved_users": approved,
+            "rejected_users": rejected,
+            "pending_registrations": pending,
+            "total_student_profiles": students,
+            "total_jobs_posted": jobs,
+            "total_matches": total_matches,
+            "average_match_score": avg_match_score,
+            "latest_match_timestamp": latest_match_timestamp,
+            "placement_rate": placement_rate,
+            "avg_time_to_placement_days": avg_time_to_place,
+            "license_breakdown": license_counts,
+            "rematch_rate": rematch_rate,
+            "total_match_queue_time": match_queue_time,
+            "total_match_process_time": match_process_time,
+        }
+
+    # Filtered aggregation for a specific school
+    total_users = approved = rejected = pending = 0
     for key in redis_client.scan_iter("user:*"):
         raw = redis_client.get(key)
         if not raw:
             continue
-        total_users += 1
         info = json.loads(raw)
+        if info.get("institutional_code") != filter_code:
+            continue
+        total_users += 1
         if info.get("approved"):
             approved += 1
         elif info.get("rejected"):
@@ -1376,75 +1500,55 @@ def get_metrics(current_user: dict = Depends(get_current_user)):
             pending += 1
 
     students = 0
-    for key in redis_client.scan_iter("*"):
-        skey = str(key)
-        if (
-            skey.startswith("user:")
-            or skey.startswith("job:")
-            or skey.startswith("metrics:")
-            or skey.startswith("school_code:")
-            or skey.startswith("license:")
-        ):
+    license_counts: dict[str, int] = {}
+    for key in redis_client.scan_iter("student:*"):
+        raw = redis_client.get(key)
+        if not raw:
             continue
-        if redis_client.get(key):
-            students += 1
+        info = json.loads(raw)
+        if info.get("institutional_code") != filter_code:
+            continue
+        students += 1
+        lic = info.get("license")
+        if lic:
+            license_counts[lic] = license_counts.get(lic, 0) + 1
 
     jobs = 0
+    total_matches = 0
+    total_match_score = 0.0
+    total_placements = 0
     for key in redis_client.scan_iter("job:*"):
-        if redis_client.get(key):
-            jobs += 1
-
-    (
-        total_matches,
-        total_match_score,
-        total_placements,
-        total_rematches,
-        sum_time_to_place,
-        match_queue_time,
-        match_process_time,
-    ) = [
-        redis_client.get(k)
-        for k in [
-            "metrics:total_matches",
-            "metrics:total_match_score",
-            "metrics:total_placements",
-            "metrics:total_rematches",
-            "metrics:sum_time_to_place",
-            "metrics:match_queue_time",
-            "metrics:match_process_time",
-        ]
-    ]
-    total_matches = int(total_matches or 0)
-    total_match_score = float(total_match_score or 0.0)
-    total_placements = int(total_placements or 0)
-    total_rematches = int(total_rematches or 0)
-    sum_time_to_place = float(sum_time_to_place or 0.0)
-    match_queue_time = float(match_queue_time or 0.0)
-    match_process_time = float(match_process_time or 0.0)
+        raw = redis_client.get(key)
+        if not raw:
+            continue
+        job = json.loads(raw)
+        poster = job.get("posted_by")
+        poster_code = None
+        if poster:
+            p_raw = redis_client.get(f"user:{poster}")
+            if p_raw:
+                try:
+                    p_data = json.loads(p_raw)
+                    poster_code = p_data.get("institutional_code") or p_data.get("school_code")
+                except Exception:
+                    poster_code = None
+        if poster_code != filter_code:
+            continue
+        jobs += 1
+        total_placements += len(job.get("placed_students", []))
+        res_raw = redis_client.get(f"match_results:{job.get('job_code')}")
+        if res_raw:
+            try:
+                matches = json.loads(res_raw)
+                total_matches += len(matches)
+                total_match_score += sum(m.get("score", 0) for m in matches)
+            except Exception:
+                pass
 
     avg_match_score = (
         total_match_score / total_matches if total_matches else None
     )
-    latest_match_timestamp = redis_client.get("metrics:last_match_timestamp")
-
-    placement_rate = (
-        total_placements / students if students else 0
-    )
-    avg_time_to_place = (
-        sum_time_to_place / total_placements if total_placements else 0.0
-    )
-    avg_time_to_place = round(avg_time_to_place, 1)
-    rematch_rate = (
-        total_rematches / total_placements if total_placements else 0
-    )
-
-    license_counts: dict[str, int] = {}
-    license_keys = list(redis_client.scan_iter("metrics:licensed:*"))
-    if license_keys:
-        values = redis_client.mget(license_keys)
-        for k, v in zip(license_keys, values):
-            lic = k.split("metrics:licensed:", 1)[1]
-            license_counts[lic] = int(v or 0)
+    placement_rate = total_placements / students if students else 0
 
     return {
         "total_users": total_users,
@@ -1455,13 +1559,13 @@ def get_metrics(current_user: dict = Depends(get_current_user)):
         "total_jobs_posted": jobs,
         "total_matches": total_matches,
         "average_match_score": avg_match_score,
-        "latest_match_timestamp": latest_match_timestamp,
+        "latest_match_timestamp": None,
         "placement_rate": placement_rate,
-        "avg_time_to_placement_days": avg_time_to_place,
+        "avg_time_to_placement_days": 0.0,
         "license_breakdown": license_counts,
-        "rematch_rate": rematch_rate,
-        "total_match_queue_time": match_queue_time,
-        "total_match_process_time": match_process_time,
+        "rematch_rate": 0,
+        "total_match_queue_time": 0.0,
+        "total_match_process_time": 0.0,
     }
 
 

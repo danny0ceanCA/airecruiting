@@ -25,25 +25,37 @@ function Metrics() {
   const [metricsData, setMetricsData] = useState(null);
   const [role, setRole] = useState('');
   const [loading, setLoading] = useState(true);
-  const [interval] = useState('all');
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
-    if (!token) return;
+    if (!token) {
+      setLoading(false);
+      setError('No token');
+      return;
+    }
+    let schoolCode;
     try {
       const dec = jwtDecode(token);
       setRole(dec.role);
+      schoolCode = dec.institutional_code || dec.school_code;
     } catch {
+      setLoading(false);
+      setError('Invalid token');
       return;
     }
     const fetchMetrics = async () => {
       try {
-        const resp = await api.get(`/metrics?interval=${interval}`, {
+        let url = '/metrics';
+        if (schoolCode) {
+          url += `?school_code=${schoolCode}`;
+        }
+        const resp = await api.get(url, {
           headers: { Authorization: `Bearer ${token}` },
         });
         setMetricsData(resp.data);
       } catch (err) {
-        console.error('Error fetching metrics:', err);
+        setError('Failed to load metrics');
       } finally {
         setLoading(false);
       }
@@ -56,6 +68,14 @@ function Metrics() {
       <div className="metrics-container">
         <AdminMenu />
         Loading...
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="metrics-container">
+        <AdminMenu />
+        {error}
       </div>
     );
   }
@@ -94,9 +114,8 @@ function Metrics() {
     },
   ];
 
-  const avgScore = metricsData.average_match_score
-    ? Number(metricsData.average_match_score)
-    : 0;
+  const hasScore = metricsData.average_match_score != null;
+  const avgScore = Number(metricsData.average_match_score || 0);
 
   const licenseData = Object.entries(
     metricsData.license_breakdown || {}
@@ -138,16 +157,20 @@ function Metrics() {
             </RadialBarChart>
           </ResponsiveContainer>
         ) : (
-          <div className="gauge-wrapper">
-            <div
-              className="gauge"
-              style={{ background: `conic-gradient(#2ecc40 ${avgScore * 100}%, #555 ${avgScore * 100}% 100%)` }}
-            >
-              <span>{avgScore.toFixed(2)}</span>
+          hasScore ? (
+            <div className="gauge-wrapper">
+              <div
+                className="gauge"
+                style={{ background: `conic-gradient(#2ecc40 ${avgScore * 100}%, #555 ${avgScore * 100}% 100%)` }}
+              >
+                <span>{avgScore.toFixed(2)}</span>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div>No match data yet</div>
+          )
         )}
-        {role === 'admin' && (
+        {(role === 'admin' || licenseData.length > 0) && (
           <ResponsiveContainer width={250} height={250}>
             <PieChart>
               <Pie dataKey="value" data={licenseData} outerRadius={80}>

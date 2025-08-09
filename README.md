@@ -190,7 +190,26 @@ providers.
 
 ## Metrics
 
-Match jobs record queue and processing time in Redis. The `/metrics` endpoint exposes `total_match_queue_time` and `total_match_process_time` along with existing counters.
+`GET /metrics` returns aggregate statistics about users, students, jobs and matching activity.
+
+- **Admins** may view global data or pass `school_code` to filter by institution.
+- **Career** users are limited to metrics for their own `institutional_code`.
+- Other roles receive HTTP 403.
+
+**Query parameters**
+
+- `school_code` (optional for admins): restrict results to a particular institution.
+
+**Examples**
+
+```
+GET /metrics
+GET /metrics?school_code=001
+```
+
+The response includes fields such as `total_users`, `total_student_profiles`, `total_jobs_posted`, `total_matches`, `average_match_score`, `placement_rate`, `avg_time_to_placement_days`, `license_breakdown`, `rematch_rate`, `total_match_queue_time`, and `total_match_process_time`.
+
+Match jobs record queue and processing time in Redis. The `/metrics` endpoint exposes `total_match_queue_time` and `total_match_process_time` along with these counters.
 
 ## Resume Previews
 
