@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import api from './api';
-import NoteEditor from './NoteEditor';
+import NoteEditor from './NoteEditor.js';
 
 function NotesHistoryModal({ notes = [], onClose, isAdmin = false, canAdd = false, jobCode, studentEmail }) {
   const [localNotes, setLocalNotes] = useState(notes);

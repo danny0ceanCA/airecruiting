@@ -5,7 +5,7 @@ import api from './api';
 import AdminMenu from './AdminMenu';
 import loadGoogleMaps from './utils/loadGoogleMaps';
 import './JobPosting.css';
-import NoteEditor from './NoteEditor';
+import NoteEditor from './NoteEditor.js';
 
 function JobPosting() {
   const [formData, setFormData] = useState({

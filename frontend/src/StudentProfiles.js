@@ -8,7 +8,7 @@ import AdminMenu from './AdminMenu';
 import jwt_decode from 'jwt-decode';
 import './StudentProfiles.css';
 import './Tour.css';
-import NotesHistoryModal from './NotesHistoryModal';
+import NotesHistoryModal from './NotesHistoryModal.js';
 
 function StudentProfiles() {
   const [formData, setFormData] = useState({

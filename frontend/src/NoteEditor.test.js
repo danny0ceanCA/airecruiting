@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import NoteEditor from './NoteEditor';
+import NoteEditor from './NoteEditor.js';
 import api from './api';
 import axios from 'axios';
 
