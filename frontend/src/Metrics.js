@@ -35,10 +35,14 @@ function Metrics() {
       return;
     }
     let schoolCode;
+    let userRole = '';
     try {
       const dec = jwtDecode(token);
-      setRole(dec.role);
-      schoolCode = dec.institutional_code || dec.school_code;
+      userRole = dec.role;
+      setRole(userRole);
+      if (userRole === 'career') {
+        schoolCode = dec.institutional_code || dec.school_code;
+      }
     } catch {
       setLoading(false);
       setError('Invalid token');
@@ -47,7 +51,7 @@ function Metrics() {
     const fetchMetrics = async () => {
       try {
         let url = '/metrics';
-        if (schoolCode) {
+        if (userRole === 'career' && schoolCode) {
           url += `?school_code=${schoolCode}`;
         }
         const resp = await api.get(url, {
