@@ -516,6 +516,9 @@ def login(req: LoginRequest):
         "role": user["role"],
         "exp": datetime.utcnow() + timedelta(hours=1),
     }
+    inst_code = user.get("institutional_code") or user.get("school_code")
+    if inst_code:
+        payload["institutional_code"] = inst_code
     token = jwt.encode(payload, JWT_SECRET, algorithm=ALGORITHM)
     print(f"Login successful for {req.email}")
     try:
