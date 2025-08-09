@@ -9,10 +9,27 @@ from typing import Any, Dict, List
 
 from openai import OpenAI
 
-from app.main import ACTIVITY_LOG_KEY, redis_client, send_email
+ACTIVITY_LOG_KEY = "activity_logs"
+redis_client = None
+send_email = None
 
 # Reuse a single OpenAI client; reads OPENAI_API_KEY from env
 openai_client = OpenAI()
+
+
+def _ensure_dependencies() -> None:
+    """Load redis client and email sender from app.main on first use."""
+    global redis_client, send_email
+    if redis_client is None or send_email is None:
+        try:
+            from app import main as main_app
+
+            if redis_client is None:
+                redis_client = main_app.redis_client  # type: ignore[attr-defined]
+            if send_email is None:
+                send_email = main_app.send_email  # type: ignore[attr-defined]
+        except Exception as exc:  # pragma: no cover - import failure
+            raise RuntimeError("Summary dependencies not configured") from exc
 
 
 def _parse_ts(ts_str: str | None) -> datetime | None:
@@ -27,6 +44,7 @@ def _parse_ts(ts_str: str | None) -> datetime | None:
 
 def compile_weekly_stats(user_email: str, now: datetime) -> Dict[str, Any]:
     """Aggregate student creation and job placement stats for a career user over the last 7 days."""
+    _ensure_dependencies()
     week_ago = now - timedelta(days=7)
     student_emails: set[str] = set()
 
@@ -117,6 +135,7 @@ def compile_weekly_stats(user_email: str, now: datetime) -> Dict[str, Any]:
 
 def compile_all_weekly_stats(now: datetime) -> Dict[str, Any]:
     """Aggregate weekly stats for all career staff (for admin summaries)."""
+    _ensure_dependencies()
     users: Dict[str, Any] = {}
     for key in redis_client.scan_iter("user:*"):
         raw = redis_client.get(key)
@@ -154,6 +173,7 @@ def build_summary_narrative(stats: Dict[str, Any], user_name: str) -> str:
 
 def send_weekly_summary(user_email: str) -> None:
     """Compile stats and email a weekly summary to the given user (career or admin)."""
+    _ensure_dependencies()
     raw = redis_client.get(f"user:{user_email}")
     if not raw:
         return
