@@ -31,6 +31,7 @@ def _collect_recruiters() -> Dict[str, Dict[str, object]]:
         recruiters[email] = {
             "first_name": data.get("first_name", ""),
             "students_created": 0,
+            "jobs_posted": 0,
             "notes": [],
         }
     return recruiters
@@ -58,6 +59,34 @@ def _update_student_counts(recruiters: Dict[str, Dict[str, object]], cutoff: dat
             user = entry.get("user")
             if user in recruiters:
                 recruiters[user]["students_created"] = recruiters[user].get("students_created", 0) + 1
+
+
+def _update_job_counts(recruiters: Dict[str, Dict[str, object]], cutoff: datetime) -> None:
+    for key in redis_client.scan_iter("job:*"):
+        try:
+            raw_job = redis_client.get(key)
+        except Exception:
+            continue
+        if not raw_job:
+            continue
+        try:
+            job = json.loads(raw_job)
+        except Exception:
+            continue
+        posted_by = job.get("posted_by")
+        ts = job.get("timestamp")
+        if not posted_by or not ts:
+            continue
+        try:
+            dt = datetime.fromisoformat(ts)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+        except Exception:
+            continue
+        if dt < cutoff:
+            continue
+        if posted_by in recruiters:
+            recruiters[posted_by]["jobs_posted"] = recruiters[posted_by].get("jobs_posted", 0) + 1
 
 
 def _update_notes(recruiters: Dict[str, Dict[str, object]], cutoff: datetime) -> None:
@@ -116,6 +145,7 @@ def gather_weekly_metrics() -> Dict[str, Dict[str, object]]:
     if not recruiters:
         return {}
     _update_student_counts(recruiters, cutoff)
+    _update_job_counts(recruiters, cutoff)
     _update_notes(recruiters, cutoff)
     return recruiters
 
@@ -127,6 +157,7 @@ def send_weekly_summaries() -> None:
         payload = {
             "first_name": info.get("first_name", ""),
             "students_created": info.get("students_created", 0),
+            "jobs_posted": info.get("jobs_posted", 0),
             "notes": info.get("notes", []),
         }
         messages = [
