@@ -34,6 +34,7 @@ function Metrics() {
       setError('No token');
       return;
     }
+
     let schoolCode;
     let userRole = '';
     try {
@@ -42,28 +43,39 @@ function Metrics() {
       setRole(userRole);
       if (userRole === 'career') {
         schoolCode = dec.institutional_code || dec.school_code;
+        if (!schoolCode) {
+          setLoading(false);
+          setError('School code missing from token');
+          return;
+        }
       }
     } catch {
       setLoading(false);
       setError('Invalid token');
       return;
     }
+
     const fetchMetrics = async () => {
       try {
         let url = '/metrics';
-        if (userRole === 'career' && schoolCode) {
-          url += `?school_code=${schoolCode}`;
+        if (userRole === 'career') {
+          url += `?school_code=${encodeURIComponent(schoolCode)}`;
         }
         const resp = await api.get(url, {
           headers: { Authorization: `Bearer ${token}` },
         });
         setMetricsData(resp.data);
       } catch (err) {
-        setError('Failed to load metrics');
+        if (err.response?.status === 403) {
+          setError('Not authorized to view metrics');
+        } else {
+          setError('Failed to load metrics');
+        }
       } finally {
         setLoading(false);
       }
     };
+
     fetchMetrics();
   }, []);
 
