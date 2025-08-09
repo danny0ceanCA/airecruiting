@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react';
-import NotesHistoryModal from './NotesHistoryModal';
+import NotesHistoryModal from './NotesHistoryModal.js';
 import axios from 'axios';
 
 jest.mock('axios', () => {
