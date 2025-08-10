@@ -37,9 +37,12 @@ def _parse_ts(ts_str: str | None) -> datetime | None:
         return None
     # Handle ISO with or without 'Z'
     try:
-        return datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+        dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
     except Exception:
         return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 def compile_weekly_stats(user_email: str, now: datetime) -> Dict[str, Any]:

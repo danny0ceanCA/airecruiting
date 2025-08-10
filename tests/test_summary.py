@@ -85,3 +85,31 @@ def test_admin_weekly_summary():
     assert (
         captured_stats["stats"]["users"]["career@example.com"]["created_count"] == 1
     )
+
+
+def test_compile_weekly_stats_handles_naive_timestamp():
+    summary.redis_client = DummyRedis()
+    now = datetime.now(timezone.utc)
+    naive = now.replace(tzinfo=None)
+
+    log = {
+        "user": "career@example.com",
+        "method": "POST",
+        "path": "/students",
+        "timestamp": naive.isoformat(),
+        "student_email": "stu@example.com",
+    }
+    summary.redis_client.lpush(summary.ACTIVITY_LOG_KEY, json.dumps(log))
+
+    job = {
+        "assigned_students": ["stu@example.com"],
+        "placed_students": [],
+        "student_notes": {
+            "stu@example.com": [{"text": "note", "timestamp": naive.isoformat()}]
+        },
+    }
+    summary.redis_client.set("job:1", json.dumps(job))
+
+    stats = summary.compile_weekly_stats("career@example.com", now)
+    assert stats["created_count"] == 1
+    assert stats["students"][0]["latest_note"]["text"] == "note"
