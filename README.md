@@ -45,6 +45,8 @@ pytest
 Create a `.env` file with these example values:
 
 ```
+# Point the frontend to the API server. Use 127.0.0.1 if localhost doesn't resolve.
+
 REACT_APP_API_URL=http://localhost:8000
 REACT_APP_GOOGLE_KEY=frontend_key
 GOOGLE_KEY=backend_key
