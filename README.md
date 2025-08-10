@@ -45,7 +45,7 @@ pytest
 Create a `.env` file with these example values:
 
 ```
-REACT_APP_API_URL=http://127.0.0.1:8000
+REACT_APP_API_URL=http://localhost:8000
 REACT_APP_GOOGLE_KEY=frontend_key
 GOOGLE_KEY=backend_key
 SMTP_HOST=smtp.example.com
