@@ -1560,6 +1560,58 @@ def test_test_notification_forbidden():
     assert resp.status_code == 403
 
 
+def test_admin_weekly_summary(monkeypatch):
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    called = {}
+
+    def fake_summary(email):
+        called["email"] = email
+
+    monkeypatch.setattr(main_app, "send_weekly_summary", fake_summary)
+
+    token = client.post(
+        "/login", json={"email": "admin@example.com", "password": "admin123"}
+    ).json()["token"]
+
+    resp = client.post(
+        "/admin/test-weekly-summary",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    assert called["email"] == "admin@example.com"
+
+
+def test_weekly_summary_forbidden():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    user = {
+        "email": "reg@example.com",
+        "first_name": "Reg",
+        "last_name": "User",
+        "school_code": "1001",
+        "password": "pass",
+        "role": "applicant",
+    }
+    client.post("/register", json=user)
+    key = f"user:{user['email']}"
+    data = json.loads(main_app.redis_client.get(key))
+    data["approved"] = True
+    main_app.redis_client.set(key, json.dumps(data))
+
+    token = client.post(
+        "/login", json={"email": user["email"], "password": user["password"]}
+    ).json()["token"]
+
+    resp = client.post(
+        "/admin/test-weekly-summary",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 403
+
+
 def test_match_metrics_increment(monkeypatch):
     main_app.redis_client.flushdb()
     job = {

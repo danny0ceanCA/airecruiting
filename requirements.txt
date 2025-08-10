@@ -57,3 +57,4 @@ uvicorn==0.34.3
 yarl==1.20.1
 rq>=1.15
 faiss-cpu>=1.11.0
+rq-scheduler>=0.13

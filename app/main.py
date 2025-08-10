@@ -1,3 +1,7 @@
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from datetime import datetime, timedelta, timezone
 import json
 import csv
@@ -19,7 +23,6 @@ from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr, Field, ConfigDict, field_validator, model_validator
 from jose import jwt, JWTError
-from dotenv import load_dotenv
 import bcrypt
 for _p in ["http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY"]:
     os.environ.pop(_p, None)
@@ -39,6 +42,7 @@ from backend.app.schemas.description import DescriptionRequest
 from backend.app.services.resume import generate_resume_text
 from backend.app.services.description import generate_description_text
 from backend.app.school_codes import SCHOOL_CODE_MAP
+from backend.app.services.summary import send_weekly_summary
 
 
 def init_default_school_codes():
@@ -99,7 +103,7 @@ def all_school_codes() -> dict[str, str]:
     return codes
 
 # Load environment variables
-load_dotenv()
+# (Handled at top of file)
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"), http_client=httpx.Client())
 redis_url = os.getenv("REDIS_URL")
 
@@ -280,6 +284,9 @@ ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://localhost:3001",
     "http://localhost:3002",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:3001",
+    "http://127.0.0.1:3002",
     "https://airecruiting-frontend.onrender.com",
     "https://talentmatch-frontend-nacw.onrender.com",
     "https://talentmatch-ai.com",
@@ -2691,6 +2698,16 @@ def admin_test_notification(current_user: dict = Depends(get_current_user)):
         ),
     )
     return {"message": "Test email sent"}
+
+
+@app.post("/admin/test-weekly-summary")
+def admin_test_weekly_summary(current_user: dict = Depends(get_current_user)):
+    """Manually trigger a weekly summary email to the admin's address."""
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+
+    send_weekly_summary(current_user["sub"])
+    return {"message": "Weekly summary sent"}
 
 
 @app.get("/activity-log")

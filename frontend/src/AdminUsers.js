@@ -252,6 +252,20 @@ function AdminUsers() {
     }
   };
 
+  const handleSendAdminSummary = async () => {
+    try {
+      await api.post(
+        '/admin/test-weekly-summary',
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      showToast('Weekly summary sent!');
+    } catch (err) {
+      console.error('Failed to send weekly summary', err);
+      showToast('Failed to send weekly summary');
+    }
+  };
+
   const handleDelete = async (email) => {
     if (!window.confirm(`Delete user ${email}?`)) return;
     try {
@@ -548,6 +562,9 @@ function AdminUsers() {
               so you can see what candidates receive.
             </p>
             <button onClick={handleSendTest}>Send Test Email</button>
+            <button onClick={handleSendAdminSummary} style={{ marginLeft: '0.5rem' }}>
+              Send Weekly Summary Email
+            </button>
           </div>
         )}
       </div>

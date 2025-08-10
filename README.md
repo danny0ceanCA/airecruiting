@@ -45,7 +45,9 @@ pytest
 Create a `.env` file with these example values:
 
 ```
-REACT_APP_API_URL=http://127.0.0.1:8000
+# Point the frontend to the API server. Use 127.0.0.1 if localhost doesn't resolve.
+
+REACT_APP_API_URL=http://localhost:8000
 REACT_APP_GOOGLE_KEY=frontend_key
 GOOGLE_KEY=backend_key
 SMTP_HOST=smtp.example.com
@@ -84,6 +86,11 @@ email address.
 
 Administrators can manage user accounts. Use `DELETE /admin/users/{email}` to
 remove a user from the system.
+
+For testing purposes, administrators may manually trigger the weekly summary
+email with `POST /admin/test-weekly-summary`. The admin interface includes a
+"Send Weekly Summary Email" button under the **Tests** tab that calls this
+endpoint.
 
 ## Assignment and Rejection Workflow
 
@@ -214,3 +221,16 @@ python scripts/backfill_codes.py
 
 The script scans all `user:*` and `student:*` keys and updates records where
 `institutional_code` is absent but `school_code` exists.
+
+## Scheduling Weekly Summaries
+
+Run the scheduler script to enqueue weekly summary jobs:
+
+```bash
+export REDIS_URL=redis://localhost:6379/0  # adjust as needed
+python scripts/schedule_weekly_summary.py
+```
+
+This configures the `weekly_summary_worker` to run every Monday at 08:00 server time. The script may be invoked at deploy time or via cron.
+
+Career staff receive individual activity summaries, while any admin users are emailed a site-wide summary covering all career staff activity.
