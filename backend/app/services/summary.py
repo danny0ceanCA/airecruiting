@@ -311,21 +311,24 @@ Stats JSON:
         return "Here is your activity summary:\n" + json.dumps(stats, indent=2)
 
 
-def send_weekly_summary(user_email: str) -> None:
-    """Compile stats and email a weekly summary to the given user (career or admin)."""
+def send_weekly_summary(user_email: str) -> bool:
+    """Compile stats and email a weekly summary to the given user (career or admin).
+
+    Returns True if an email was sent, otherwise False.
+    """
     _ensure_dependencies()
     raw = _decode(redis_client.get(f"user:{user_email}"))
     if not raw:
-        return
+        return False
 
     try:
         user = json.loads(raw)
     except Exception:
-        return
+        return False
 
     role = user.get("role")
     if role not in {"career", "admin"}:
-        return
+        return False
 
     display_name = f"{user.get('first_name', '')} {user.get('last_name', '')}".strip() or user_email
     now = datetime.now(timezone.utc)
@@ -338,3 +341,4 @@ def send_weekly_summary(user_email: str) -> None:
 
     body = build_summary_narrative(stats, display_name)
     send_email(user_email, "Your Weekly Activity Summary", body)
+    return True

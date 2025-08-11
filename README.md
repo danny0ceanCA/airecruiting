@@ -22,6 +22,29 @@ python worker.py
 
 `/match` and `/rematches/{job_code}` enqueue work for these workers.
 
+### Weekly summary emails
+
+Weekly activity summaries are enqueued every Monday at **08:30** server time using
+[`rq-scheduler`](https://github.com/rq/rq-scheduler). The worker registers this
+cron job on startup, but a scheduler process must be running to move the job to
+the `weekly` queue when the time arrives.
+
+Ensure the following environment variables are set: `REDIS_URL`,
+`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, and `EMAIL_SENDER`.
+
+Example deployment commands:
+
+```bash
+# Start the worker (also schedules the cron job)
+python worker.py
+
+# In a separate process, run the scheduler to enqueue weekly jobs
+rqscheduler --queue weekly
+```
+
+The cron expression runs in the server's local time zone; adjust the host time
+zone if a different send time is required.
+
 ## Frontend
 
 The frontend was bootstrapped with Create React App and lives in the `frontend` folder. Install dependencies and start the development server with:
