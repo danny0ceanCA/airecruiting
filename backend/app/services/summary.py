@@ -52,18 +52,28 @@ def _decode(raw):
     return raw
 
 
+def _day_start(d: datetime) -> datetime:
+    return d.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
+
+
+def _day_end(d: datetime) -> datetime:
+    return d.replace(hour=23, minute=59, second=59, microsecond=999999, tzinfo=timezone.utc)
+
+
 def _week_window(now: datetime) -> Tuple[datetime, datetime]:
     """
-    Return Monday–Friday window ending on the most recent Friday.
-    Example: run on Mon 2025-08-11 -> window Mon 2025-08-04 to Fri 2025-08-08.
+    Return Monday–Friday window ending on the most recent Friday, normalized to full days (UTC):
+      start: Monday 00:00:00
+      end:   Friday 23:59:59.999999
+    Example: run on Mon 2025-08-11 -> Mon 2025-08-04 00:00 to Fri 2025-08-08 23:59:59.999999.
     """
-    days_since_friday = (now.weekday() - 4) % 7  # weekday(): Mon=0 ... Fri=4
-    last_friday = now - timedelta(days=days_since_friday)
-    monday_of_that_week = last_friday - timedelta(days=4)
     if now.tzinfo is None:
-        monday_of_that_week = monday_of_that_week.replace(tzinfo=timezone.utc)
-        last_friday = last_friday.replace(tzinfo=timezone.utc)
-    return monday_of_that_week, last_friday
+        now = now.replace(tzinfo=timezone.utc)
+    # Most recent Friday (weekday: Mon=0 ... Fri=4)
+    days_since_friday = (now.weekday() - 4) % 7
+    last_friday = (now - timedelta(days=days_since_friday)).astimezone(timezone.utc)
+    monday_of_that_week = last_friday - timedelta(days=4)
+    return _day_start(monday_of_that_week), _day_end(last_friday)
 
 
 def _in_window(ts_str: str | None, start: datetime, end: datetime) -> bool:
@@ -83,9 +93,9 @@ def compile_weekly_stats(user_email: str, now: datetime) -> Dict[str, Any]:
     """
     _ensure_dependencies()
     window_start, window_end = _week_window(now)
-    user_lc = (user_email or "").lower()
+    user_lc = (user_email or "").strip().lower()
 
-    # ---- Discover students created in-window by this user ----
+    # ---- Discover students created in-window by this user (union of logs + student:* scan) ----
     created_emails: set[str] = set()
 
     # From activity logs (POST/PUT /students*)
@@ -97,7 +107,7 @@ def compile_weekly_stats(user_email: str, now: datetime) -> Dict[str, Any]:
         except Exception:
             continue
 
-        if (entry.get("user") or "").lower() != user_lc:
+        if (entry.get("user") or "").strip().lower() != user_lc:
             continue
 
         method = (entry.get("method") or "").upper()
@@ -120,7 +130,7 @@ def compile_weekly_stats(user_email: str, now: datetime) -> Dict[str, Any]:
         if email:
             created_emails.add(email)
 
-    # Also scan student:* objects (schema: created_by, created_at, email) — union with logs
+    # Also scan student:* objects (schema: created_by, created_at, email)
     for key in redis_client.scan_iter("student:*"):
         raw = _decode(redis_client.get(key))
         if not raw:
@@ -130,7 +140,7 @@ def compile_weekly_stats(user_email: str, now: datetime) -> Dict[str, Any]:
         except Exception:
             continue
 
-        if (student.get("created_by") or "").lower() != user_lc:
+        if (student.get("created_by") or "").strip().lower() != user_lc:
             continue
 
         if _in_window(student.get("created_at"), window_start, window_end):
@@ -238,8 +248,8 @@ def build_summary_narrative(stats: Dict[str, Any], user_name: str) -> str:
     """Generate a narrative summary of the week's activity via OpenAI."""
     # Use the computed Friday in the subject
     now = _parse_ts(stats.get("window_end")) or datetime.now(timezone.utc)
-    _, week_ending = _week_window(now)
-    week_ending_str = week_ending.strftime("%Y-%m-%d")
+    # Recompute for safety; but window_end already reflects Fri 23:59:59.999999
+    week_ending_str = now.strftime("%Y-%m-%d")
 
     # Concrete numbers for the “Key Numbers” section (no guessing)
     created_count = stats.get("created_count", 0)
