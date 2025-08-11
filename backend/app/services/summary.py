@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List
@@ -15,6 +16,8 @@ send_email = None
 
 # Reuse a single OpenAI client; reads OPENAI_API_KEY from env
 openai_client = OpenAI()
+
+logger = logging.getLogger(__name__)
 
 
 def _ensure_dependencies() -> None:
@@ -162,14 +165,22 @@ def build_summary_narrative(stats: Dict[str, Any], user_name: str) -> str:
         f"Include key numbers, short insights, and 3 bullet action items if applicable.\n"
         f"Stats JSON:\n{json.dumps(stats)}"
     )
+    model_name = "gpt-5-mini"
     try:
         resp = openai_client.chat.completions.create(
-            model="gpt-5-mini",
+            model=model_name,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.4,
         )
         return (resp.choices[0].message.content or "").strip()
-    except Exception:
+    except Exception as exc:
+        has_key = bool(os.getenv("OPENAI_API_KEY"))
+        logger.exception(
+            "OpenAI chat completion failed for model %s (OPENAI_API_KEY present: %s): %s",
+            model_name,
+            has_key,
+            exc,
+        )
         # Safe fallback
         return "Here is your activity summary:\n" + json.dumps(stats, indent=2)
 
