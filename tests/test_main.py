@@ -369,6 +369,65 @@ def test_upload_students(monkeypatch):
     assert len(stored) == 2
 
 
+def test_student_creation_records_metadata(monkeypatch):
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    login_resp = client.post("/login", json={"email": "admin@example.com", "password": "admin123"})
+    token = login_resp.json()["token"]
+
+    class FakeResp:
+        def __init__(self):
+            self.data = [type("obj", (), {"embedding": [0.0, 0.1]})]
+
+    def fake_create(input, model):
+        return FakeResp()
+
+    monkeypatch.setattr(main_app.client.embeddings, "create", fake_create)
+    monkeypatch.setattr(main_app, "ensure_index", lambda dim: None)
+    monkeypatch.setattr(main_app, "rebuild_vector_index", lambda: None)
+    main_app.vector_index = None
+
+    profile = {
+        "first_name": "Stu",
+        "last_name": "Dent",
+        "email": "stud@example.com",
+        "phone": "123",
+        "license": "lvn",
+        "skills": ["python"],
+        "experience_summary": "summary",
+        "interests": "coding",
+        "city": "Town",
+        "state": "ST",
+        "lat": 0.0,
+        "lng": 0.0,
+        "max_travel": 10,
+    }
+
+    resp = client.post("/students", json=profile, headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200
+
+    raw = main_app.redis_client.get(f"student:{profile['email']}")
+    stored = json.loads(raw)
+    assert stored["created_by"] == "admin@example.com"
+    assert "created_at" in stored
+    datetime.fromisoformat(stored["created_at"])
+
+    updated = profile.copy()
+    updated["city"] = "NewCity"
+    resp2 = client.put(
+        f"/students/{profile['email']}",
+        json=updated,
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp2.status_code == 200
+    raw2 = main_app.redis_client.get(f"student:{profile['email']}")
+    stored2 = json.loads(raw2)
+    assert stored2["city"] == "NewCity"
+    assert stored2["created_by"] == "admin@example.com"
+    assert stored2["created_at"] == stored["created_at"]
+
+
 def test_metrics_endpoint():
     main_app.redis_client.flushdb()
     init_default_admin()

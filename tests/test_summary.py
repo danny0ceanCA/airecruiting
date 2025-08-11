@@ -35,7 +35,7 @@ class DummyRedis:
 
 def test_admin_weekly_summary():
     summary.redis_client = DummyRedis()
-    now = datetime.now(timezone.utc)
+    now = datetime(2025, 8, 8, tzinfo=timezone.utc)
 
     # Users
     summary.redis_client.set("user:career@example.com", json.dumps({"role": "career"}))
@@ -78,7 +78,15 @@ def test_admin_weekly_summary():
 
     summary.build_summary_narrative = fake_build
 
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return now
+
+    original_dt = summary.datetime
+    summary.datetime = FixedDateTime
     summary.send_weekly_summary("admin@example.com")
+    summary.datetime = original_dt
 
     assert sent["to"] == "admin@example.com"
     assert "Weekly Activity Summary" in sent["subject"]
@@ -89,7 +97,7 @@ def test_admin_weekly_summary():
 
 def test_compile_weekly_stats_handles_naive_timestamp():
     summary.redis_client = DummyRedis()
-    now = datetime.now(timezone.utc)
+    now = datetime(2025, 8, 8, tzinfo=timezone.utc)
     naive = now.replace(tzinfo=None)
 
     log = {
