@@ -1,9 +1,30 @@
 import os
 import json
+import logging
+
 import redis
+from dotenv import load_dotenv
 from rq import Worker, Queue
 
 from backend.app.services.summary import send_weekly_summary
+
+load_dotenv()
+
+missing_vars = [
+    var
+    for var in [
+        "OPENAI_API_KEY",
+        "SUMMARY_MODEL",
+        "SMTP_HOST",
+        "SMTP_PORT",
+        "SMTP_USER",
+        "SMTP_PASSWORD",
+        "EMAIL_SENDER",
+    ]
+    if not os.getenv(var)
+]
+if missing_vars:
+    logging.warning("Missing environment variables: %s", ", ".join(missing_vars))
 
 redis_url = os.getenv("REDIS_URL")
 if not redis_url:
