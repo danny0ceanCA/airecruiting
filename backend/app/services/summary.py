@@ -265,7 +265,7 @@ Return ONLY the formatted summary. Tone: professional and encouraging.
 
 Subject: Weekly Activity Summary — {week_ending_str}
 
-Hello {user_name}
+Hello,
 
 Here’s your snapshot for the week ending {week_ending_str}:
 
