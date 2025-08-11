@@ -883,6 +883,8 @@ async def create_student(request: Request, current_user: dict = Depends(get_curr
         data["institutional_code"] = institutional_code
     if school_label is not None:
         data["school_label"] = school_label
+    data["created_by"] = current_user.get("sub")
+    data["created_at"] = datetime.now(timezone.utc).isoformat()
     redis_client.set(f"student:{student_data.email}", json.dumps(data))
     ensure_index(len(embedding))
     if vector_index is not None:
@@ -934,6 +936,12 @@ def update_student(
         data["school_label"] = school_label
     if "school_code" in existing:
         data["school_code"] = existing.get("school_code")
+    created_by = existing.get("created_by")
+    created_at = existing.get("created_at")
+    if created_by is not None:
+        data["created_by"] = created_by
+    if created_at is not None:
+        data["created_at"] = created_at
 
     redis_client.set(key, json.dumps(data))
     rebuild_vector_index()
@@ -981,6 +989,8 @@ def upload_students(file: UploadFile = File(...), current_user: dict = Depends(g
 
         data = student.model_dump()
         data["embedding"] = embedding
+        data["created_by"] = current_user.get("sub")
+        data["created_at"] = datetime.now(timezone.utc).isoformat()
         redis_client.set(f"student:{student.email}", json.dumps(data))
         ensure_index(len(embedding))
         if vector_index is not None:
