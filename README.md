@@ -231,6 +231,6 @@ export REDIS_URL=redis://localhost:6379/0  # adjust as needed
 python scripts/schedule_weekly_summary.py
 ```
 
-This configures the `weekly_summary_worker` to run every Monday at 08:00 server time. The script may be invoked at deploy time or via cron.
+This configures the `weekly_summary_worker` to run every Monday at 08:30 server time. The script may be invoked at deploy time or via cron.
 
 Career staff receive individual activity summaries, while any admin users are emailed a site-wide summary covering all career staff activity.
