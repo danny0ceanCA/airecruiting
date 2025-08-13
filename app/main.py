@@ -73,6 +73,8 @@ def all_licenses() -> dict[str, str]:
     """Return mapping of all configured licenses."""
     licenses: dict[str, str] = {}
     for key in redis_client.scan_iter("license:*"):
+        if not isinstance(key, str) or not key.startswith("license:"):
+            continue
         label = redis_client.get(key)
         if label is not None:
             code = key.split("license:", 1)[1]
@@ -80,6 +82,21 @@ def all_licenses() -> dict[str, str]:
     for c, l in DEFAULT_LICENSES.items():
         licenses.setdefault(c, l)
     return licenses
+
+
+def license_to_code(value: str | None) -> str | None:
+    """Return the license code for a given code or label."""
+    if not value:
+        return value
+    val = value.strip()
+    licenses = all_licenses()
+    low = val.lower()
+    if low in licenses:
+        return low
+    for code, label in licenses.items():
+        if low == label.lower():
+            return code
+    return low
 
 
 def get_school_label(code: str) -> str | None:
@@ -808,6 +825,8 @@ async def create_student(request: Request, current_user: dict = Depends(get_curr
         body = await request.json()
         student_data = StudentRequest(**body)
 
+    student_data.license = license_to_code(student_data.license)
+
     if current_user.get("role") == "applicant" and student_data.email != current_user.get("sub"):
         raise HTTPException(status_code=403, detail="Applicants can only create their own profile")
 
@@ -914,6 +933,8 @@ def update_student(
     except Exception:
         existing = {}
 
+    updated.license = license_to_code(updated.license)
+
     combined = " ".join([
         ", ".join(updated.skills),
         updated.experience_summary,
@@ -973,6 +994,8 @@ def upload_students(file: UploadFile = File(...), current_user: dict = Depends(g
         except KeyError:
             continue
 
+        student.license = license_to_code(student.license)
+
         if redis_client.exists(student.email):
             redis_client.delete(student.email)
 
@@ -1011,6 +1034,7 @@ def create_job(job: JobRequest, current_user: dict = Depends(get_current_user)):
         key = f"job:{generated_code}"
 
     data = job.model_dump()
+    data["required_license"] = license_to_code(data.get("required_license"))
     user_email = current_user.get("sub")
     user_role = current_user.get("role")
     # Autopopulate source for recruiters if missing or blank
@@ -1058,6 +1082,8 @@ def update_job(job_code: str, updated: dict, token_data: dict = Depends(get_curr
         max_pay = float(updated.get("max_pay", job.get("max_pay", 0)))
         if min_pay <= 0 or max_pay <= 0 or min_pay > max_pay:
             raise HTTPException(status_code=400, detail="Invalid pay range")
+    if "required_license" in updated:
+        updated["required_license"] = license_to_code(updated["required_license"])
     job.update(updated)
     redis_client.set(key, json.dumps(job))
     print(f"✏️ Updated job {job_code}")
@@ -1095,7 +1121,7 @@ async def _perform_match_async(job_code: str, send_emails: bool = True, enq_time
     job = json.loads(raw)
     job.setdefault("uninterested_students", [])
 
-    required_license = job.get("required_license")
+    required_license = license_to_code(job.get("required_license"))
 
     poster_code = None
     poster_raw = redis_client.get(f"user:{job.get('posted_by')}")
@@ -1141,7 +1167,7 @@ async def _perform_match_async(job_code: str, send_emails: bool = True, enq_time
                 continue
             if student.get("email") in job.get("uninterested_students", []):
                 continue
-            student_license = student.get("license") or student.get("education_level")
+            student_license = license_to_code(student.get("license") or student.get("education_level"))
             if required_license and student_license != required_license:
                 continue
             student_user_raw = redis_client.get(f"user:{student.get('email')}")
@@ -1204,7 +1230,7 @@ async def _perform_match_async(job_code: str, send_emails: bool = True, enq_time
         ucode = udata.get("institutional_code") or udata.get("school_code")
         if ucode != poster_code:
             continue
-        user_license = udata.get("license") or udata.get("education_level")
+        user_license = license_to_code(udata.get("license") or udata.get("education_level"))
         if required_license and user_license != required_license:
             continue
         email = ukey.split("user:", 1)[1]

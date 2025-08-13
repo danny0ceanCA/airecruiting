@@ -287,6 +287,91 @@ def test_match_filters_by_license(monkeypatch):
     assert data[0]["email"] == "john2@example.com"
 
 
+def test_license_label_vs_code_matching(monkeypatch):
+    token = login_admin()
+
+    class FakeResp:
+        def __init__(self, emb):
+            self.data = [type("obj", (object,), {"embedding": emb})]
+
+    monkeypatch.setattr(main_app, "get_driving_distance_miles", lambda *a, **k: 10.0)
+    monkeypatch.setattr(main_app.client.embeddings, "create", lambda input, model: FakeResp([1.0, 0.0]))
+
+    s_label = {
+        "first_name": "Label",
+        "last_name": "User",
+        "email": "label@example.com",
+        "phone": "123",
+        "license": "Medical Assistant",
+        "skills": ["alpha"],
+        "experience_summary": "summary",
+        "interests": "A",
+        "city": "City",
+        "state": "ST",
+        "lat": 0.0,
+        "lng": 0.0,
+        "max_travel": 100.0,
+    }
+    resp = client.post("/students", json=s_label, headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200
+    stored = json.loads(main_app.redis_client.get("student:label@example.com"))
+    assert stored["license"] == "ma"
+
+    job_code_req = {
+        "job_title": "Job1",
+        "job_description": "desc",
+        "desired_skills": ["alpha"],
+        "min_pay": 1.0,
+        "max_pay": 2.0,
+        "city": "City",
+        "state": "ST",
+        "lat": 0.0,
+        "lng": 0.0,
+        "required_license": "ma",
+    }
+    resp = client.post("/jobs", json=job_code_req, headers={"Authorization": f"Bearer {token}"})
+    job_code = resp.json()["job_code"]
+    match_resp = client.post("/match", json={"job_code": job_code}, headers={"Authorization": f"Bearer {token}"})
+    assert any(m["email"] == "label@example.com" for m in match_resp.json()["matches"])
+
+    s_code = {
+        "first_name": "Code",
+        "last_name": "User",
+        "email": "code@example.com",
+        "phone": "456",
+        "license": "ma",
+        "skills": ["beta"],
+        "experience_summary": "summary",
+        "interests": "B",
+        "city": "City",
+        "state": "ST",
+        "lat": 0.0,
+        "lng": 0.0,
+        "max_travel": 100.0,
+    }
+    resp = client.post("/students", json=s_code, headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200
+
+    job_label_req = {
+        "job_title": "Job2",
+        "job_description": "desc",
+        "desired_skills": ["beta"],
+        "min_pay": 1.0,
+        "max_pay": 2.0,
+        "city": "City",
+        "state": "ST",
+        "lat": 0.0,
+        "lng": 0.0,
+        "required_license": "Medical Assistant",
+    }
+    resp = client.post("/jobs", json=job_label_req, headers={"Authorization": f"Bearer {token}"})
+    job_code2 = resp.json()["job_code"]
+    stored_job = json.loads(main_app.redis_client.get(f"job:{job_code2}"))
+    assert stored_job["required_license"] == "ma"
+    match_resp2 = client.post("/match", json={"job_code": job_code2}, headers={"Authorization": f"Bearer {token}"})
+    assert any(m["email"] == "code@example.com" for m in match_resp2.json()["matches"])
+
+
 def test_match_respects_travel_distance(monkeypatch):
     token = login_admin()
 
