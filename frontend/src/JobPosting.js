@@ -415,6 +415,18 @@ if (shouldRedirect) {
           m.email === email ? { ...m, status: 'rejected' } : m
         )
       }));
+      setJobs((prevJobs) =>
+        prevJobs.map((j) =>
+          j.job_code === jobCode
+            ? {
+                ...j,
+                assigned_students: (j.assigned_students || []).filter(
+                  (em) => em !== email
+                ),
+              }
+            : j
+        )
+      );
     } catch (err) {
       console.error('Reject failed', err);
     }
