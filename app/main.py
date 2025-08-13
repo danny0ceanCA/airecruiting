@@ -1078,6 +1078,7 @@ def match_job(req: JobCodeRequest, current_user: dict = Depends(get_current_user
 @app.post("/rematches/{job_code}")
 def rematch_job(job_code: str, current_user: dict = Depends(get_current_user)):
     """Queue a rematch computation without notifying students."""
+    redis_client.delete(f"match_results:{job_code}")
     enq_time = datetime.now().timestamp()
     if hasattr(redis_client, "pipeline"):
         get_queue().enqueue(match_worker, job_code, False, enq_time)
