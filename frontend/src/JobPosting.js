@@ -431,10 +431,20 @@ if (shouldRedirect) {
       );
       setMatches((prev) => ({
         ...prev,
-        [jobCode]: prev[jobCode].map((m) =>
-          m.email === email ? { ...m, status: 'rejected' } : m
-        )
+        [jobCode]: (prev[jobCode] || []).filter((m) => m.email !== email),
       }));
+      setJobs((prevJobs) =>
+        prevJobs.map((j) =>
+          j.job_code === jobCode
+            ? {
+                ...j,
+                assigned_students: (j.assigned_students || []).filter(
+                  (e) => e !== email
+                ),
+              }
+            : j
+        )
+      );
     } catch (err) {
       console.error('Reject failed', err);
     }
@@ -458,6 +468,18 @@ if (shouldRedirect) {
             m.email === email ? { ...m, status: 'assigned' } : m
           )
         }));
+        setJobs((prevJobs) =>
+          prevJobs.map((j) =>
+            j.job_code === job.job_code
+              ? {
+                  ...j,
+                  assigned_students: Array.from(
+                    new Set([...(j.assigned_students || []), email])
+                  ),
+                }
+              : j
+          )
+        );
       } catch (err) {
         console.error('Bulk assign failed', err);
       }
@@ -706,7 +728,15 @@ if (shouldRedirect) {
 
   const renderAssigned = (job) => {
     const matchList = matches[job.job_code] || [];
-    const assignedMatches = matchList.filter((m) => m.status === 'assigned');
+    const matchMap = matchList.reduce((acc, m) => {
+      if (m.status === 'assigned') {
+        acc[m.email] = m;
+      }
+      return acc;
+    }, {});
+    const rows = (job.assigned_students || []).map((email) =>
+      matchMap[email] || { email }
+    );
     return (
       <table className="matches-table">
         <thead>
@@ -721,55 +751,69 @@ if (shouldRedirect) {
           </tr>
         </thead>
         <tbody>
-          {assignedMatches.map((row) => (
+          {rows.map((row) => (
             <tr key={row.email}>
-              <td>{row.first_name || row.name?.split(' ')[0]} {row.last_name || row.name?.split(' ')[1]}</td>
-              <td>{row.email}</td>
-              <td>{row.score?.toFixed(2)}</td>
               <td>
-                {generatingResumes[`${job.job_code}:${row.email}`] ? (
-                  <span className="spinner">⏳</span>
-                ) : generatedResumes[`${job.job_code}:${row.email}`] ? (
-                  <button className="resume-icon-button" onClick={() => viewResume(row.email, job.job_code)}>
-                    📥
-                  </button>
+                {(row.first_name || row.name?.split(' ')[0] || '') + ' ' +
+                  (row.last_name || row.name?.split(' ')[1] || '')}
+              </td>
+              <td>{row.email}</td>
+              <td>{row.score !== undefined ? row.score?.toFixed(2) : ''}</td>
+              <td>
+                {matchMap[row.email] ? (
+                  generatingResumes[`${job.job_code}:${row.email}`] ? (
+                    <span className="spinner">⏳</span>
+                  ) : generatedResumes[`${job.job_code}:${row.email}`] ? (
+                    <button
+                      className="resume-icon-button"
+                      onClick={() => viewResume(row.email, job.job_code)}
+                    >
+                      📥
+                    </button>
+                  ) : (
+                    <button onClick={() => generateResume(row.email, job.job_code)}>
+                      Generate Resume
+                    </button>
+                  )
                 ) : (
-                  <button onClick={() => generateResume(row.email, job.job_code)}>
-                    Generate Resume
-                  </button>
+                  'N/A'
                 )}
               </td>
               <td>
-                {editingNotes[`${job.job_code}:${row.email}`] ? (
-                  <NoteEditor
-                    jobCode={job.job_code}
-                    email={row.email}
-                    notes={row.notes || []}
-                    onSaved={(newNote) => {
-                      setMatches((prev) => ({
-                        ...prev,
-                        [job.job_code]: (prev[job.job_code] || []).map((m) =>
-                          m.email === row.email
-                            ? {
-                                ...m,
-                                note: newNote.text,
-                                notes: [...(m.notes || []), newNote],
-                              }
-                            : m
-                        ),
-                      }));
-                    }}
-                    onCancel={() => cancelNote(job.job_code, row.email)}
-                  />
+                {matchMap[row.email] ? (
+                  editingNotes[`${job.job_code}:${row.email}`] ? (
+                    <NoteEditor
+                      jobCode={job.job_code}
+                      email={row.email}
+                      notes={row.notes || []}
+                      onSaved={(newNote) => {
+                        setMatches((prev) => ({
+                          ...prev,
+                          [job.job_code]: (prev[job.job_code] || []).map((m) =>
+                            m.email === row.email
+                              ? {
+                                  ...m,
+                                  note: newNote.text,
+                                  notes: [...(m.notes || []), newNote],
+                                }
+                              : m
+                          ),
+                        }));
+                      }}
+                      onCancel={() => cancelNote(job.job_code, row.email)}
+                    />
+                  ) : (
+                    <>
+                      {row.notes && row.notes.length
+                        ? row.notes[row.notes.length - 1].text
+                        : row.note || ''}
+                      <button onClick={() => startNote(job.job_code, row.email)}>
+                        Comment
+                      </button>
+                    </>
+                  )
                 ) : (
-                  <>
-                    {row.notes && row.notes.length
-                      ? row.notes[row.notes.length - 1].text
-                      : row.note || ''}
-                    <button onClick={() => startNote(job.job_code, row.email)}>
-                      Comment
-                    </button>
-                  </>
+                  'N/A'
                 )}
               </td>
               <td className="status-cell">
@@ -777,7 +821,9 @@ if (shouldRedirect) {
               </td>
               <td>
                 {isRecruiter && (
-                  <button onClick={() => notifyInterest(job.job_code, row.email)}>Notify Candidate</button>
+                  <button onClick={() => notifyInterest(job.job_code, row.email)}>
+                    Notify Candidate
+                  </button>
                 )}
                 {!isRecruiter && (
                   <button onClick={() => handlePlace(job, row)}>Place</button>
