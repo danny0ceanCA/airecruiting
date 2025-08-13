@@ -1317,6 +1317,19 @@ def get_match_results(job_code: str, current_user: dict = Depends(get_current_us
         placed = set(job.get("placed_students", []))
         rejected = set(job.get("rejected_students", []))
 
+        existing = {m["email"] for m in matches}
+        for email in assigned:
+            if email not in existing:
+                udata = redis_client.hgetall(f"user:{email}") or {}
+                first = udata.get(b"first_name", b"").decode()
+                last = udata.get(b"last_name", b"").decode()
+                name = f"{first} {last}".strip()
+                matches.append({
+                    "name": name,
+                    "email": email,
+                    "score": None,
+                })
+
         for m in matches:
             if m["email"] in placed:
                 m["status"] = "placed"
