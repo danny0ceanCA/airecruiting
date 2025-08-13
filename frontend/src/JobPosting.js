@@ -198,12 +198,24 @@ if (shouldRedirect) {
   const pollForMatch = (code) => {
     const check = async () => {
       try {
-        const resp = await api.get(`/has-match/${code}`,
-          { headers: { Authorization: `Bearer ${token}` } });
-        if (resp.data.has_match) {
-          await loadMatchResults(code);
-          setLoadingMatches((prev) => ({ ...prev, [code]: false }));
-          return;
+        const has = await api.get(`/has-match/${code}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (has.data.has_match) {
+          const resp = await api.get(`/match/${code}`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          const matchResults = resp.data.matches.map((m) => ({
+            ...m,
+            status: m.status || null
+          }));
+          const prev = matches[code];
+          if (!prev || JSON.stringify(prev) !== JSON.stringify(matchResults)) {
+            setMatches((prevState) => ({ ...prevState, [code]: matchResults }));
+            setMatchLoaded((prevState) => ({ ...prevState, [code]: true }));
+            setLoadingMatches((prevState) => ({ ...prevState, [code]: false }));
+            return;
+          }
         }
       } catch (err) {
         console.error('Error polling match status:', err);
@@ -239,6 +251,13 @@ if (shouldRedirect) {
 
   const handleRematch = async (code) => {
     try {
+      setMatches((prev) => {
+        const copy = { ...prev };
+        delete copy[code];
+        return copy;
+      });
+      setMatchLoaded((prev) => ({ ...prev, [code]: false }));
+      setMatchPresence((prev) => ({ ...prev, [code]: false }));
       setLoadingMatches((prev) => ({ ...prev, [code]: true }));
       const resp = await api.post(
         `/rematches/${code}`,
@@ -249,6 +268,7 @@ if (shouldRedirect) {
         const matchResults = resp.data.matches.map((m) => ({ ...m, status: null }));
         setMatches((prev) => ({ ...prev, [code]: matchResults }));
         setLoadingMatches((prev) => ({ ...prev, [code]: false }));
+        setMatchLoaded((prev) => ({ ...prev, [code]: true }));
       } else {
         pollForMatch(code);
       }
