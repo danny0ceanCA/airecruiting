@@ -814,6 +814,68 @@ def test_not_interested_filters_out_student(monkeypatch):
     assert s2["email"] in stored.get("uninterested_students", [])
 
 
+def test_match_limit_ignores_assigned_students(monkeypatch):
+    token = login_admin()
+
+    class FakeResp:
+        def __init__(self, emb):
+            self.data = [type("obj", (), {"embedding": emb})]
+
+    monkeypatch.setattr(
+        main_app.client.embeddings,
+        "create",
+        lambda *a, **k: FakeResp([1.0, 0.0]),
+    )
+    monkeypatch.setattr(main_app, "get_driving_distance_miles", lambda *a, **k: 1.0)
+
+    students = []
+    for i in range(13):
+        stu = {
+            "first_name": "Stu",
+            "last_name": str(i),
+            "email": f"s{i}@example.com",
+            "phone": "1",
+            "license": "ma",
+            "skills": ["python"],
+            "experience_summary": "s",
+            "interests": "i",
+            "city": "c",
+            "state": "s",
+            "lat": 0.0,
+            "lng": 0.0,
+            "max_travel": 10.0,
+            "school_code": "1001",
+        }
+        client.post("/students", json=stu, headers={"Authorization": f"Bearer {token}"})
+        students.append(stu)
+
+    job = {
+        "job_title": "Dev",
+        "job_description": "desc",
+        "desired_skills": ["python"],
+        "min_pay": 1.0,
+        "max_pay": 2.0,
+        "city": "c",
+        "state": "s",
+        "lat": 0.0,
+        "lng": 0.0,
+    }
+    job_code = client.post("/jobs", json=job, headers={"Authorization": f"Bearer {token}"}).json()["job_code"]
+
+    for stu in students[:3]:
+        client.post(
+            "/assign",
+            json={"job_code": job_code, "student_email": stu["email"]},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    resp = client.post("/match", json={"job_code": job_code}, headers={"Authorization": f"Bearer {token}"})
+    data = resp.json()["matches"]
+    assert len(data) == 10
+    assigned_emails = {s["email"] for s in students[:3]}
+    assert all(m["email"] not in assigned_emails for m in data)
+
+
 def test_recruiter_job_source_autopopulated(monkeypatch):
     main_app.redis_client.flushdb()
     init_default_admin()

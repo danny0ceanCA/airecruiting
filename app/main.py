@@ -1248,16 +1248,19 @@ async def _perform_match_async(job_code: str, send_emails: bool = True, enq_time
         )
 
     matches.sort(key=lambda x: x["score"], reverse=True)
-    top_matches = matches[:10]
 
     assigned = set(job.get("assigned_students", []))
+    # Exclude already assigned students from the match limit so recruiters
+    # can always receive up to 10 new candidates regardless of how many
+    # students have been assigned.
+    filtered_matches = [m for m in matches if m["email"] not in assigned]
+    top_matches = filtered_matches[:10]
+
     placed = set(job.get("placed_students", []))
     rejected = set(job.get("rejected_students", []))
     for m in top_matches:
         if m["email"] in placed:
             m["status"] = "placed"
-        elif m["email"] in assigned:
-            m["status"] = "assigned"
         elif m["email"] in rejected:
             m["status"] = "rejected"
         else:
