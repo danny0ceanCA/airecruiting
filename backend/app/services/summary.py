@@ -89,7 +89,7 @@ def compile_weekly_stats(user_email: str, now: datetime) -> Dict[str, Any]:
       - assignment_count: total assignments across those students
       - placement_count: total placements across those students
       - notes_count: # students with a note in-window
-      - students: per-student breakdown (assigned, placed, latest_note)
+      - students: per-student breakdown (assigned, placed, notes list, latest_note)
     """
     _ensure_dependencies()
     window_start, window_end = _week_window(now)
@@ -160,6 +160,7 @@ def compile_weekly_stats(user_email: str, now: datetime) -> Dict[str, Any]:
         placed = 0
         latest_note: Dict[str, Any] | None = None
         note_in_window = False
+        all_notes: List[Dict[str, Any]] = []
 
         for key in redis_client.scan_iter("job:*"):
             job_raw = _decode(redis_client.get(key))
@@ -183,17 +184,34 @@ def compile_weekly_stats(user_email: str, now: datetime) -> Dict[str, Any]:
                 except Exception:
                     notes_map = {}
 
-            notes = notes_map.get(email) or []
-            if notes:
-                candidate = notes[-1]
+            raw_notes = notes_map.get(email) or []
+            if isinstance(raw_notes, str):
+                raw_notes = [{"text": raw_notes, "timestamp": None}]
+            elif isinstance(raw_notes, list):
+                normalized = []
+                for n in raw_notes:
+                    if isinstance(n, dict):
+                        normalized.append({"text": n.get("text", ""), "timestamp": n.get("timestamp")})
+                    else:
+                        normalized.append({"text": str(n), "timestamp": None})
+                raw_notes = normalized
+            else:
+                raw_notes = []
+
+            if raw_notes:
+                all_notes.extend(raw_notes)
+                candidate = raw_notes[-1]
                 cand_ts = _parse_ts(candidate.get("timestamp"))
                 curr_ts = _parse_ts(latest_note.get("timestamp")) if latest_note else None
                 if not curr_ts or (cand_ts and cand_ts > curr_ts):
                     latest_note = {
                         "text": candidate.get("text", ""),
-                        "timestamp": candidate.get("timestamp")
+                        "timestamp": candidate.get("timestamp"),
                     }
-                if any(_in_window(n.get("timestamp"), window_start, window_end) for n in notes if isinstance(n, dict)):
+                if any(
+                    _in_window(n.get("timestamp"), window_start, window_end)
+                    for n in raw_notes
+                ):
                     note_in_window = True
 
         if assigned > 0:
@@ -203,12 +221,18 @@ def compile_weekly_stats(user_email: str, now: datetime) -> Dict[str, Any]:
         if note_in_window:
             notes_count += 1
 
+        all_notes.sort(
+            key=lambda n: _parse_ts(n.get("timestamp"))
+            or datetime.min.replace(tzinfo=timezone.utc)
+        )
+
         stats_students.append(
             {
                 "email": email,
                 "assigned_jobs": assigned,
                 "placed_jobs": placed,
                 "latest_note": latest_note,
+                "notes": all_notes,
             }
         )
 
@@ -280,8 +304,8 @@ Short Insights
 • 1–3 short bullet points highlighting notable trends or outcomes based on the Stats JSON.
 
 Student Notes Summary
-• For each student in the stats, list their email and a one-line note summary.
-  If there is no recent note, write: “No recent note activity logged this week.”
+• For each student in the stats, list their email and a one-line summary of their entire note history,
+  mentioning any new notes from this week in context. If the student has no notes, write: “No note activity recorded.”
 
 Action Items
 • 1–3 concrete actions based on the Stats JSON. Do not invite replies.
