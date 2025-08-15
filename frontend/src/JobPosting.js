@@ -645,7 +645,7 @@ if (shouldRedirect) {
                           ? row.notes[row.notes.length - 1].text
                           : row.note || ''}
                         <button onClick={() => openNotes(job, row)}>
-                          Comment
+                          View Notes{row.notes && ` (${row.notes.length})`}
                         </button>
                       </>
                     </td>
@@ -723,7 +723,7 @@ if (shouldRedirect) {
                     ? row.notes[row.notes.length - 1].text
                     : row.note || ''}
                   <button onClick={() => openNotes(job, row)}>
-                    Comment
+                    View Notes{row.notes && ` (${row.notes.length})`}
                   </button>
                 </>
               </td>
@@ -773,7 +773,7 @@ if (shouldRedirect) {
                     ? row.notes[row.notes.length - 1].text
                     : row.note || ''}
                   <button onClick={() => openNotes(job, row)}>
-                    Comment
+                    View Notes{row.notes && ` (${row.notes.length})`}
                   </button>
                 </>
               </td>

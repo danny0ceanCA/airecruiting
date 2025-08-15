@@ -36,3 +36,17 @@ test('no add button when not allowed', () => {
   );
   expect(screen.queryByText('Add Note')).not.toBeInTheDocument();
 });
+
+test('shows note timestamp in local time', () => {
+  render(
+    <NotesHistoryModal
+      notes={[{ text: 'hi', timestamp: '2024-01-01T00:00:00Z' }]}
+      onClose={() => {}}
+      jobCode="J1"
+      studentEmail="s@example.com"
+      canAdd={false}
+      isAdmin={false}
+    />
+  );
+  expect(screen.getByText(/2024/)).toBeInTheDocument();
+});

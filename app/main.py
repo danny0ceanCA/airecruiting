@@ -1369,6 +1369,12 @@ def get_match_results(job_code: str, current_user: dict = Depends(get_current_us
             else:
                 m["status"] = None
 
+            notes_raw = job.get("student_notes", {}).get(m["email"], [])
+            notes, latest_note = _normalize_notes(notes_raw)
+            m["notes"] = notes
+            if latest_note is not None:
+                m["note"] = latest_note
+
         return {"matches": matches}
     except Exception as e:
         print(f"❌ Failed to load match results for {job_code}: {e}")

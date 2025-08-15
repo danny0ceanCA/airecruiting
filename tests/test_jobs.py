@@ -258,6 +258,39 @@ def test_get_match_results_includes_missing_assigned(monkeypatch):
     assert all(m["status"] == "assigned" for m in data)
 
 
+def test_get_match_results_includes_notes(monkeypatch):
+    token = login_admin()
+
+    store = {}
+
+    def fake_get(key):
+        return store.get(key)
+
+    def fake_set(key, value):
+        store[key] = value
+
+    monkeypatch.setattr(main_app.redis_client, "get", fake_get)
+    monkeypatch.setattr(main_app.redis_client, "set", fake_set)
+
+    job_code = "XYZ4"
+    store[f"match_results:{job_code}"] = json.dumps([
+        {"email": "a@example.com", "score": 1.0}
+    ])
+    store[f"job:{job_code}"] = json.dumps({
+        "job_code": job_code,
+        "assigned_students": [],
+        "placed_students": [],
+        "rejected_students": [],
+        "student_notes": {"a@example.com": [{"text": "hi"}]}
+    })
+
+    resp = client.get(f"/match/{job_code}", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200
+    data = resp.json()["matches"][0]
+    assert data["notes"][0]["text"] == "hi"
+    assert data["note"] == "hi"
+
+
 def test_match_filters_by_license(monkeypatch):
     token = login_admin()
 
