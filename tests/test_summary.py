@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from backend.app.services import summary
 
@@ -121,3 +121,35 @@ def test_compile_weekly_stats_handles_naive_timestamp():
     stats = summary.compile_weekly_stats("career@example.com", now)
     assert stats["created_count"] == 1
     assert stats["students"][0]["latest_note"]["text"] == "note"
+
+
+def test_compile_weekly_stats_includes_all_notes():
+    summary.redis_client = DummyRedis()
+    now = datetime(2025, 8, 8, tzinfo=timezone.utc)
+
+    log = {
+        "user": "career@example.com",
+        "method": "POST",
+        "path": "/students",
+        "timestamp": now.isoformat(),
+        "student_email": "stu@example.com",
+    }
+    summary.redis_client.lpush(summary.ACTIVITY_LOG_KEY, json.dumps(log))
+
+    earlier = (now - timedelta(days=14)).isoformat()
+    job = {
+        "assigned_students": ["stu@example.com"],
+        "placed_students": [],
+        "student_notes": {
+            "stu@example.com": [
+                {"text": "old", "timestamp": earlier},
+                {"text": "new", "timestamp": now.isoformat()},
+            ]
+        },
+    }
+    summary.redis_client.set("job:1", json.dumps(job))
+
+    stats = summary.compile_weekly_stats("career@example.com", now)
+    notes = stats["students"][0]["notes"]
+    assert [n["text"] for n in notes] == ["old", "new"]
+    assert stats["notes_count"] == 1
