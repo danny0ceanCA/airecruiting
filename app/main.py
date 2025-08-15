@@ -1248,7 +1248,7 @@ async def _perform_match_async(job_code: str, send_emails: bool = True, enq_time
         )
 
     matches.sort(key=lambda x: x["score"], reverse=True)
-    top_matches = matches[:5]
+    top_matches = matches[:10]
 
     assigned = set(job.get("assigned_students", []))
     placed = set(job.get("placed_students", []))
