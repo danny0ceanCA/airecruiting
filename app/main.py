@@ -1248,20 +1248,26 @@ async def _perform_match_async(job_code: str, send_emails: bool = True, enq_time
         )
 
     matches.sort(key=lambda x: x["score"], reverse=True)
-    top_matches = matches[:10]
 
     assigned = set(job.get("assigned_students", []))
     placed = set(job.get("placed_students", []))
     rejected = set(job.get("rejected_students", []))
+
+    # Only store unassigned/unplaced/unrejected matches and keep
+    # the list length at a maximum of 10. Assigned candidates will be
+    # reattached when retrieving match results.
+    filtered = [
+        m
+        for m in matches
+        if m["email"] not in assigned
+        and m["email"] not in placed
+        and m["email"] not in rejected
+    ]
+
+    top_matches = filtered[:10]
+
     for m in top_matches:
-        if m["email"] in placed:
-            m["status"] = "placed"
-        elif m["email"] in assigned:
-            m["status"] = "assigned"
-        elif m["email"] in rejected:
-            m["status"] = "rejected"
-        else:
-            m["status"] = None
+        m["status"] = None
 
 
 
@@ -1344,7 +1350,7 @@ def get_match_results(job_code: str, current_user: dict = Depends(get_current_us
         rejected = set(job.get("rejected_students", []))
 
         existing = {m["email"] for m in matches}
-        for email in assigned:
+        for email in assigned | placed | rejected:
             if email not in existing:
                 udata = redis_client.hgetall(f"user:{email}") or {}
                 first = udata.get(b"first_name", b"").decode()
