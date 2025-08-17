@@ -146,6 +146,30 @@
   box-shadow: 0 6px 15px rgba(0, 0, 0, 0.2);
 }
 
+.table-wrapper {
+  max-height: 400px;
+  overflow-y: auto;
+  transition: box-shadow 0.3s;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0);
+}
+
+.table-wrapper.scrolled {
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.table-wrapper > table > thead th {
+  position: sticky;
+  top: 0;
+  background-color: #003366;
+  z-index: 1;
+}
+
+.table-wrapper > table > thead tr.filter-row th {
+  top: 44px;
+  background-color: #001f3f;
+  z-index: 1;
+}
+
 .school-table {
   width: 100%;
   border-collapse: collapse;

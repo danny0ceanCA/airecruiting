@@ -112,6 +112,7 @@ function StudentProfiles() {
   };
 
   const cityRef = useRef(null);
+  const tableWrapperRef = useRef(null);
 
   const initAutocomplete = () => {
     if (cityRef.current && window.google) {
@@ -131,6 +132,22 @@ function StudentProfiles() {
   useEffect(() => {
     loadGoogleMaps(initAutocomplete);
   }, [activeTab, isEditing]);
+
+  useEffect(() => {
+    const wrapper = tableWrapperRef.current;
+    if (!wrapper) return;
+
+    const handleScroll = () => {
+      if (wrapper.scrollTop > 0) {
+        wrapper.classList.add('scrolled');
+      } else {
+        wrapper.classList.remove('scrolled');
+      }
+    };
+
+    wrapper.addEventListener('scroll', handleScroll);
+    return () => wrapper.removeEventListener('scroll', handleScroll);
+  }, []);
 
   const navigate = useNavigate();
   const token = localStorage.getItem('token');
@@ -564,8 +581,9 @@ function StudentProfiles() {
                 <span style={{ marginLeft: '0.5rem' }}>Loading students...</span>
               </div>
             ) : schoolStudents.length > 0 ? (
-              <table className="school-table">
-                <thead>
+              <div className="table-wrapper" ref={tableWrapperRef}>
+                <table className="school-table">
+                  <thead>
                   <tr>
                     <th></th>
                     <th>First Name</th>
@@ -827,7 +845,8 @@ function StudentProfiles() {
                     );
                   })}
                 </tbody>
-              </table>
+                </table>
+              </div>
             ) : (
               <p>You haven't created any student profiles.</p>
             )}
