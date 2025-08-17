@@ -22,10 +22,11 @@ function Dashboard() {
   // Tiles are conditionally rendered based on the user's role
 
   return (
-    <div className="dashboard-container">
-      <AdminMenu />
-      <h2 className="dashboard-heading">Dashboard</h2>
-      <div className="tile-grid">
+    <div className="glass-panel">
+      <div className="dashboard-container">
+        <AdminMenu />
+        <h2 className="dashboard-heading">Dashboard</h2>
+        <div className="tile-grid">
         {role === 'admin' && (
           <>
             <Link to="/students" className="dashboard-tile">Student Profiles</Link>
@@ -54,6 +55,7 @@ function Dashboard() {
             <div className="dashboard-tile">Job Matching</div>
           </Link>
         ) : null}
+        </div>
       </div>
     </div>
   );
