@@ -60,7 +60,7 @@ function ActivityLog() {
       <h2>Activity Log</h2>
       {error && <p className="error">{error}</p>}
       <button className="download-btn" onClick={downloadCSV}>
-        <Tooltip text="Download CSV">
+        <Tooltip text="Download CSV" position="bottom">
           <span className="material-icons">download</span>
         </Tooltip>
         Download CSV

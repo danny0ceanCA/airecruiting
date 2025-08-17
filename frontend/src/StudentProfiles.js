@@ -703,7 +703,10 @@ function StudentProfiles() {
                       <React.Fragment key={s.email}>
                         <tr>
                           <td>
-                            <Tooltip text={expandedRows[s.email] ? 'Collapse' : 'Expand'}>
+                            <Tooltip
+                              text={expandedRows[s.email] ? 'Collapse' : 'Expand'}
+                              position="bottom"
+                            >
                               <button
                                 className="expand-toggle"
                                 onClick={() => toggleRow(s.email, s.assigned_jobs)}
@@ -722,7 +725,7 @@ function StudentProfiles() {
                           <td>{licenseLabel(s.license)}</td>
                           <td className="edit-col">
                             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                              <Tooltip text="Edit">
+                              <Tooltip text="Edit" position="bottom">
                                 <button
                                   onClick={() => handleEdit(s.email)}
                                   style={{
@@ -736,7 +739,7 @@ function StudentProfiles() {
                                 </button>
                               </Tooltip>
                               {userRole === 'admin' && (
-                                <Tooltip text="Delete Student">
+                                <Tooltip text="Delete Student" position="bottom">
                                   <button
                                     onClick={() => handleDelete(s.email)}
                                     style={{

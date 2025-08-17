@@ -12,13 +12,22 @@
   border-radius: 4px;
   padding: 4px 8px;
   position: absolute;
-  z-index: 10;
-  bottom: 125%;
-  left: 50%;
-  transform: translateX(-50%);
+  z-index: 1000;
   transition: opacity 0.2s ease-in-out, visibility 0.2s ease-in-out;
   white-space: nowrap;
   pointer-events: none;
+}
+
+.tooltip-top {
+  bottom: 125%;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.tooltip-bottom {
+  top: 125%;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 .tooltip-container:hover .tooltip {
