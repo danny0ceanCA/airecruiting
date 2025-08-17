@@ -1203,6 +1203,8 @@ async def _perform_match_async(job_code: str, send_emails: bool = True, enq_time
         matches.append(
             {
                 "name": f"{student.get('first_name', '')} {student.get('last_name', '')}",
+                "first_name": student.get("first_name", ""),
+                "last_name": student.get("last_name", ""),
                 "email": student.get("email"),
                 "score": score,
                 "distance_miles": round(dist, 1),
@@ -1241,6 +1243,8 @@ async def _perform_match_async(job_code: str, send_emails: bool = True, enq_time
         matches.append(
             {
                 "name": f"{udata.get('first_name', '')} {udata.get('last_name', '')}",
+                "first_name": udata.get("first_name", ""),
+                "last_name": udata.get("last_name", ""),
                 "email": email,
                 "score": 0.0,
                 "distance_miles": None,
@@ -1337,6 +1341,13 @@ def get_match_results(job_code: str, current_user: dict = Depends(get_current_us
         matches = json.loads(results_json)
         print(f"📦 Returning {len(matches)} stored matches for job {job_code}")
 
+        # Ensure each match has first and last name fields
+        for m in matches:
+            if "first_name" not in m or "last_name" not in m:
+                parts = m.get("name", "").split(" ", 1)
+                m.setdefault("first_name", parts[0] if parts else "")
+                m.setdefault("last_name", parts[1] if len(parts) > 1 else "")
+
         job_raw = redis_client.get(f"job:{job_code}")
         if not job_raw:
             raise HTTPException(status_code=404, detail="Job not found")
@@ -1355,6 +1366,8 @@ def get_match_results(job_code: str, current_user: dict = Depends(get_current_us
                 name = f"{first} {last}".strip()
                 matches.append({
                     "name": name,
+                    "first_name": first,
+                    "last_name": last,
                     "email": email,
                     "score": None,
                 })
