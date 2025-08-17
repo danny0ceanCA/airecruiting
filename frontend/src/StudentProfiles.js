@@ -462,7 +462,11 @@ function StudentProfiles() {
   });
 
   return (
-    <div className="glass-panel">
+
+    <div
+      className="glass-panel"
+      style={{ borderRadius: '1.25rem', overflow: 'hidden', width: '100%' }}
+    >
       <div className="profiles-container">
         {showTour && (
           <Joyride
