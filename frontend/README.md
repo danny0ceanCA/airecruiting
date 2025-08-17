@@ -2,6 +2,22 @@
 
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
 
+## Design Tokens
+
+Spacing and border radius values are standardized in `src/index.css` using CSS variables:
+
+```css
+:root {
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 1rem;
+  --radius-sm: 0.3125rem;
+  --radius-lg: 0.625rem;
+}
+```
+
+Use these tokens for `padding`, `margin`, and `border-radius` in components. Values not matching the exact tokens can be derived with `calc()`, for example `calc(var(--space-md) * 2)` for `2rem`.
+
 ## Available Scripts
 
 In the project directory, you can run:

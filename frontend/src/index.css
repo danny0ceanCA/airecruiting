@@ -12,6 +12,11 @@
   --line-height-h2: 1.3;
   --font-size-h3: 1.5rem;
   --line-height-h3: 1.3;
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 1rem;
+  --radius-sm: 0.3125rem;
+  --radius-lg: 0.625rem;
 }
 
 body {

@@ -15,13 +15,13 @@
 
 .login-container.with-info .login-content {
   flex-direction: row;
-  gap: 2rem;
+  gap: calc(var(--space-md) * 2);
 }
 
 .info-panel {
   background-color: #003366;
-  padding: 2rem;
-  border-radius: 10px;
+  padding: calc(var(--space-md) * 2);
+  border-radius: var(--radius-lg);
   color: white;
   max-width: 400px;
   border-left: 2px solid white;
@@ -29,8 +29,8 @@
 
 .login-form {
   background-color: #003366;
-  padding: 2rem;
-  border-radius: 10px;
+  padding: calc(var(--space-md) * 2);
+  border-radius: var(--radius-lg);
   color: white;
   display: flex;
   flex-direction: column;
@@ -38,9 +38,9 @@
 }
 
 .login-form input {
-  margin-bottom: 1rem;
-  padding: 0.5rem;
-  border-radius: 5px;
+  margin-bottom: var(--space-md);
+  padding: var(--space-sm);
+  border-radius: var(--radius-sm);
   border: none;
 }
 
@@ -48,18 +48,18 @@
   background-color: #0074d9;
   color: white;
   border: none;
-  padding: 0.7rem;
-  border-radius: 5px;
+  padding: calc(var(--space-md) * 0.7);
+  border-radius: var(--radius-sm);
   cursor: pointer;
 }
 
 .error {
-  margin-top: 1rem;
+  margin-top: var(--space-md);
   color: #ff4136;
 }
 
 .register-link {
-  margin-top: 1rem;
+  margin-top: var(--space-md);
   color: #61dafb;
   text-align: center;
   display: block;
