@@ -2472,7 +2472,10 @@ def get_all_students(current_user: dict = Depends(get_current_user)):
 
 @app.get("/students/by-school")
 def students_by_school(current_user: dict = Depends(get_current_user)):
-    """Return all student profiles belonging to the current user's school."""
+    """Return student profiles for the current user's school.
+
+    Career service users only see profiles they created themselves.
+    """
     user_key = f"user:{current_user.get('sub')}"
     raw_user = redis_client.get(user_key)
     if not raw_user:
@@ -2511,6 +2514,9 @@ def students_by_school(current_user: dict = Depends(get_current_user)):
             continue
 
         if (student.get("institutional_code") or student.get("school_code")) != institutional_code:
+            continue
+
+        if current_user.get("role") == "career" and student.get("created_by") != current_user.get("sub"):
             continue
 
         email = student.get("email")
