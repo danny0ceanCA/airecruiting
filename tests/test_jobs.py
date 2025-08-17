@@ -240,15 +240,8 @@ def test_get_match_results_includes_missing_assigned(monkeypatch):
         "assigned_students": ["a@example.com", "b@example.com"],
         "placed_students": []
     })
-
-    def fake_hgetall(key):
-        data = {
-            "user:a@example.com": {b"first_name": b"A", b"last_name": b"One"},
-            "user:b@example.com": {b"first_name": b"B", b"last_name": b"Two"},
-        }
-        return data.get(key, {})
-
-    monkeypatch.setattr(main_app.redis_client, "hgetall", fake_hgetall, raising=False)
+    store["user:a@example.com"] = json.dumps({"first_name": "A", "last_name": "One"})
+    store["user:b@example.com"] = json.dumps({"first_name": "B", "last_name": "Two"})
 
     resp = client.get(f"/match/{job_code}", headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 200
@@ -256,6 +249,9 @@ def test_get_match_results_includes_missing_assigned(monkeypatch):
     emails = {m["email"] for m in data}
     assert emails == {"a@example.com", "b@example.com"}
     assert all(m["status"] == "assigned" for m in data)
+    names = {m["email"]: (m.get("first_name"), m.get("last_name")) for m in data}
+    assert names["a@example.com"] == ("A", "One")
+    assert names["b@example.com"] == ("B", "Two")
 
 
 def test_get_match_results_includes_notes(monkeypatch):
