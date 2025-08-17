@@ -626,7 +626,7 @@ if (shouldRedirect) {
                       {row.first_name || row.name?.split(' ')[0]}{' '}
                       {row.last_name || row.name?.split(' ')[1]}
                     </td>
-                    <td>{row.score.toFixed(2)}</td>
+                    <td>{row.score?.toFixed(2)}</td>
                     <td>
                       {previewingResumes[`${job.job_code}:${row.email}`] ? (
                         <span className="spinner" />
