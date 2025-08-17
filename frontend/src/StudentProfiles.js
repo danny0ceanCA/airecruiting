@@ -776,7 +776,7 @@ function StudentProfiles() {
                 </tbody>
               </table>
             ) : (
-              <p>No students found for your school.</p>
+              <p>You haven't created any student profiles.</p>
             )}
           </div>
         </div>
