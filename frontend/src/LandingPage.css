@@ -34,6 +34,39 @@
   gap: 1rem;
 }
 
+@media (min-width: var(--bp-md)) {
+  .landing-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas:
+      'logo title'
+      'logo buttons';
+    align-items: center;
+    justify-items: center;
+    text-align: left;
+  }
+  .landing-logo {
+    grid-area: logo;
+    width: 100%;
+    max-width: 400px;
+    margin-bottom: 0;
+  }
+  .landing-title {
+    grid-area: title;
+    margin-bottom: 0.5rem;
+  }
+  .landing-buttons {
+    grid-area: buttons;
+    align-items: flex-start;
+  }
+}
+
+@media (min-width: var(--bp-lg)) {
+  .landing-container {
+    gap: 3rem;
+  }
+}
+
 .landing-btn {
   background-color: #0074d9;
   color: white;

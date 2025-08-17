@@ -15,17 +15,30 @@
 
 .dashboard-heading {
   margin-top: 0;
-  font-size: 3rem;
+  font-size: var(--font-size-h1);
+  line-height: var(--line-height-h1);
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
   animation: fadeSlide 0.6s ease forwards;
 }
 
 .tile-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: 1fr;
   gap: 1.5rem;
   width: 90%;
   max-width: 800px;
+}
+
+@media (min-width: var(--bp-md)) {
+  .tile-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: var(--bp-lg)) {
+  .tile-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
 }
 
 .dashboard-tile {
