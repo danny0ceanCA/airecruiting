@@ -1,0 +1,30 @@
+.input {
+  margin-bottom: 1rem;
+  padding: 0.5rem;
+  border-radius: 5px;
+  border: 1px solid #ccc;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.input:hover,
+.input:focus {
+  transform: scale(1.02);
+  box-shadow: 0 0 5px rgba(0, 116, 217, 0.4);
+  border-color: #0074d9;
+  outline: none;
+}
+
+.input:disabled {
+  background-color: #f0f0f0;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.error {
+  border-color: #ff4136;
+}
+
+.error:hover,
+.error:focus {
+  box-shadow: 0 0 5px rgba(255, 65, 54, 0.5);
+}

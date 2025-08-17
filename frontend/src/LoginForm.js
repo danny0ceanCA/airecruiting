@@ -3,11 +3,14 @@ import api from "./api";
 import { Link, useNavigate } from 'react-router-dom';
 import './LoginForm.css';
 import TopMenu from './TopMenu';
+import Button from './components/Button';
+import Input from './components/Input';
 
 function LoginForm({ infoContent }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
@@ -20,10 +23,9 @@ function LoginForm({ infoContent }) {
       return;
     }
 
+    setLoading(true);
     try {
-      const resp = await api.post('/login',
-        { email, password }
-      );
+      const resp = await api.post('/login', { email, password });
 
       console.log('Response data:', resp.data);
 
@@ -52,6 +54,8 @@ function LoginForm({ infoContent }) {
       } else {
         setError(err.response?.data?.detail || 'Login failed');
       }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -63,22 +67,26 @@ function LoginForm({ infoContent }) {
         <h2>Login</h2>
 
         <label htmlFor="email">Email</label>
-        <input
+        <Input
           id="email"
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
+          disabled={loading}
+          error={error}
         />
 
         <label htmlFor="password">Password</label>
-        <input
+        <Input
           id="password"
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
+          disabled={loading}
+          error={error}
         />
 
-        <button type="submit">Login</button>
+        <Button type="submit" loading={loading}>Login</Button>
 
         <Link to="/register" className="register-link">Register</Link>
 
