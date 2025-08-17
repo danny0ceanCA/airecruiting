@@ -462,18 +462,19 @@ function StudentProfiles() {
   });
 
   return (
-    <div className="profiles-container">
-      {showTour && (
-        <Joyride
-          steps={tourSteps}
-          continuous
-          showSkipButton
-          showProgress
-          callback={handleTourCallback}
-          styles={{ options: { zIndex: 10000 } }}
-        />
-      )}
-      <AdminMenu>
+    <div className="glass-panel">
+      <div className="profiles-container">
+        {showTour && (
+          <Joyride
+            steps={tourSteps}
+            continuous
+            showSkipButton
+            showProgress
+            callback={handleTourCallback}
+            styles={{ options: { zIndex: 10000 } }}
+          />
+        )}
+        <AdminMenu>
         {userRole === 'admin' && (
           <button
             className="admin-reset-button"
@@ -874,6 +875,7 @@ function StudentProfiles() {
           onClose={() => setModalNotes(null)}
         />
       )}
+      </div>
     </div>
   );
 }
