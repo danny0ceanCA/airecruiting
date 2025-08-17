@@ -243,8 +243,8 @@ def test_get_match_results_includes_missing_assigned(monkeypatch):
 
     def fake_hgetall(key):
         data = {
-            "user:a@example.com": {b"first_name": b"A", b"last_name": b"One"},
-            "user:b@example.com": {b"first_name": b"B", b"last_name": b"Two"},
+            "user:a@example.com": {"first_name": "A", "last_name": "One"},
+            "user:b@example.com": {"first_name": "B", "last_name": "Two"},
         }
         return data.get(key, {})
 
@@ -256,6 +256,9 @@ def test_get_match_results_includes_missing_assigned(monkeypatch):
     emails = {m["email"] for m in data}
     assert emails == {"a@example.com", "b@example.com"}
     assert all(m["status"] == "assigned" for m in data)
+    names = {m["email"]: (m.get("first_name"), m.get("last_name")) for m in data}
+    assert names["a@example.com"] == ("A", "One")
+    assert names["b@example.com"] == ("B", "Two")
 
 
 def test_get_match_results_includes_notes(monkeypatch):
