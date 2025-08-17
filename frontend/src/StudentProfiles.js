@@ -9,6 +9,7 @@ import jwt_decode from 'jwt-decode';
 import './StudentProfiles.css';
 import './Tour.css';
 import NotesHistoryModal from './NotesHistoryModal';
+import Tooltip from './components/Tooltip';
 
 function StudentProfiles() {
   const [formData, setFormData] = useState({
@@ -707,14 +708,19 @@ function StudentProfiles() {
                       <React.Fragment key={s.email}>
                         <tr>
                           <td>
-                            <button
-                              className="expand-toggle"
-                              onClick={() => toggleRow(s.email, s.assigned_jobs)}
-                              title={expandedRows[s.email] ? 'Collapse' : 'Expand'}
-                              type="button"
+                            <Tooltip
+                              text={expandedRows[s.email] ? 'Collapse' : 'Expand'}
+                              position="bottom"
                             >
-                            {expandedRows[s.email] ? '–' : '+'}
-                            </button>
+                              <button
+                                className="expand-toggle"
+                                onClick={() => toggleRow(s.email, s.assigned_jobs)}
+                                type="button"
+                                title={expandedRows[s.email] ? 'Collapse' : 'Expand'}
+                              >
+                                {expandedRows[s.email] ? '–' : '+'}
+                              </button>
+                            </Tooltip>
                           </td>
                           <td>{s.first_name}</td>
                           <td>{s.last_name}</td>
@@ -724,32 +730,34 @@ function StudentProfiles() {
                           <td>{licenseLabel(s.license)}</td>
                           <td className="edit-col">
                             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                              <button
-                                onClick={() => handleEdit(s.email)}
-                                style={{
-                                  background: 'none',
-                                  border: 'none',
-                                  cursor: 'pointer',
-                                  fontSize: '1.2rem',
-                                }}
-                                title="Edit"
-                              >
-                                ✏️
-                              </button>
-                              {userRole === 'admin' && (
+                              <Tooltip text="Edit" position="bottom">
                                 <button
-                                  onClick={() => handleDelete(s.email)}
+                                  onClick={() => handleEdit(s.email)}
                                   style={{
                                     background: 'none',
                                     border: 'none',
                                     cursor: 'pointer',
                                     fontSize: '1.2rem',
-                                    color: 'red',
                                   }}
-                                  title="Delete Student"
                                 >
-                                  🗑️
+                                  ✏️
                                 </button>
+                              </Tooltip>
+                              {userRole === 'admin' && (
+                                <Tooltip text="Delete Student" position="bottom">
+                                  <button
+                                    onClick={() => handleDelete(s.email)}
+                                    style={{
+                                      background: 'none',
+                                      border: 'none',
+                                      cursor: 'pointer',
+                                      fontSize: '1.2rem',
+                                      color: 'red',
+                                    }}
+                                  >
+                                    🗑️
+                                  </button>
+                                </Tooltip>
                               )}
                             </div>
                           </td>
