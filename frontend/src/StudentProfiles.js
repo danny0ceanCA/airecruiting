@@ -56,7 +56,7 @@ function StudentProfiles() {
     {
       target: '.filter-row',
       content:
-        'Filter the list by name, email or school code to quickly find students.'
+        'Filter the list by any column to quickly find students.'
     },
     {
       target: '.expand-toggle',
@@ -88,7 +88,10 @@ function StudentProfiles() {
   const [firstNameFilter, setFirstNameFilter] = useState('');
   const [lastNameFilter, setLastNameFilter] = useState('');
   const [emailFilter, setEmailFilter] = useState('');
+  const [locationFilter, setLocationFilter] = useState('');
   const [codeFilter, setCodeFilter] = useState('');
+  const [licenseFilter, setLicenseFilter] = useState('');
+  const [assignedFilter, setAssignedFilter] = useState('');
   const [placementFilter, setPlacementFilter] = useState('');
   const [isEditing, setIsEditing] = useState(false);
   const [editingEmail, setEditingEmail] = useState('');
@@ -395,19 +398,40 @@ function StudentProfiles() {
     const emailMatch = s.email
       ?.toLowerCase()
       .includes(emailFilter.toLowerCase());
+    const locationMatch = `${s.city || ''} ${s.state || ''}`
+      .toLowerCase()
+      .includes(locationFilter.toLowerCase());
     const codeMatch =
       userRole !== 'admin'
         ? true
         : (s.institutional_code || '')
             .toLowerCase()
             .includes(codeFilter.toLowerCase());
+    const licenseMatch =
+      !licenseFilter || (s.license || '').toLowerCase() === licenseFilter.toLowerCase();
+    const assignedCount = Array.isArray(s.assigned_jobs)
+      ? s.assigned_jobs.length
+      : s.assigned_jobs || 0;
+    const assignedMatch =
+      assignedFilter === ''
+        ? true
+        : assignedCount.toString().includes(assignedFilter.toString());
     const placed = Array.isArray(s.placed_jobs)
       ? s.placed_jobs.length
       : s.placed_jobs || 0;
     let placementMatch = true;
     if (placementFilter === '✅') placementMatch = placed > 0;
     if (placementFilter === '❌') placementMatch = placed === 0;
-    return firstMatch && lastMatch && emailMatch && codeMatch && placementMatch;
+    return (
+      firstMatch &&
+      lastMatch &&
+      emailMatch &&
+      locationMatch &&
+      codeMatch &&
+      licenseMatch &&
+      assignedMatch &&
+      placementMatch
+    );
   });
 
   return (
@@ -584,7 +608,15 @@ function StudentProfiles() {
                         placeholder="Filter"
                       />
                     </th>
-                    <th></th>
+                    <th>
+                      <input
+                        className="column-filter"
+                        type="text"
+                        value={locationFilter}
+                        onChange={(e) => setLocationFilter(e.target.value)}
+                        placeholder="Filter"
+                      />
+                    </th>
                     {userRole === 'admin' && (
                       <th>
                         <input
@@ -596,9 +628,30 @@ function StudentProfiles() {
                         />
                       </th>
                     )}
+                    <th>
+                      <select
+                        className="column-filter"
+                        value={licenseFilter}
+                        onChange={(e) => setLicenseFilter(e.target.value)}
+                      >
+                        <option value="">All</option>
+                        {licenses.map((l) => (
+                          <option key={l.code} value={l.code}>
+                            {l.label}
+                          </option>
+                        ))}
+                      </select>
+                    </th>
                     <th></th>
-                    <th></th>
-                    <th></th>
+                    <th>
+                      <input
+                        className="column-filter"
+                        type="number"
+                        value={assignedFilter}
+                        onChange={(e) => setAssignedFilter(e.target.value)}
+                        placeholder="Filter"
+                      />
+                    </th>
                     <th>
                       <select
                         className="column-filter"
