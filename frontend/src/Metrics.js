@@ -19,6 +19,7 @@ import {
   RadialBar,
   Legend,
 } from 'recharts';
+import MetricCard from './components/MetricCard';
 import './Metrics.css';
 
 function Metrics() {
@@ -69,19 +70,37 @@ function Metrics() {
   }
 
   const highlight = [
-    { label: 'Students', value: metricsData.total_student_profiles },
-    { label: 'Jobs', value: metricsData.total_jobs_posted },
-    { label: 'Matches', value: metricsData.total_matches },
+    {
+      title: 'Students',
+      value: metricsData.total_student_profiles,
+      data: metricsData.students_over_time || [metricsData.total_student_profiles],
+    },
+    {
+      title: 'Jobs',
+      value: metricsData.total_jobs_posted,
+      data: metricsData.jobs_over_time || [metricsData.total_jobs_posted],
+    },
+    {
+      title: 'Matches',
+      value: metricsData.total_matches,
+      data: metricsData.matches_over_time || [metricsData.total_matches],
+    },
   ];
 
   if (role === 'admin') {
     highlight.push({
-      label: 'Placement Rate',
+      title: 'Placement Rate',
       value: `${(metricsData.placement_rate * 100).toFixed(0)} %`,
+      data: metricsData.placement_rate_over_time
+        ? metricsData.placement_rate_over_time.map((n) => n * 100)
+        : [metricsData.placement_rate * 100],
     });
     highlight.push({
-      label: 'Rematch Rate',
+      title: 'Rematch Rate',
       value: `${(metricsData.rematch_rate * 100).toFixed(0)} %`,
+      data: metricsData.rematch_rate_over_time
+        ? metricsData.rematch_rate_over_time.map((n) => n * 100)
+        : [metricsData.rematch_rate * 100],
     });
   }
 
@@ -108,10 +127,7 @@ function Metrics() {
       <AdminMenu />
       <div className="metric-grid">
         {highlight.map((h) => (
-          <div key={h.label} className="highlight-card">
-            <div className="value">{h.value}</div>
-            <div className="label">{h.label}</div>
-          </div>
+          <MetricCard key={h.title} title={h.title} value={h.value} data={h.data} />
         ))}
       </div>
       {role === 'admin' && (
