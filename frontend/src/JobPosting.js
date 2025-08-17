@@ -640,14 +640,9 @@ if (shouldRedirect) {
                       )}
                     </td>
                     <td>
-                      <>
-                        {row.notes && row.notes.length
-                          ? row.notes[row.notes.length - 1].text
-                          : row.note || ''}
-                        <button onClick={() => openNotes(job, row)}>
-                          View Notes{row.notes && ` (${row.notes.length})`}
-                        </button>
-                      </>
+                      <button onClick={() => openNotes(job, row)}>
+                        View Notes{row.notes && ` (${row.notes.length})`}
+                      </button>
                     </td>
                     <td className="status-cell">
                       {row.status === 'placed' ? (
@@ -718,14 +713,9 @@ if (shouldRedirect) {
                 )}
               </td>
               <td>
-                <>
-                  {row.notes && row.notes.length
-                    ? row.notes[row.notes.length - 1].text
-                    : row.note || ''}
-                  <button onClick={() => openNotes(job, row)}>
-                    View Notes{row.notes && ` (${row.notes.length})`}
-                  </button>
-                </>
+                <button onClick={() => openNotes(job, row)}>
+                  View Notes{row.notes && ` (${row.notes.length})`}
+                </button>
               </td>
               <td className="status-cell">
                 <span className="badge assigned inline">Assigned</span>
@@ -768,14 +758,9 @@ if (shouldRedirect) {
               <td>{row.email}</td>
               <td>{row.score?.toFixed(2)}</td>
               <td>
-                <>
-                  {row.notes && row.notes.length
-                    ? row.notes[row.notes.length - 1].text
-                    : row.note || ''}
-                  <button onClick={() => openNotes(job, row)}>
-                    View Notes{row.notes && ` (${row.notes.length})`}
-                  </button>
-                </>
+                <button onClick={() => openNotes(job, row)}>
+                  View Notes{row.notes && ` (${row.notes.length})`}
+                </button>
               </td>
             </tr>
           ))}
