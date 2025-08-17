@@ -162,13 +162,15 @@
   top: 0;
   background-color: #003366;
   z-index: 2;
+  border-bottom: 1px solid #003366;
 }
 
 .table-wrapper > table > thead tr.filter-row th {
   position: sticky;
-  top: var(--header-height, 44px);
+  top: calc(var(--header-height, 44px) - 1px);
   background-color: #001f3f;
   z-index: 1;
+  border-top: none;
 }
 
 .school-table {
