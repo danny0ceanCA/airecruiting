@@ -4,6 +4,7 @@ import jwtDecode from 'jwt-decode';
 import AdminMenu from './AdminMenu';
 import api from './api';
 import './ActivityLog.css';
+import Tooltip from './components/Tooltip';
 
 function ActivityLog() {
   const [entries, setEntries] = useState([]);
@@ -59,6 +60,9 @@ function ActivityLog() {
       <h2>Activity Log</h2>
       {error && <p className="error">{error}</p>}
       <button className="download-btn" onClick={downloadCSV}>
+        <Tooltip text="Download CSV">
+          <span className="material-icons">download</span>
+        </Tooltip>
         Download CSV
       </button>
       <table className="log-table">
