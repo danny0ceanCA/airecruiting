@@ -112,6 +112,8 @@ function StudentProfiles() {
   };
 
   const cityRef = useRef(null);
+  const tableWrapperRef = useRef(null);
+  const headerRowRef = useRef(null);
 
   const initAutocomplete = () => {
     if (cityRef.current && window.google) {
@@ -131,6 +133,31 @@ function StudentProfiles() {
   useEffect(() => {
     loadGoogleMaps(initAutocomplete);
   }, [activeTab, isEditing]);
+
+  useEffect(() => {
+    const wrapper = tableWrapperRef.current;
+    if (!wrapper) return;
+
+    const handleScroll = () => {
+      if (wrapper.scrollTop > 0) {
+        wrapper.classList.add('scrolled');
+      } else {
+        wrapper.classList.remove('scrolled');
+      }
+    };
+
+    wrapper.addEventListener('scroll', handleScroll);
+    return () => wrapper.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  useEffect(() => {
+    const header = headerRowRef.current;
+    const wrapper = tableWrapperRef.current;
+    if (header && wrapper) {
+      const height = header.getBoundingClientRect().height;
+      wrapper.style.setProperty('--header-height', `${height}px`);
+    }
+  }, [schoolStudents, activeTab]);
 
   const navigate = useNavigate();
   const token = localStorage.getItem('token');
@@ -564,9 +591,10 @@ function StudentProfiles() {
                 <span style={{ marginLeft: '0.5rem' }}>Loading students...</span>
               </div>
             ) : schoolStudents.length > 0 ? (
-              <table className="school-table">
-                <thead>
-                  <tr>
+              <div className="table-wrapper" ref={tableWrapperRef}>
+                <table className="school-table">
+                  <thead>
+                  <tr ref={headerRowRef}>
                     <th></th>
                     <th>First Name</th>
                     <th>Last Name</th>
@@ -827,7 +855,8 @@ function StudentProfiles() {
                     );
                   })}
                 </tbody>
-              </table>
+                </table>
+              </div>
             ) : (
               <p>You haven't created any student profiles.</p>
             )}
