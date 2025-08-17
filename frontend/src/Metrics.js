@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import api from './api';
 import jwtDecode from 'jwt-decode';
 import AdminMenu from './AdminMenu';
+import Skeleton from './components/Skeleton';
 import {
   BarChart,
   Bar,
@@ -24,7 +25,7 @@ import './Metrics.css';
 function Metrics() {
   const [metricsData, setMetricsData] = useState(null);
   const [role, setRole] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
   const [interval] = useState('all');
 
   useEffect(() => {
@@ -45,17 +46,21 @@ function Metrics() {
       } catch (err) {
         console.error('Error fetching metrics:', err);
       } finally {
-        setLoading(false);
+        setIsLoading(false);
       }
     };
     fetchMetrics();
   }, []);
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="metrics-container">
         <AdminMenu />
-        Loading...
+        <div className="metric-grid">
+          {[...Array(4)].map((_, idx) => (
+            <Skeleton key={idx} style={{ height: '80px' }} />
+          ))}
+        </div>
       </div>
     );
   }
@@ -104,7 +109,7 @@ function Metrics() {
   const colors = ['#00BFFF', '#32CD32', '#FF69B4', '#FFA500', '#9370DB'];
 
   return (
-    <div className="metrics-container">
+    <div className="metrics-container fade-in">
       <AdminMenu />
       <div className="metric-grid">
         {highlight.map((h) => (

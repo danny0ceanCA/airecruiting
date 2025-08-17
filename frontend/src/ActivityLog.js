@@ -4,10 +4,12 @@ import jwtDecode from 'jwt-decode';
 import AdminMenu from './AdminMenu';
 import api from './api';
 import './ActivityLog.css';
+import Skeleton from './components/Skeleton';
 
 function ActivityLog() {
   const [entries, setEntries] = useState([]);
   const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
 
   const token = localStorage.getItem('token');
   let role = '';
@@ -20,6 +22,7 @@ function ActivityLog() {
 
   useEffect(() => {
     const fetchLog = async () => {
+      setIsLoading(true);
       try {
         const resp = await api.get('/activity-log?limit=100', {
           headers: { Authorization: `Bearer ${token}` }
@@ -28,6 +31,8 @@ function ActivityLog() {
       } catch (err) {
         console.error('Failed to load log:', err);
         setError(err.response?.data?.detail || 'Failed to load log');
+      } finally {
+        setIsLoading(false);
       }
     };
     if (token) fetchLog();
@@ -61,26 +66,34 @@ function ActivityLog() {
       <button className="download-btn" onClick={downloadCSV}>
         Download CSV
       </button>
-      <table className="log-table">
-        <thead>
-          <tr>
-            <th>Timestamp</th>
-            <th>Method</th>
-            <th>Path</th>
-            <th>User</th>
-          </tr>
-        </thead>
-        <tbody>
-          {entries.map((e, idx) => (
-            <tr key={idx}>
-              <td>{e.timestamp}</td>
-              <td>{e.method}</td>
-              <td>{e.path}</td>
-              <td>{e.user}</td>
-            </tr>
+      {isLoading ? (
+        <div className="skeleton-container">
+          {[...Array(5)].map((_, idx) => (
+            <Skeleton key={idx} style={{ height: '20px', marginBottom: '10px' }} />
           ))}
-        </tbody>
-      </table>
+        </div>
+      ) : (
+        <table className="log-table fade-in">
+          <thead>
+            <tr>
+              <th>Timestamp</th>
+              <th>Method</th>
+              <th>Path</th>
+              <th>User</th>
+            </tr>
+          </thead>
+          <tbody>
+            {entries.map((e, idx) => (
+              <tr key={idx}>
+                <td>{e.timestamp}</td>
+                <td>{e.method}</td>
+                <td>{e.path}</td>
+                <td>{e.user}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }

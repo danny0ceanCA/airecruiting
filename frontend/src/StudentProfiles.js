@@ -9,6 +9,7 @@ import jwt_decode from 'jwt-decode';
 import './StudentProfiles.css';
 import './Tour.css';
 import NotesHistoryModal from './NotesHistoryModal';
+import Skeleton from './components/Skeleton';
 
 function StudentProfiles() {
   const [formData, setFormData] = useState({
@@ -559,12 +560,13 @@ function StudentProfiles() {
         >
           <div style={{ flexGrow: 1, minHeight: 0, marginTop: '0' }}>
             {isLoading ? (
-              <div className="loading-container">
-                <span className="spinner" />
-                <span style={{ marginLeft: '0.5rem' }}>Loading students...</span>
+              <div className="skeleton-container">
+                {[...Array(5)].map((_, idx) => (
+                  <Skeleton key={idx} style={{ height: '20px', marginBottom: '10px' }} />
+                ))}
               </div>
             ) : schoolStudents.length > 0 ? (
-              <table className="school-table">
+              <table className="school-table fade-in">
                 <thead>
                   <tr>
                     <th></th>
