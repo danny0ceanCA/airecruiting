@@ -162,8 +162,32 @@
   text-align: center;
 }
 
-.school-table tbody tr:hover td {
-  background-color: #e9f2ff;
+
+.school-table tbody tr {
+  transition: transform 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.school-table tbody tr:hover {
+  transform: translateY(-2px);
+  background-color: rgba(233, 242, 255, 0.8);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+.status-badge {
+  margin-left: 0.5rem;
+  padding: 0.15rem 0.4rem;
+  border: 1px solid #39ff14;
+  border-radius: 4px;
+  color: #39ff14;
+  background: rgba(57, 255, 20, 0.1);
+  box-shadow: 0 0 5px rgba(57, 255, 20, 0.5);
+  font-size: 0.75rem;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.status-badge:hover {
+  transform: scale(1.1);
+  box-shadow: 0 0 8px rgba(57, 255, 20, 0.8);
 }
 
 /* Loading and toast styles */

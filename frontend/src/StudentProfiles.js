@@ -684,7 +684,10 @@ function StudentProfiles() {
                             </button>
                           </td>
                           <td>{s.first_name}</td>
-                          <td>{s.last_name}</td>
+                          <td>
+                            {s.last_name}
+                            <span className="status-badge">{s.status || 'Pending'}</span>
+                          </td>
                           <td>{s.email}</td>
                           <td>{[s.city, s.state].filter(Boolean).join(', ')}</td>
                           {userRole === 'admin' && <td>{s.institutional_code}</td>}
