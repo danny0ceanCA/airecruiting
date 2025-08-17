@@ -1729,6 +1729,7 @@ def test_students_by_school_fallback():
         "experience_summary": "",
         "interests": "",
         "school_code": "1001",
+        "created_by": "counselor@example.com",
         "city": "City",
         "state": "ST",
     }
@@ -1792,6 +1793,7 @@ def test_student_endpoints_handle_string_notes():
         "last_name": "Dent",
         "email": "student@example.com",
         "institutional_code": "001",
+        "created_by": "counselor@example.com",
         "city": "City",
         "state": "ST",
     }

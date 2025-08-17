@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import api from './api';
 import NoteEditor from './NoteEditor';
 
-function NotesHistoryModal({ notes = [], onClose, isAdmin = false, canAdd = false, jobCode, studentEmail }) {
+function NotesHistoryModal({ notes = [], onClose, isAdmin = false, canAdd = false, jobCode, studentEmail, onSaved }) {
   const [localNotes, setLocalNotes] = useState(notes);
   const [adding, setAdding] = useState(false);
   const [editingIndex, setEditingIndex] = useState(null);
@@ -12,6 +12,7 @@ function NotesHistoryModal({ notes = [], onClose, isAdmin = false, canAdd = fals
   const handleAddSaved = (newNote) => {
     setLocalNotes(prev => [...prev, newNote]);
     setAdding(false);
+    onSaved && onSaved(newNote);
   };
 
   const startEdit = (idx) => {
@@ -82,6 +83,7 @@ function NotesHistoryModal({ notes = [], onClose, isAdmin = false, canAdd = fals
           <thead>
             <tr>
               <th>#</th>
+              <th>Date</th>
               <th>Note</th>
               {isAdmin && <th>Actions</th>}
             </tr>
@@ -91,6 +93,7 @@ function NotesHistoryModal({ notes = [], onClose, isAdmin = false, canAdd = fals
               localNotes.map((n, idx) => (
                 <tr key={idx}>
                   <td>{idx + 1}</td>
+                  <td>{n.timestamp ? new Date(n.timestamp).toLocaleString() : ''}</td>
                   <td>
                     {editingIndex === idx ? (
                       <textarea
@@ -117,10 +120,10 @@ function NotesHistoryModal({ notes = [], onClose, isAdmin = false, canAdd = fals
                     </td>
                   )}
                 </tr>
-              ))
+            ))
             ) : (
               <tr>
-                <td colSpan={isAdmin ? 3 : 2}>No notes available.</td>
+                <td colSpan={isAdmin ? 4 : 3}>No notes available.</td>
               </tr>
             )}
           </tbody>

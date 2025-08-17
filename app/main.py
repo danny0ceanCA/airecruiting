@@ -1203,6 +1203,8 @@ async def _perform_match_async(job_code: str, send_emails: bool = True, enq_time
         matches.append(
             {
                 "name": f"{student.get('first_name', '')} {student.get('last_name', '')}",
+                "first_name": student.get("first_name", ""),
+                "last_name": student.get("last_name", ""),
                 "email": student.get("email"),
                 "score": score,
                 "distance_miles": round(dist, 1),
@@ -1241,6 +1243,8 @@ async def _perform_match_async(job_code: str, send_emails: bool = True, enq_time
         matches.append(
             {
                 "name": f"{udata.get('first_name', '')} {udata.get('last_name', '')}",
+                "first_name": udata.get("first_name", ""),
+                "last_name": udata.get("last_name", ""),
                 "email": email,
                 "score": 0.0,
                 "distance_miles": None,
@@ -1250,6 +1254,12 @@ async def _perform_match_async(job_code: str, send_emails: bool = True, enq_time
     matches.sort(key=lambda x: x["score"], reverse=True)
 
     assigned = set(job.get("assigned_students", []))
+    # Exclude already assigned students from the match limit so recruiters
+    # can always receive up to 10 new candidates regardless of how many
+    # students have been assigned.
+    filtered_matches = [m for m in matches if m["email"] not in assigned]
+    top_matches = filtered_matches[:10]
+
     placed = set(job.get("placed_students", []))
     rejected = set(job.get("rejected_students", []))
 
@@ -1267,7 +1277,13 @@ async def _perform_match_async(job_code: str, send_emails: bool = True, enq_time
     top_matches = filtered[:10]
 
     for m in top_matches:
-        m["status"] = None
+        if m["email"] in placed:
+            m["status"] = "placed"
+        elif m["email"] in rejected:
+            m["status"] = "rejected"
+        else:
+            m["status"] = None
+
 
 
 
@@ -1340,6 +1356,13 @@ def get_match_results(job_code: str, current_user: dict = Depends(get_current_us
         matches = json.loads(results_json)
         print(f"📦 Returning {len(matches)} stored matches for job {job_code}")
 
+        # Ensure each match has first and last name fields
+        for m in matches:
+            if "first_name" not in m or "last_name" not in m:
+                parts = m.get("name", "").split(" ", 1)
+                m.setdefault("first_name", parts[0] if parts else "")
+                m.setdefault("last_name", parts[1] if len(parts) > 1 else "")
+
         job_raw = redis_client.get(f"job:{job_code}")
         if not job_raw:
             raise HTTPException(status_code=404, detail="Job not found")
@@ -1353,11 +1376,13 @@ def get_match_results(job_code: str, current_user: dict = Depends(get_current_us
         for email in assigned | placed | rejected:
             if email not in existing:
                 udata = redis_client.hgetall(f"user:{email}") or {}
-                first = udata.get(b"first_name", b"").decode()
-                last = udata.get(b"last_name", b"").decode()
+                first = udata.get("first_name", "")
+                last = udata.get("last_name", "")
                 name = f"{first} {last}".strip()
                 matches.append({
                     "name": name,
+                    "first_name": first,
+                    "last_name": last,
                     "email": email,
                     "score": None,
                 })
@@ -1371,6 +1396,12 @@ def get_match_results(job_code: str, current_user: dict = Depends(get_current_us
                 m["status"] = "rejected"
             else:
                 m["status"] = None
+
+            notes_raw = job.get("student_notes", {}).get(m["email"], [])
+            notes, latest_note = _normalize_notes(notes_raw)
+            m["notes"] = notes
+            if latest_note is not None:
+                m["note"] = latest_note
 
         return {"matches": matches}
     except Exception as e:
@@ -2456,7 +2487,10 @@ def get_all_students(current_user: dict = Depends(get_current_user)):
 
 @app.get("/students/by-school")
 def students_by_school(current_user: dict = Depends(get_current_user)):
-    """Return all student profiles belonging to the current user's school."""
+    """Return student profiles for the current user's school.
+
+    Career service users only see profiles they created themselves.
+    """
     user_key = f"user:{current_user.get('sub')}"
     raw_user = redis_client.get(user_key)
     if not raw_user:
@@ -2495,6 +2529,9 @@ def students_by_school(current_user: dict = Depends(get_current_user)):
             continue
 
         if (student.get("institutional_code") or student.get("school_code")) != institutional_code:
+            continue
+
+        if current_user.get("role") == "career" and student.get("created_by") != current_user.get("sub"):
             continue
 
         email = student.get("email")

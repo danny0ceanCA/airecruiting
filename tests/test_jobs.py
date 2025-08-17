@@ -243,8 +243,8 @@ def test_get_match_results_includes_missing_assigned(monkeypatch):
 
     def fake_hgetall(key):
         data = {
-            "user:a@example.com": {b"first_name": b"A", b"last_name": b"One"},
-            "user:b@example.com": {b"first_name": b"B", b"last_name": b"Two"},
+            "user:a@example.com": {"first_name": "A", "last_name": "One"},
+            "user:b@example.com": {"first_name": "B", "last_name": "Two"},
         }
         return data.get(key, {})
 
@@ -256,6 +256,42 @@ def test_get_match_results_includes_missing_assigned(monkeypatch):
     emails = {m["email"] for m in data}
     assert emails == {"a@example.com", "b@example.com"}
     assert all(m["status"] == "assigned" for m in data)
+    names = {m["email"]: (m.get("first_name"), m.get("last_name")) for m in data}
+    assert names["a@example.com"] == ("A", "One")
+    assert names["b@example.com"] == ("B", "Two")
+
+
+def test_get_match_results_includes_notes(monkeypatch):
+    token = login_admin()
+
+    store = {}
+
+    def fake_get(key):
+        return store.get(key)
+
+    def fake_set(key, value):
+        store[key] = value
+
+    monkeypatch.setattr(main_app.redis_client, "get", fake_get)
+    monkeypatch.setattr(main_app.redis_client, "set", fake_set)
+
+    job_code = "XYZ4"
+    store[f"match_results:{job_code}"] = json.dumps([
+        {"email": "a@example.com", "score": 1.0}
+    ])
+    store[f"job:{job_code}"] = json.dumps({
+        "job_code": job_code,
+        "assigned_students": [],
+        "placed_students": [],
+        "rejected_students": [],
+        "student_notes": {"a@example.com": [{"text": "hi"}]}
+    })
+
+    resp = client.get(f"/match/{job_code}", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200
+    data = resp.json()["matches"][0]
+    assert data["notes"][0]["text"] == "hi"
+    assert data["note"] == "hi"
 
 
 def test_match_filters_by_license(monkeypatch):
@@ -812,6 +848,68 @@ def test_not_interested_filters_out_student(monkeypatch):
 
     stored = json.loads(main_app.redis_client.get(f"job:{job_code}"))
     assert s2["email"] in stored.get("uninterested_students", [])
+
+
+def test_match_limit_ignores_assigned_students(monkeypatch):
+    token = login_admin()
+
+    class FakeResp:
+        def __init__(self, emb):
+            self.data = [type("obj", (), {"embedding": emb})]
+
+    monkeypatch.setattr(
+        main_app.client.embeddings,
+        "create",
+        lambda *a, **k: FakeResp([1.0, 0.0]),
+    )
+    monkeypatch.setattr(main_app, "get_driving_distance_miles", lambda *a, **k: 1.0)
+
+    students = []
+    for i in range(13):
+        stu = {
+            "first_name": "Stu",
+            "last_name": str(i),
+            "email": f"s{i}@example.com",
+            "phone": "1",
+            "license": "ma",
+            "skills": ["python"],
+            "experience_summary": "s",
+            "interests": "i",
+            "city": "c",
+            "state": "s",
+            "lat": 0.0,
+            "lng": 0.0,
+            "max_travel": 10.0,
+            "school_code": "1001",
+        }
+        client.post("/students", json=stu, headers={"Authorization": f"Bearer {token}"})
+        students.append(stu)
+
+    job = {
+        "job_title": "Dev",
+        "job_description": "desc",
+        "desired_skills": ["python"],
+        "min_pay": 1.0,
+        "max_pay": 2.0,
+        "city": "c",
+        "state": "s",
+        "lat": 0.0,
+        "lng": 0.0,
+    }
+    job_code = client.post("/jobs", json=job, headers={"Authorization": f"Bearer {token}"}).json()["job_code"]
+
+    for stu in students[:3]:
+        client.post(
+            "/assign",
+            json={"job_code": job_code, "student_email": stu["email"]},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    resp = client.post("/match", json={"job_code": job_code}, headers={"Authorization": f"Bearer {token}"})
+    data = resp.json()["matches"]
+    assert len(data) == 10
+    assigned_emails = {s["email"] for s in students[:3]}
+    assert all(m["email"] not in assigned_emails for m in data)
 
 
 def test_recruiter_job_source_autopopulated(monkeypatch):
