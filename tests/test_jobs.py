@@ -243,8 +243,8 @@ def test_get_match_results_includes_missing_assigned(monkeypatch):
 
     def fake_hgetall(key):
         data = {
-            "user:a@example.com": {b"first_name": b"A", b"last_name": b"One"},
-            "user:b@example.com": {b"first_name": b"B", b"last_name": b"Two"},
+            "user:a@example.com": {"first_name": "A", "last_name": "One"},
+            "user:b@example.com": {"first_name": "B", "last_name": "Two"},
         }
         return data.get(key, {})
 

@@ -1361,8 +1361,8 @@ def get_match_results(job_code: str, current_user: dict = Depends(get_current_us
         for email in assigned:
             if email not in existing:
                 udata = redis_client.hgetall(f"user:{email}") or {}
-                first = udata.get(b"first_name", b"").decode()
-                last = udata.get(b"last_name", b"").decode()
+                first = udata.get("first_name", "")
+                last = udata.get("last_name", "")
                 name = f"{first} {last}".strip()
                 matches.append({
                     "name": name,
