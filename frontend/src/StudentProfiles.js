@@ -113,6 +113,7 @@ function StudentProfiles() {
 
   const cityRef = useRef(null);
   const tableWrapperRef = useRef(null);
+  const headerRowRef = useRef(null);
 
   const initAutocomplete = () => {
     if (cityRef.current && window.google) {
@@ -148,6 +149,15 @@ function StudentProfiles() {
     wrapper.addEventListener('scroll', handleScroll);
     return () => wrapper.removeEventListener('scroll', handleScroll);
   }, []);
+
+  useEffect(() => {
+    const header = headerRowRef.current;
+    const wrapper = tableWrapperRef.current;
+    if (header && wrapper) {
+      const height = header.getBoundingClientRect().height;
+      wrapper.style.setProperty('--header-height', `${height}px`);
+    }
+  }, [schoolStudents, activeTab]);
 
   const navigate = useNavigate();
   const token = localStorage.getItem('token');
@@ -584,7 +594,7 @@ function StudentProfiles() {
               <div className="table-wrapper" ref={tableWrapperRef}>
                 <table className="school-table">
                   <thead>
-                  <tr>
+                  <tr ref={headerRowRef}>
                     <th></th>
                     <th>First Name</th>
                     <th>Last Name</th>
