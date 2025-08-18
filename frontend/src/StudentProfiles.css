@@ -244,42 +244,37 @@
 
 /* Smooth slide animation for job rows */
 .job-subrow {
-  animation: slideDown 0.25s ease-out;
-  transform-origin: top;
-  will-change: transform;
   background-color: #fff;
 }
 
 .job-subrow td {
   background-color: #fff;
+  padding: 0;
 }
 
-.job-subrow.closing {
-  animation: slideUp 0.25s ease-in forwards;
+.job-subrow-content {
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  transition: max-height 0.3s ease, opacity 0.3s ease;
+  will-change: max-height;
 }
 
-@keyframes slideDown {
-  from {
-    transform: translateY(-6px);
-  }
-  to {
-    transform: translateY(0);
-  }
+.job-subrow.open .job-subrow-content {
+  max-height: 500px;
+  opacity: 1;
 }
 
-@keyframes slideUp {
-  from {
-    transform: translateY(0);
-  }
-  to {
-    transform: translateY(-6px);
-  }
+.job-subrow.closing .job-subrow-content {
+  max-height: 0;
+  opacity: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .job-subrow,
-  .job-subrow.closing {
-    animation: none;
+  .job-subrow-content,
+  .job-subrow.open .job-subrow-content,
+  .job-subrow.closing .job-subrow-content {
+    transition: none;
   }
 }
 

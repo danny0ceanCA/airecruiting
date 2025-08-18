@@ -241,7 +241,7 @@ function StudentProfiles() {
             delete updated[email];
             return updated;
           });
-        }, 250);
+        }, 300);
         return { ...prev, [email]: 'closing' };
       }
     });
@@ -782,11 +782,12 @@ function StudentProfiles() {
                         </tr>
                         {expandedRows[s.email] && (
                           <tr
-                            className={`job-subrow${expandedRows[s.email] === 'closing' ? ' closing' : ''}`}
+                            className={`job-subrow ${expandedRows[s.email]}`}
                             key={`${s.email}-jobs`}
                           >
                             <td colSpan="100%">
-                              <table className="job-subtable">
+                              <div className="job-subrow-content">
+                                <table className="job-subtable">
                                 <thead>
                                   <tr>
                                     <th>Job Title</th>
@@ -873,6 +874,7 @@ function StudentProfiles() {
                                   )}
                                 </tbody>
                               </table>
+                              </div>
                             </td>
                           </tr>
                         )}
