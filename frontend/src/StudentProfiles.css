@@ -244,18 +244,25 @@
 
 /* Smooth slide-out animation for job rows */
 .job-subrow {
-  animation: slideDownFade 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: slideDownFade 0.25s ease-out;
   transform-origin: top;
+  will-change: transform, opacity;
 }
 
 @keyframes slideDownFade {
   from {
     opacity: 0;
-    transform: translateY(-10px) scaleY(0.95);
+    transform: translateY(-6px);
   }
   to {
     opacity: 1;
-    transform: translateY(0) scaleY(1);
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .job-subrow {
+    animation: none;
   }
 }
 
