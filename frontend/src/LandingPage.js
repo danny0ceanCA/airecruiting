@@ -8,7 +8,13 @@ function LandingPage() {
   return (
     <div className="landing-container">
       <TopMenu />
-      <img src={logo} className="landing-logo" alt="TalentMatch AI logo" />
+      <img
+        src={logo}
+        width={1024}
+        height={1024}
+        className="landing-logo"
+        alt="TalentMatch AI logo"
+      />
       <h1 className="landing-title">Who Are You?</h1>
       <div className="landing-buttons">
         <Link to="/login/career" className="landing-btn">Career Services Login</Link>
