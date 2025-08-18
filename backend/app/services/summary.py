@@ -341,6 +341,7 @@ def send_weekly_summary(user_email: str) -> bool:
     Returns True if an email was sent, otherwise False.
     """
     _ensure_dependencies()
+    user_email = (user_email or "").strip().lower()
     raw = _decode(redis_client.get(f"user:{user_email}"))
     if not raw:
         return False
