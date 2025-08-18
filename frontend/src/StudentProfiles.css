@@ -15,6 +15,14 @@
   box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.5);
 }
 
+@media (min-width: var(--bp-lg)) {
+  .profiles-container {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    align-items: flex-start;
+  }
+}
+
 /* Match the job posting panel width and styling */
 .form-panel {
   flex: 1;
@@ -138,6 +146,51 @@
   box-shadow: 0 6px 15px rgba(0, 0, 0, 0.2);
 }
 
+.student-count {
+  display: flex;
+  align-items: center;
+  background: linear-gradient(135deg, #00b4db, #0083b0);
+  color: #ffffff;
+  padding: 0.4rem 1rem;
+  border-radius: 9999px;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  font-size: 0.95rem;
+}
+
+.student-count .count-number {
+  margin-left: 0.25rem;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.table-wrapper {
+  max-height: 80vh;
+  overflow-y: auto;
+  transition: box-shadow 0.3s;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0);
+}
+
+.table-wrapper.scrolled {
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.table-wrapper > table > thead th {
+  position: sticky;
+  top: 0;
+  background-color: #003366;
+  z-index: 2;
+  border-bottom: 1px solid #003366;
+}
+
+.table-wrapper > table > thead tr.filter-row th {
+  position: sticky;
+  top: calc(var(--header-height, 44px) - 1px);
+  background-color: #001f3f;
+  z-index: 1;
+  border-top: none;
+}
+
 .school-table {
   width: 100%;
   border-collapse: collapse;
@@ -205,6 +258,47 @@
   width: 100%;
   border-collapse: collapse;
   margin-top: 0.5rem;
+}
+
+/* Smooth slide animation for job rows */
+.job-subrow {
+  background-color: #fff;
+}
+
+.job-subrow td {
+  background-color: #fff;
+  padding: 0;
+}
+
+.job-subrow-content {
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  transition: max-height 0.3s ease, opacity 0.3s ease;
+  will-change: max-height;
+}
+
+.job-subrow.opening .job-subrow-content {
+  max-height: 0;
+  opacity: 0;
+}
+
+.job-subrow.open .job-subrow-content {
+  max-height: 500px;
+  opacity: 1;
+}
+
+.job-subrow.closing .job-subrow-content {
+  max-height: 0;
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .job-subrow-content,
+  .job-subrow.open .job-subrow-content,
+  .job-subrow.closing .job-subrow-content {
+    transition: none;
+  }
 }
 
 .expand-toggle {
@@ -300,10 +394,16 @@
 /* Tab styles copied from JobPosting */
 .tab-bar {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
   margin-bottom: 0 !important;
   border-bottom: none !important;
-  padding-left: 0.5rem;
+  padding: 0 0.5rem;
+}
+
+.tabs {
+  display: flex;
 }
 
 .tab {
@@ -379,8 +479,20 @@
 
 .news-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: 1fr;
   gap: 1rem;
+}
+
+@media (min-width: var(--bp-md)) {
+  .news-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: var(--bp-lg)) {
+  .news-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
 }
 
 .news-card {

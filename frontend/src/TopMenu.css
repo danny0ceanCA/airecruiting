@@ -1,8 +1,12 @@
+@import url('https://fonts.googleapis.com/icon?family=Material+Icons');
+
 .top-menu {
   position: fixed;
   top: 0.5rem;
   right: 0.5rem;
-  background-color: #003366;
+  background-color: rgba(0, 51, 102, 0.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   padding: 0.5rem 1rem;
   border-radius: 8px;
   display: flex;
@@ -14,10 +18,21 @@
   color: #ffffff;
   text-decoration: none;
   font-weight: 500;
+  text-decoration-color: transparent;
+  transition: color 0.3s ease, text-decoration-color 0.3s ease;
 }
 
-.top-menu a:hover {
+.top-menu a:hover,
+.top-menu a:focus {
+  color: #e0e0e0;
   text-decoration: underline;
+  text-decoration-color: #e0e0e0;
+}
+
+.top-menu .material-icons {
+  font-size: 1.1rem;
+  vertical-align: middle;
+  margin-right: 0.25rem;
 }
 
 /* Stack links vertically on small screens */

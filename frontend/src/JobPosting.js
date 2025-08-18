@@ -567,7 +567,8 @@ if (shouldRedirect) {
       alert('Unable to load resume');
     }
   };
-
+  const formatScore = (score) =>
+    score !== null && score !== undefined ? Number(score).toFixed(2) : 'N/A';
 
   const renderMatches = (job) => {
     const matchList = matches[job.job_code] || [];
@@ -626,7 +627,7 @@ if (shouldRedirect) {
                       {row.first_name || row.name?.split(' ')[0]}{' '}
                       {row.last_name || row.name?.split(' ')[1]}
                     </td>
-                    <td>{row.score.toFixed(2)}</td>
+                    <td>{formatScore(row.score)}</td>
                     <td>
                       {previewingResumes[`${job.job_code}:${row.email}`] ? (
                         <span className="spinner" />
@@ -698,7 +699,7 @@ if (shouldRedirect) {
             <tr key={row.email}>
               <td>{row.first_name || row.name?.split(' ')[0]} {row.last_name || row.name?.split(' ')[1]}</td>
               <td>{row.email}</td>
-              <td>{row.score?.toFixed(2)}</td>
+              <td>{formatScore(row.score)}</td>
               <td>
                 {generatingResumes[`${job.job_code}:${row.email}`] ? (
                   <span className="spinner">⏳</span>
@@ -756,7 +757,7 @@ if (shouldRedirect) {
             <tr key={row.email}>
               <td>{row.name}</td>
               <td>{row.email}</td>
-              <td>{row.score?.toFixed(2)}</td>
+              <td>{formatScore(row.score)}</td>
               <td>
                 <button onClick={() => openNotes(job, row)}>
                   View Notes{row.notes && ` (${row.notes.length})`}

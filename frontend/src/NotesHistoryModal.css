@@ -1,0 +1,29 @@
+.glass-modal {
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, 0.5);
+  animation: glass-fade-in 0.3s ease forwards;
+}
+
+.glass-modal.fade-out {
+  animation: glass-fade-out 0.3s ease forwards;
+}
+
+@keyframes glass-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes glass-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
