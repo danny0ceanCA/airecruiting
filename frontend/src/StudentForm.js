@@ -96,7 +96,7 @@ function StudentForm({ title, initialData = {}, licenses = [], onSubmit, onCance
       <label htmlFor="skills">Skills</label>
       <input id="skills" name="skills" type="text" value={formData.skills} onChange={handleChange} />
       <label htmlFor="experience_summary">Experience Summary</label>
-      <textarea id="experience_summary" name="experience_summary" value={formData.experience_summary} onChange={handleChange} />
+      <textarea id="experience_summary" name="experience_summary" rows={4} value={formData.experience_summary} onChange={handleChange} />
       <label htmlFor="interests">Interests</label>
       <input id="interests" name="interests" type="text" value={formData.interests} onChange={handleChange} />
       <label htmlFor="city">City</label>
