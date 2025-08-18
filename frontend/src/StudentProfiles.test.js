@@ -32,7 +32,7 @@ test('renders StudentProfiles without errors', () => {
   }).not.toThrow();
 });
 
-test('shows student count above table', async () => {
+test('displays student count in tab bar', async () => {
   const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYWRtaW4ifQ.signature';
   localStorage.setItem('token', token);
   api.get.mockImplementation((url) => {
@@ -73,7 +73,7 @@ test('shows student count above table', async () => {
       <StudentProfiles />
     </BrowserRouter>
   );
-  expect(await screen.findByText('Student Profiles: 2')).toBeInTheDocument();
+  expect(await screen.findByTestId('student-count')).toHaveTextContent('Student Profiles: 2');
   localStorage.clear();
 });
 

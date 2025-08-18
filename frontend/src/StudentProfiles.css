@@ -147,9 +147,22 @@
 }
 
 .student-count {
-  color: #002244;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  background: linear-gradient(135deg, #00b4db, #0083b0);
+  color: #ffffff;
+  padding: 0.4rem 1rem;
+  border-radius: 9999px;
   font-weight: 600;
-  margin-bottom: 0.5rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  font-size: 0.95rem;
+}
+
+.student-count .count-number {
+  margin-left: 0.25rem;
+  font-size: 1.1rem;
+  font-weight: 700;
 }
 
 .table-wrapper {
@@ -341,7 +354,7 @@
 /* Tab styles copied from JobPosting */
 .tab-bar {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   margin-bottom: 0 !important;
   border-bottom: none !important;
   padding-left: 0.5rem;
