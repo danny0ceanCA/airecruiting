@@ -188,13 +188,29 @@ function StudentProfiles() {
 
   const toggleRow = (email, assignedJobs = []) => {
     setExpandedRows((prev) => {
-      const expanded = !prev[email];
-      if (!prev[email]) {
+      const state = prev[email];
+      const isOpen = state === 'open' || state === 'opening';
+      if (!isOpen) {
         for (const job of assignedJobs) {
           fetchJobDescriptionStatus(email, job.job_code);
         }
+        return { ...prev, [email]: 'opening' };
+      } else {
+        setTimeout(() => {
+          setExpandedRows((cur) => {
+            const updated = { ...cur };
+            delete updated[email];
+            return updated;
+          });
+        }, 300);
+        return { ...prev, [email]: 'closing' };
       }
-      return { ...prev, [email]: expanded };
+    });
+
+    requestAnimationFrame(() => {
+      setExpandedRows((prev) =>
+        prev[email] === 'opening' ? { ...prev, [email]: 'open' } : prev
+      );
     });
   };
 
@@ -677,9 +693,13 @@ function StudentProfiles() {
                           </td>
                         </tr>
                         {expandedRows[s.email] && (
-                          <tr className="job-subrow" key={`${s.email}-jobs`}>
+                          <tr
+                            className={`job-subrow ${expandedRows[s.email]}`}
+                            key={`${s.email}-jobs`}
+                          >
                             <td colSpan="100%">
-                              <table className="job-subtable">
+                              <div className="job-subrow-content">
+                                <table className="job-subtable">
                                 <thead>
                                   <tr>
                                     <th>Job Title</th>
@@ -766,6 +786,7 @@ function StudentProfiles() {
                                   )}
                                 </tbody>
                               </table>
+                              </div>
                             </td>
                           </tr>
                         )}
