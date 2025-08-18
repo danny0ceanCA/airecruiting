@@ -146,6 +146,12 @@
   box-shadow: 0 6px 15px rgba(0, 0, 0, 0.2);
 }
 
+.student-count {
+  color: #002244;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
 .table-wrapper {
   max-height: 80vh;
   overflow-y: auto;

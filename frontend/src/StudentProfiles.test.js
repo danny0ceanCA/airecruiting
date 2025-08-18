@@ -32,6 +32,51 @@ test('renders StudentProfiles without errors', () => {
   }).not.toThrow();
 });
 
+test('shows student count above table', async () => {
+  const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYWRtaW4ifQ.signature';
+  localStorage.setItem('token', token);
+  api.get.mockImplementation((url) => {
+    if (url === '/licenses') {
+      return Promise.resolve({ data: { licenses: [] } });
+    }
+    return Promise.resolve({
+      data: {
+        students: [
+          {
+            first_name: 'A',
+            last_name: 'B',
+            email: 'a@example.com',
+            city: 'City',
+            state: 'ST',
+            institutional_code: 'ABC',
+            license: '',
+            assigned_jobs: [],
+            placed_jobs: []
+          },
+          {
+            first_name: 'C',
+            last_name: 'D',
+            email: 'c@example.com',
+            city: 'City',
+            state: 'ST',
+            institutional_code: 'ABC',
+            license: '',
+            assigned_jobs: [],
+            placed_jobs: []
+          }
+        ]
+      }
+    });
+  });
+  render(
+    <BrowserRouter>
+      <StudentProfiles />
+    </BrowserRouter>
+  );
+  expect(await screen.findByText('Student Profiles: 2')).toBeInTheDocument();
+  localStorage.clear();
+});
+
 test('opens notes history modal when View Notes clicked', async () => {
   const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYWRtaW4ifQ.signature';
   localStorage.setItem('token', token);

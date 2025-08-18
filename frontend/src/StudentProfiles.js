@@ -591,6 +591,9 @@ function StudentProfiles() {
           }}
         >
           <div style={{ flexGrow: 1, minHeight: 0, marginTop: '0' }}>
+            {!isLoading && (
+              <h2 className="student-count">Student Profiles: {schoolStudents.length}</h2>
+            )}
             {isLoading ? (
               <div className="loading-container">
                 <span className="spinner" />
