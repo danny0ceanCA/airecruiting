@@ -15,13 +15,11 @@ function LandingPage() {
         className="landing-logo"
         alt="TalentMatch AI logo"
       />
-      <div className="landing-menu">
-        <h1 className="landing-title">Who Are You?</h1>
-        <div className="landing-buttons">
-          <Link to="/login/career" className="landing-btn">Career Services Login</Link>
-          <Link to="/login/recruiter" className="landing-btn">Recruiter</Link>
-          <Link to="/login/applicant" className="landing-btn">Job Seekers</Link>
-        </div>
+      <h1 className="landing-title">Who Are You?</h1>
+      <div className="landing-buttons">
+        <Link to="/login/career" className="landing-btn">Career Services Login</Link>
+        <Link to="/login/recruiter" className="landing-btn">Recruiter</Link>
+        <Link to="/login/applicant" className="landing-btn">Job Seekers</Link>
       </div>
     </div>
   );
