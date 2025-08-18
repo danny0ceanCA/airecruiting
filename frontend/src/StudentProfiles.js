@@ -511,18 +511,20 @@ function StudentProfiles() {
       {toast && <div className="toast">{toast}</div>}
 
       <div className="tab-bar">
-        <button
-          className={`tab students-tab ${activeTab === 'students' ? 'active' : ''}`}
-          onClick={() => setActiveTab('students')}
-        >
-          Students
-        </button>
-        <button
-          className={`tab new-tab ${activeTab === 'new' ? 'active' : ''}`}
-          onClick={() => setActiveTab('new')}
-        >
-          New Student Profile
-        </button>
+        <div className="tabs">
+          <button
+            className={`tab students-tab ${activeTab === 'students' ? 'active' : ''}`}
+            onClick={() => setActiveTab('students')}
+          >
+            Students
+          </button>
+          <button
+            className={`tab new-tab ${activeTab === 'new' ? 'active' : ''}`}
+            onClick={() => setActiveTab('new')}
+          >
+            New Student Profile
+          </button>
+        </div>
         {!isLoading && (
           <div className="student-count" data-testid="student-count">
             Student Profiles: <span className="count-number">{schoolStudents.length}</span>
