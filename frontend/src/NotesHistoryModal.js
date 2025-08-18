@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import api from './api';
 import NoteEditor from './NoteEditor';
+import './NotesHistoryModal.css';
 
-function NotesHistoryModal({ notes = [], onClose, isAdmin = false, canAdd = false, jobCode, studentEmail }) {
+function NotesHistoryModal({ notes = [], onClose, isAdmin = false, canAdd = false, jobCode, studentEmail, onSaved }) {
   const [localNotes, setLocalNotes] = useState(notes);
   const [adding, setAdding] = useState(false);
   const [editingIndex, setEditingIndex] = useState(null);
@@ -12,6 +13,7 @@ function NotesHistoryModal({ notes = [], onClose, isAdmin = false, canAdd = fals
   const handleAddSaved = (newNote) => {
     setLocalNotes(prev => [...prev, newNote]);
     setAdding(false);
+    onSaved && onSaved(newNote);
   };
 
   const startEdit = (idx) => {
@@ -64,67 +66,71 @@ function NotesHistoryModal({ notes = [], onClose, isAdmin = false, canAdd = fals
 
   return (
     <div className="notes-modal-overlay">
-      <div className="notes-modal">
-        <button className="close-button" onClick={onClose}>X</button>
-        <h3>Notes History</h3>
-        {canAdd && !adding && (
-          <button onClick={() => setAdding(true)}>Add Note</button>
-        )}
-        {canAdd && adding && (
-          <NoteEditor
-            jobCode={jobCode}
-            email={studentEmail}
-            onSaved={handleAddSaved}
-            onCancel={() => setAdding(false)}
-          />
-        )}
-        <table>
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Note</th>
-              {isAdmin && <th>Actions</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {localNotes.length > 0 ? (
-              localNotes.map((n, idx) => (
-                <tr key={idx}>
-                  <td>{idx + 1}</td>
-                  <td>
-                    {editingIndex === idx ? (
-                      <textarea
-                        value={editText}
-                        onChange={(e) => setEditText(e.target.value)}
-                      />
-                    ) : (
-                      n.text
-                    )}
-                  </td>
-                  {isAdmin && (
+      <div className="glass-modal">
+        <div className="notes-modal">
+          <button className="close-button" onClick={onClose}>X</button>
+          <h3>Notes History</h3>
+          {canAdd && !adding && (
+            <button onClick={() => setAdding(true)}>Add Note</button>
+          )}
+          {canAdd && adding && (
+            <NoteEditor
+              jobCode={jobCode}
+              email={studentEmail}
+              onSaved={handleAddSaved}
+              onCancel={() => setAdding(false)}
+            />
+          )}
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Date</th>
+                <th>Note</th>
+                {isAdmin && <th>Actions</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {localNotes.length > 0 ? (
+                localNotes.map((n, idx) => (
+                  <tr key={idx}>
+                    <td>{idx + 1}</td>
+                    <td>{n.timestamp ? new Date(n.timestamp).toLocaleString() : ''}</td>
                     <td>
                       {editingIndex === idx ? (
-                        <>
-                          <button onClick={saveEdit}>Save</button>
-                          <button onClick={cancelEdit}>Cancel</button>
-                        </>
+                        <textarea
+                          value={editText}
+                          onChange={(e) => setEditText(e.target.value)}
+                        />
                       ) : (
-                        <>
-                          <button onClick={() => startEdit(idx)}>Edit</button>
-                          <button onClick={() => deleteNote(idx)}>Delete</button>
-                        </>
+                        n.text
                       )}
                     </td>
-                  )}
-                </tr>
+                    {isAdmin && (
+                      <td>
+                        {editingIndex === idx ? (
+                          <>
+                            <button onClick={saveEdit}>Save</button>
+                            <button onClick={cancelEdit}>Cancel</button>
+                          </>
+                        ) : (
+                          <>
+                            <button onClick={() => startEdit(idx)}>Edit</button>
+                            <button onClick={() => deleteNote(idx)}>Delete</button>
+                          </>
+                        )}
+                      </td>
+                    )}
+                  </tr>
               ))
-            ) : (
-              <tr>
-                <td colSpan={isAdmin ? 3 : 2}>No notes available.</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+              ) : (
+                <tr>
+                  <td colSpan={isAdmin ? 4 : 3}>No notes available.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
