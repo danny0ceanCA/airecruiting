@@ -242,6 +242,23 @@
   margin-top: 0.5rem;
 }
 
+/* Smooth slide-out animation for job rows */
+.job-subrow {
+  animation: slideDownFade 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  transform-origin: top;
+}
+
+@keyframes slideDownFade {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scaleY(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+  }
+}
+
 .expand-toggle {
   cursor: pointer;
   font-weight: bold;
