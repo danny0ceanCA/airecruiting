@@ -228,13 +228,22 @@ function StudentProfiles() {
 
   const toggleRow = (email, assignedJobs = []) => {
     setExpandedRows((prev) => {
-      const expanded = !prev[email];
-      if (!prev[email]) {
+      const isOpen = prev[email] === 'open';
+      if (!isOpen) {
         for (const job of assignedJobs) {
           fetchJobDescriptionStatus(email, job.job_code);
         }
+        return { ...prev, [email]: 'open' };
+      } else {
+        setTimeout(() => {
+          setExpandedRows((cur) => {
+            const updated = { ...cur };
+            delete updated[email];
+            return updated;
+          });
+        }, 250);
+        return { ...prev, [email]: 'closing' };
       }
-      return { ...prev, [email]: expanded };
     });
   };
 
@@ -772,7 +781,10 @@ function StudentProfiles() {
                           </td>
                         </tr>
                         {expandedRows[s.email] && (
-                          <tr className="job-subrow" key={`${s.email}-jobs`}>
+                          <tr
+                            className={`job-subrow${expandedRows[s.email] === 'closing' ? ' closing' : ''}`}
+                            key={`${s.email}-jobs`}
+                          >
                             <td colSpan="100%">
                               <table className="job-subtable">
                                 <thead>

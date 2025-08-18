@@ -242,26 +242,43 @@
   margin-top: 0.5rem;
 }
 
-/* Smooth slide-out animation for job rows */
+/* Smooth slide animation for job rows */
 .job-subrow {
-  animation: slideDownFade 0.25s ease-out;
+  animation: slideDown 0.25s ease-out;
   transform-origin: top;
-  will-change: transform, opacity;
+  will-change: transform;
+  background-color: #fff;
 }
 
-@keyframes slideDownFade {
+.job-subrow td {
+  background-color: #fff;
+}
+
+.job-subrow.closing {
+  animation: slideUp 0.25s ease-in forwards;
+}
+
+@keyframes slideDown {
   from {
-    opacity: 0;
     transform: translateY(-6px);
   }
   to {
-    opacity: 1;
     transform: translateY(0);
   }
 }
 
+@keyframes slideUp {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-6px);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .job-subrow {
+  .job-subrow,
+  .job-subrow.closing {
     animation: none;
   }
 }
