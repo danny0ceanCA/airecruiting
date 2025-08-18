@@ -152,6 +152,34 @@ vector_index: faiss.Index | None = None
 vector_emails: list[str] = []
 
 
+def normalize_email(email: str | None) -> str:
+    """Return a lowercase, stripped version of an email."""
+    return (email or "").strip().lower()
+
+
+def user_key(email: str) -> str:
+    """Return the redis key for a user."""
+    return f"user:{normalize_email(email)}"
+
+
+def student_key(email: str) -> str:
+    """Return the redis key for a student."""
+    return f"student:{normalize_email(email)}"
+
+
+def find_user_key(email: str) -> str | None:
+    """Return existing user key matching email case-insensitively."""
+    target = normalize_email(email)
+    exact = user_key(target)
+    if redis_client.exists(exact):
+        return exact
+    for key in redis_client.scan_iter("user:*"):
+        k = key if isinstance(key, str) else key.decode()
+        if k.split("user:", 1)[1].lower() == target:
+            return k
+    return None
+
+
 def ensure_index(dim: int) -> None:
     """Ensure the FAISS index exists with the correct dimension."""
     global EMBEDDING_DIM, vector_index
@@ -424,6 +452,11 @@ class StudentRequest(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email_field(cls, v: str) -> str:
+        return normalize_email(v)
+
     @field_validator("max_travel")
     @classmethod
     def check_travel(cls, v):
@@ -479,9 +512,14 @@ def read_root():
 
 @app.post("/register")
 def register(req: RegisterRequest):
-    key = f"user:{req.email}"
-    if redis_client.exists(key):
+    raw_email = req.email
+    email = normalize_email(raw_email)
+    print(f"Registration attempt for {raw_email} (normalized: {email})")
+    existing = find_user_key(email)
+    if existing:
         raise HTTPException(status_code=400, detail="User already exists")
+
+    key = user_key(email)
 
     if req.role in {"career", "recruiter"} and not req.institutional_code:
         raise HTTPException(status_code=400, detail="Institutional code required for career staff and recruiters")
@@ -516,9 +554,11 @@ def register(req: RegisterRequest):
 
 @app.post("/login")
 def login(req: LoginRequest):
-    print(f"Login attempt for {req.email}")
-    key = f"user:{req.email}"
-    raw = redis_client.get(key)
+    raw_email = req.email
+    email = normalize_email(raw_email)
+    print(f"Login attempt for {raw_email} (normalized: {email})")
+    key = find_user_key(email)
+    raw = redis_client.get(key) if key else None
     print(f"User found: {bool(raw)}")
     if not raw:
         raise HTTPException(status_code=401, detail="Invalid credentials")
@@ -536,19 +576,19 @@ def login(req: LoginRequest):
         raise HTTPException(status_code=403, detail="User deactivated")
 
     payload = {
-        "sub": req.email,
+        "sub": email,
         "role": user["role"],
         "exp": datetime.utcnow() + timedelta(hours=1),
     }
     token = jwt.encode(payload, JWT_SECRET, algorithm=ALGORITHM)
-    print(f"Login successful for {req.email}")
+    print(f"Login successful for {email}")
     try:
         redis_client.rpush(
             ACTIVITY_LOG_KEY,
             json.dumps(
                 {
                     "timestamp": datetime.utcnow().isoformat(),
-                    "user": req.email,
+                    "user": email,
                     "action": "login",
                 }
             ),
@@ -561,8 +601,11 @@ def login(req: LoginRequest):
 def approve(req: ApproveRequest, current_user: dict = Depends(get_current_user)):
     if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin privileges required")
-    key = f"user:{req.email}"
-    raw = redis_client.get(key)
+    raw_email = req.email
+    email = normalize_email(raw_email)
+    print(f"Approve request for {raw_email} (normalized: {email})")
+    key = find_user_key(email)
+    raw = redis_client.get(key) if key else None
     if not raw:
         raise HTTPException(status_code=404, detail="User not found")
     user = json.loads(raw)
@@ -570,20 +613,23 @@ def approve(req: ApproveRequest, current_user: dict = Depends(get_current_user))
     if req.role is not None:
         user["role"] = req.role
     redis_client.set(key, json.dumps(user))
-    return {"message": f"{req.email} approved as {user['role']}"}
+    return {"message": f"{email} approved as {user['role']}"}
 
 @app.post("/reject")
 def reject(req: RejectRequest, current_user: dict = Depends(get_current_user)):
     if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin privileges required")
-    key = f"user:{req.email}"
-    raw = redis_client.get(key)
+    raw_email = req.email
+    email = normalize_email(raw_email)
+    print(f"Reject request for {raw_email} (normalized: {email})")
+    key = find_user_key(email)
+    raw = redis_client.get(key) if key else None
     if not raw:
         raise HTTPException(status_code=404, detail="User not found")
     user = json.loads(raw)
     user["rejected"] = True
     redis_client.set(key, json.dumps(user))
-    return {"message": f"{req.email} rejected"}
+    return {"message": f"{email} rejected"}
 
 @app.get("/pending-users")
 def pending_users(current_user: dict = Depends(get_current_user)):
@@ -622,8 +668,11 @@ def list_users(current_user: dict = Depends(get_current_user)):
 def update_user(email: str, req: UpdateUserRequest, current_user: dict = Depends(get_current_user)):
     if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin privileges required")
-    key = f"user:{email}"
-    raw = redis_client.get(key)
+    raw_email = email
+    email = normalize_email(raw_email)
+    print(f"Update user request for {raw_email} (normalized: {email})")
+    key = find_user_key(email)
+    raw = redis_client.get(key) if key else None
     if not raw:
         raise HTTPException(status_code=404, detail="User not found")
     user = json.loads(raw)
@@ -646,9 +695,11 @@ def delete_user(email: str, current_user: dict = Depends(get_current_user)):
     """Delete a user account."""
     if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin privileges required")
-
-    key = f"user:{email}"
-    if not redis_client.exists(key):
+    raw_email = email
+    email = normalize_email(raw_email)
+    print(f"Delete user request for {raw_email} (normalized: {email})")
+    key = find_user_key(email)
+    if not key or not redis_client.exists(key):
         raise HTTPException(status_code=404, detail="User not found")
 
     redis_client.delete(key)
@@ -830,7 +881,7 @@ async def create_student(request: Request, current_user: dict = Depends(get_curr
     if current_user.get("role") == "applicant" and student_data.email != current_user.get("sub"):
         raise HTTPException(status_code=403, detail="Applicants can only create their own profile")
 
-    if redis_client.exists(f"student:{student_data.email}"):
+    if redis_client.exists(student_key(student_data.email)):
         raise HTTPException(status_code=400, detail="Student already exists")
 
     resume_text = ""
@@ -883,8 +934,8 @@ async def create_student(request: Request, current_user: dict = Depends(get_curr
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Embedding failed: {str(e)}")
 
-    user_key = f"user:{current_user.get('sub')}"
-    user_raw = redis_client.get(user_key)
+    u_key = user_key(current_user.get('sub'))
+    user_raw = redis_client.get(u_key)
     institutional_code = None
     school_label = None
     if user_raw:
@@ -904,7 +955,7 @@ async def create_student(request: Request, current_user: dict = Depends(get_curr
         data["school_label"] = school_label
     data["created_by"] = current_user.get("sub")
     data["created_at"] = datetime.now(timezone.utc).isoformat()
-    redis_client.set(f"student:{student_data.email}", json.dumps(data))
+    redis_client.set(student_key(student_data.email), json.dumps(data))
     ensure_index(len(embedding))
     if vector_index is not None:
         vector_index.add(np.array([embedding], dtype="float32"))
@@ -920,7 +971,8 @@ async def create_student(request: Request, current_user: dict = Depends(get_curr
 def update_student(
     email: str, updated: StudentRequest, current_user: dict = Depends(get_current_user)
 ):
-    key = f"student:{email}"
+    email = normalize_email(email)
+    key = student_key(email)
     raw = redis_client.get(key)
     if not raw:
         raise HTTPException(status_code=404, detail="Student not found")
@@ -1568,7 +1620,7 @@ def place_student(data: dict, token_data: dict = Depends(get_current_user)):
     if token_data.get("role") not in {"admin", "career"}:
         raise HTTPException(status_code=403, detail="Not authorized to place students")
     job_code = data["job_code"]
-    student_email = data["student_email"]
+    student_email = normalize_email(data["student_email"])
     key = f"job:{job_code}"
     raw = redis_client.get(key)
     if not raw:
@@ -1589,7 +1641,7 @@ def place_student(data: dict, token_data: dict = Depends(get_current_user)):
 @app.post("/assign")
 def assign_student(data: dict, token_data: dict = Depends(get_current_user)):
     job_code = data["job_code"]
-    student_email = data["student_email"]
+    student_email = normalize_email(data["student_email"])
     note = data.get("note")
     key = f"job:{job_code}"
     try:
@@ -1656,7 +1708,7 @@ def assign_student(data: dict, token_data: dict = Depends(get_current_user)):
 def reject_assigned_student(data: dict, token_data: dict = Depends(get_current_user)):
     """Remove an assigned student from a job and record a note."""
     job_code = data.get("job_code")
-    student_email = data.get("student_email")
+    student_email = normalize_email(data.get("student_email"))
     note = data.get("note")
     if not job_code or not student_email:
         raise HTTPException(status_code=400, detail="Missing job_code or student_email")
@@ -1730,7 +1782,7 @@ def reject_assigned_student(data: dict, token_data: dict = Depends(get_current_u
 def student_note(data: dict, token_data: dict = Depends(get_current_user)):
     """Create or update a note for a student on a job."""
     job_code = data.get("job_code")
-    student_email = data.get("student_email")
+    student_email = normalize_email(data.get("student_email"))
     note = data.get("note")
     if not job_code or not student_email or note is None:
         raise HTTPException(status_code=400, detail="Missing job_code, student_email, or note")
@@ -1802,7 +1854,7 @@ def update_student_note(data: dict, token_data: dict = Depends(get_current_user)
     if token_data.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin privileges required")
     job_code = data.get("job_code")
-    student_email = data.get("student_email")
+    student_email = normalize_email(data.get("student_email"))
     index = data.get("index")
     note = data.get("note")
     if not job_code or not student_email or note is None or index is None:
@@ -1873,7 +1925,7 @@ def delete_student_note(data: dict, token_data: dict = Depends(get_current_user)
     if token_data.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin privileges required")
     job_code = data.get("job_code")
-    student_email = data.get("student_email")
+    student_email = normalize_email(data.get("student_email"))
     index = data.get("index")
     if not job_code or not student_email or index is None:
         raise HTTPException(
@@ -1935,7 +1987,7 @@ def delete_student_note(data: dict, token_data: dict = Depends(get_current_user)
 def mark_not_interested(data: dict, token_data: dict = Depends(get_current_user)):
     """Record that a student is not interested in a job."""
     job_code = data.get("job_code")
-    student_email = data.get("student_email")
+    student_email = normalize_email(data.get("student_email"))
     if not job_code or not student_email:
         raise HTTPException(status_code=400, detail="Missing job_code or student_email")
 
@@ -2020,7 +2072,7 @@ def generate_resume(req: ResumeRequest, current_user: dict = Depends(get_current
             return {"status": "exists"}
 
     job_raw = redis_client.get(f"job:{req.job_code}")
-    student_raw = redis_client.get(f"student:{req.student_email}")
+    student_raw = redis_client.get(student_key(req.student_email))
     if not job_raw or not student_raw:
         print("\u274C Job or student not found")
         raise HTTPException(status_code=404, detail="Job or student not found")
@@ -2097,7 +2149,7 @@ def generate_description(req: DescriptionRequest, current_user: dict = Depends(g
         return {"status": "exists", "description": existing}
 
     job_raw = redis_client.get(f"job:{req.job_code}")
-    student_raw = redis_client.get(f"student:{req.student_email}")
+    student_raw = redis_client.get(student_key(req.student_email))
     if not job_raw or not student_raw:
         raise HTTPException(status_code=404, detail="Job or student not found")
 
@@ -2112,6 +2164,7 @@ def generate_description(req: DescriptionRequest, current_user: dict = Depends(g
 
 def generate_job_description_html(job_code: str, student_email: str) -> tuple[str, bool]:
     """Create or fetch an HTML job description for a student."""
+    student_email = normalize_email(student_email)
     key = f"job_description:{job_code}:{student_email}"
     html_key = f"jobdesc:{job_code}:{student_email}"
 
@@ -2121,7 +2174,7 @@ def generate_job_description_html(job_code: str, student_email: str) -> tuple[st
         return existing, True
 
     job_raw = redis_client.get(f"job:{job_code}")
-    student_raw = redis_client.get(f"student:{student_email}")
+    student_raw = redis_client.get(student_key(student_email))
     if not job_raw or not student_raw:
         raise HTTPException(status_code=404, detail="Job or student not found")
 
@@ -2228,6 +2281,7 @@ def generate_job_description(req: ResumeRequest, current_user: dict = Depends(ge
 
 @app.get("/job-description/{job_code}/{student_email}")
 def get_job_description(job_code: str, student_email: str, current_user: dict = Depends(get_current_user)):
+    student_email = normalize_email(student_email)
     key = f"job_description:{job_code}:{student_email}"
     description = redis_client.get(key)
     if not description:
@@ -2237,6 +2291,7 @@ def get_job_description(job_code: str, student_email: str, current_user: dict = 
 
 @app.get("/job-description-html/{job_code}/{student_email}")
 def get_job_description_html(job_code: str, student_email: str, current_user: dict = Depends(get_current_user)):
+    student_email = normalize_email(student_email)
     key = f"jobdesc:{job_code}:{student_email}"
     html = redis_client.get(key)
     if not html:
@@ -2247,6 +2302,7 @@ def get_job_description_html(job_code: str, student_email: str, current_user: di
 # Public version of the job description HTML without auth
 @app.get("/public/job-description-html/{job_code}/{student_email}")
 def get_public_job_description_html(job_code: str, student_email: str):
+    student_email = normalize_email(student_email)
     key = f"jobdesc:{job_code}:{student_email}"
     html = redis_client.get(key)
     if not html:
@@ -2256,6 +2312,7 @@ def get_public_job_description_html(job_code: str, student_email: str):
 
 @app.get("/resume/{job_code}/{student_email}")
 def get_resume(job_code: str, student_email: str, current_user: dict = Depends(get_current_user)):
+    student_email = normalize_email(student_email)
     key = f"resume:{job_code}:{student_email}"
     print(f"\U0001F4E5 Download request for resume: {job_code} - {student_email}")
 
@@ -2281,6 +2338,7 @@ def get_resume(job_code: str, student_email: str, current_user: dict = Depends(g
 
 @app.get("/resume-html/{job_code}/{student_email}")
 def get_resume_html(job_code: str, student_email: str, current_user: dict = Depends(get_current_user)):
+    student_email = normalize_email(student_email)
     key = f"resumehtml:{job_code}:{student_email}"
 
     job_raw = redis_client.get(f"job:{job_code}")
@@ -2308,8 +2366,8 @@ def get_placements(
 ):
     if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin privileges required")
-
-    key = f"student:{student_email}"
+    student_email = normalize_email(student_email)
+    key = student_key(student_email)
     if not redis_client.exists(key):
         raise HTTPException(status_code=404, detail="Student not found")
 
@@ -2338,13 +2396,13 @@ def reset_jobs(current_user: dict = Depends(get_current_user)):
 def delete_student(email: str, current_user: dict = Depends(get_current_user)):
     if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin privileges required")
-
-    student_key = f"student:{email}"
-    if not redis_client.exists(student_key):
+    email = normalize_email(email)
+    skey = student_key(email)
+    if not redis_client.exists(skey):
         raise HTTPException(status_code=404, detail="Student not found")
 
     # Delete student profile
-    redis_client.delete(student_key)
+    redis_client.delete(skey)
 
     # Clean up from job assignments/placements
     for job_key in redis_client.scan_iter("job:*"):
@@ -2491,8 +2549,8 @@ def students_by_school(current_user: dict = Depends(get_current_user)):
 
     Career service users only see profiles they created themselves.
     """
-    user_key = f"user:{current_user.get('sub')}"
-    raw_user = redis_client.get(user_key)
+    u_key = user_key(current_user.get('sub'))
+    raw_user = redis_client.get(u_key)
     if not raw_user:
         raise HTTPException(status_code=404, detail="User not found")
 

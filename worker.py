@@ -36,6 +36,9 @@ rq_client = redis.Redis.from_url(redis_url)
 
 logger = logging.getLogger(__name__)
 
+def normalize_email(email: str | None) -> str:
+    return (email or "").strip().lower()
+
 def weekly_summary_worker() -> None:
     """Send summaries to career staff and admins."""
     for key in redis_client.scan_iter("user:*"):
@@ -48,8 +51,9 @@ def weekly_summary_worker() -> None:
             continue
         role = user.get("role")
         if role in {"career", "admin"}:
-            email = key.split("user:", 1)[1]
-            logger.info("Sending weekly summary to %s", email)
+            raw_email = key.split("user:", 1)[1]
+            email = normalize_email(raw_email)
+            logger.info("Sending weekly summary to %s (normalized %s)", raw_email, email)
             try:
                 if send_weekly_summary(email):
                     logger.info("Successfully sent weekly summary to %s", email)

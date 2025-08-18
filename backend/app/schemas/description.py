@@ -1,5 +1,14 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
+
+
+def normalize_email(email: str | None) -> str:
+    return (email or "").strip().lower()
 
 class DescriptionRequest(BaseModel):
     student_email: str
     job_code: str
+
+    @field_validator("student_email", mode="before")
+    @classmethod
+    def normalize_email_field(cls, v: str) -> str:
+        return normalize_email(v)
