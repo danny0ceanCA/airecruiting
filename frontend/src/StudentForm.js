@@ -18,13 +18,15 @@ const initialState = {
   max_travel: ''
 };
 
-function StudentForm({ title, initialData = {}, licenses = [], onSubmit, onCancel, isSaving }) {
-  const [formData, setFormData] = useState({ ...initialState, ...initialData });
+function StudentForm({ title, initialData, licenses = [], onSubmit, onCancel, isSaving }) {
+  const [formData, setFormData] = useState({ ...initialState, ...(initialData || {}) });
   const [formError, setFormError] = useState('');
   const cityRef = useRef(null);
 
   useEffect(() => {
-    setFormData({ ...initialState, ...initialData });
+    if (initialData) {
+      setFormData({ ...initialState, ...initialData });
+    }
   }, [initialData]);
 
   useEffect(() => {

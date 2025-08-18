@@ -809,7 +809,7 @@ function StudentProfiles() {
           <div className="drawer-panel">
             <StudentForm
               title="Edit Student Profile"
-              initialData={editingStudent || {}}
+              initialData={editingStudent}
               licenses={licenses}
               onSubmit={handleUpdate}
               onCancel={closeDrawer}
