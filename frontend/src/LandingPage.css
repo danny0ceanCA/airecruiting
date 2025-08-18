@@ -20,6 +20,10 @@
   height: auto;
 }
 
+.landing-menu {
+  margin-top: -10vh;
+}
+
 .landing-title {
   font-size: var(--font-size-h1);
   line-height: var(--line-height-h1);
@@ -49,6 +53,9 @@
     width: 100%;
     max-width: 400px;
     margin-bottom: 0;
+  }
+  .landing-menu {
+    margin-top: 0;
   }
   .landing-title {
     grid-area: title;
