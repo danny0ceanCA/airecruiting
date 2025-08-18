@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Joyride from 'react-joyride';
 import api from './api';
-import loadGoogleMaps from './utils/loadGoogleMaps';
 import { useNavigate } from 'react-router-dom';
 
 import AdminMenu from './AdminMenu';
@@ -10,30 +9,14 @@ import './StudentProfiles.css';
 import './Tour.css';
 import NotesHistoryModal from './NotesHistoryModal';
 import Tooltip from './components/Tooltip';
+import StudentForm from './StudentForm';
 
 function StudentProfiles() {
-  const [formData, setFormData] = useState({
-    first_name: '',
-    last_name: '',
-    email: '',
-    phone: '',
-    license: '',
-    skills: '',
-    experience_summary: '',
-    interests: '',
-    city: '',
-    state: '',
-    lat: '',
-    lng: '',
-    max_travel: ''
-  });
   const [licenses, setLicenses] = useState([]);
   const licenseLabel = (code) => {
     const l = licenses.find((x) => x.code === code);
     return l ? l.label : code;
   };
-  const [formError, setFormError] = useState('');
-  const [resumeFile, setResumeFile] = useState(null);
   const [toast, setToast] = useState('');
 
   const [showTour, setShowTour] = useState(
@@ -50,7 +33,7 @@ function StudentProfiles() {
       content: "Click 'New Student Profile' when you need to add a student."
     },
     {
-      target: '.profile-form',
+      target: '.student-form',
       content:
         "Fill in the student's contact info, skills, and travel range here."
     },
@@ -94,8 +77,9 @@ function StudentProfiles() {
   const [licenseFilter, setLicenseFilter] = useState('');
   const [assignedFilter, setAssignedFilter] = useState('');
   const [placementFilter, setPlacementFilter] = useState('');
-  const [isEditing, setIsEditing] = useState(false);
   const [editingEmail, setEditingEmail] = useState('');
+  const [editingStudent, setEditingStudent] = useState(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const [activeTab, setActiveTab] = useState('students');
 
@@ -112,28 +96,8 @@ function StudentProfiles() {
     }
   };
 
-  const cityRef = useRef(null);
   const tableWrapperRef = useRef(null);
   const headerRowRef = useRef(null);
-
-  const initAutocomplete = () => {
-    if (cityRef.current && window.google) {
-      const ac = new window.google.maps.places.Autocomplete(cityRef.current, { types: ['(cities)'] });
-      ac.addListener('place_changed', () => {
-        const place = ac.getPlace();
-        const comps = place.address_components || [];
-        const city = comps.find(c => c.types.includes('locality'))?.long_name || '';
-        const state = comps.find(c => c.types.includes('administrative_area_level_1'))?.short_name || '';
-        const lat = place.geometry.location.lat();
-        const lng = place.geometry.location.lng();
-        setFormData(prev => ({ ...prev, city, state, lat, lng }));
-      });
-    }
-  };
-
-  useEffect(() => {
-    loadGoogleMaps(initAutocomplete);
-  }, [activeTab, isEditing]);
 
   useEffect(() => {
     const wrapper = tableWrapperRef.current;
@@ -222,10 +186,6 @@ function StudentProfiles() {
     fetchStudents();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
-  };
-
   const toggleRow = (email, assignedJobs = []) => {
     setExpandedRows((prev) => {
       const expanded = !prev[email];
@@ -241,29 +201,25 @@ function StudentProfiles() {
   const handleEdit = (email) => {
     const student = schoolStudents.find((s) => s.email === email);
     if (student) {
-      setFormData({
-        first_name: student.first_name || '',
-        last_name: student.last_name || '',
-        email: student.email || '',
-        phone: student.phone || '',
-        license: student.license || student.education_level || '',
+      const editData = {
+        ...student,
         skills: Array.isArray(student.skills)
           ? student.skills.join(', ')
           : student.skills || '',
-        experience_summary: student.experience_summary || '',
         interests: Array.isArray(student.interests)
           ? student.interests.join(', ')
-          : student.interests || '',
-        city: student.city || '',
-        state: student.state || '',
-        lat: student.lat || '',
-        lng: student.lng || '',
-        max_travel: student.max_travel || '',
-      });
-      setIsEditing(true);
+          : student.interests || ''
+      };
+      setEditingStudent(editData);
       setEditingEmail(student.email);
-      setActiveTab('new');
+      setDrawerOpen(true);
     }
+  };
+
+  const closeDrawer = () => {
+    setDrawerOpen(false);
+    setEditingStudent(null);
+    setEditingEmail('');
   };
 
   const handleDelete = async (email) => {
@@ -353,66 +309,51 @@ function StudentProfiles() {
   };
 
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setFormError('');
+  const handleCreate = async (data) => {
     setIsSaving(true);
-    const studentData = {
-      first_name: formData.first_name,
-      last_name: formData.last_name,
-      email: formData.email,
-      phone: formData.phone,
-      license: formData.license,
-      skills: formData.skills.split(',').map((s) => s.trim()),
-      experience_summary: formData.experience_summary,
-      interests: formData.interests.trim(),
-      city: formData.city,
-      state: formData.state,
-      lat: parseFloat(formData.lat || 0),
-      lng: parseFloat(formData.lng || 0),
-      max_travel: parseFloat(formData.max_travel || 0),
-    };
     try {
-      const method = isEditing ? 'put' : 'post';
-      const url = isEditing ? `/students/${editingEmail}` : '/students';
-      await api[method](url, studentData, {
+      await api.post('/students', data, {
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
       });
-      const msg = isEditing ? 'Student profile updated!' : 'Student profile submitted!';
-      setToast(msg);
+      setToast('Student profile submitted!');
       setTimeout(() => setToast(''), 3000);
-      setFormData({
-        first_name: '',
-        last_name: '',
-        email: '',
-        phone: '',
-        license: '',
-        skills: '',
-        experience_summary: '',
-        interests: '',
-        city: '',
-        state: '',
-        lat: '',
-        lng: '',
-        max_travel: ''
-      });
-      setResumeFile(null);
-      setIsEditing(false);
-      setEditingEmail('');
       fetchStudents();
+      return true;
     } catch (err) {
       console.error('Submission failed:', err);
-      setFormError('Submission failed. Please check all required fields.');
+      setToast('Submission failed. Please check all required fields.');
+      setTimeout(() => setToast(''), 3000);
+      return false;
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleResumeChange = (e) => {
-    setResumeFile(e.target.files[0] || null);
+  const handleUpdate = async (data) => {
+    setIsSaving(true);
+    try {
+      await api.put(`/students/${editingEmail}`, data, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      setToast('Student profile updated!');
+      setTimeout(() => setToast(''), 3000);
+      fetchStudents();
+      closeDrawer();
+      return true;
+    } catch (err) {
+      console.error('Submission failed:', err);
+      setToast('Submission failed. Please check all required fields.');
+      setTimeout(() => setToast(''), 3000);
+      return false;
+    } finally {
+      setIsSaving(false);
+    }
   };
 
 
@@ -535,55 +476,12 @@ function StudentProfiles() {
       <div className="tab-content">
         {activeTab === 'new' && (
           <div className="form-panel">
-            <form className="profile-form" onSubmit={handleSubmit}>
-              <h2>{isEditing ? 'Edit Student Profile' : 'New Student Profile'}</h2>
-            <label htmlFor="first_name">First Name</label>
-            <input id="first_name" name="first_name" type="text" value={formData.first_name} onChange={handleChange} />
-            <label htmlFor="last_name">Last Name</label>
-            <input id="last_name" name="last_name" type="text" value={formData.last_name} onChange={handleChange} />
-            <label htmlFor="email">Email</label>
-            <input id="email" name="email" type="text" value={formData.email} onChange={handleChange} />
-            <label htmlFor="phone">Phone</label>
-            <input id="phone" name="phone" type="text" value={formData.phone} onChange={handleChange} />
-            <label htmlFor="license">License</label>
-            <select id="license" name="license" value={formData.license} onChange={handleChange}>
-              <option value="">Select...</option>
-              {licenses.map((l) => (
-                <option key={l.code} value={l.code}>{l.label}</option>
-              ))}
-            </select>
-            <label htmlFor="skills">Skills</label>
-            <input id="skills" name="skills" type="text" value={formData.skills} onChange={handleChange} />
-            <label htmlFor="experience_summary">Experience Summary</label>
-            <textarea id="experience_summary" name="experience_summary" value={formData.experience_summary} onChange={handleChange} />
-            <label htmlFor="interests">Interests</label>
-            <input id="interests" name="interests" type="text" value={formData.interests} onChange={handleChange} />
-            <label htmlFor="city">City</label>
-            <input id="city" name="city" type="text" value={formData.city} onChange={handleChange} ref={cityRef} />
-            <label htmlFor="state">State</label>
-            <input id="state" name="state" type="text" value={formData.state} onChange={handleChange} readOnly />
-            <label htmlFor="max_travel">Max Travel</label>
-            <input id="max_travel" name="max_travel" type="number" value={formData.max_travel} onChange={handleChange} />
-            <input type="hidden" id="lat" name="lat" value={formData.lat} readOnly />
-            <input type="hidden" id="lng" name="lng" value={formData.lng} readOnly />
-            {/* Uploading documents is temporarily disabled */}
-            {false && (
-              <>
-                <label htmlFor="resume">Upload Resume (PDF or DOCX)</label>
-                <input id="resume" name="resume" type="file" onChange={handleResumeChange} />
-              </>
-            )}
-            <button type="submit" disabled={isSaving}>
-              {isSaving ? (
-                <>
-                  <span className="spinner" /> Saving...
-                </>
-              ) : (
-                isEditing ? 'Update' : 'Submit'
-              )}
-            </button>
-            {formError && <p className="error">{formError}</p>}
-            </form>
+            <StudentForm
+              title="New Student Profile"
+              licenses={licenses}
+              onSubmit={handleCreate}
+              isSaving={isSaving}
+            />
           </div>
         )}
         {activeTab === 'students' && (
@@ -884,6 +782,21 @@ function StudentProfiles() {
         </div>
         )}
       </div>
+      {drawerOpen && (
+        <>
+          <div className="drawer-overlay" onClick={closeDrawer}></div>
+          <div className="drawer-panel">
+            <StudentForm
+              title="Edit Student Profile"
+              initialData={editingStudent || {}}
+              licenses={licenses}
+              onSubmit={handleUpdate}
+              onCancel={closeDrawer}
+              isSaving={isSaving}
+            />
+          </div>
+        </>
+      )}
       {modalNotes && (
         <NotesHistoryModal
           notes={modalNotes.notes}
