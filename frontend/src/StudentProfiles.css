@@ -260,6 +260,11 @@
   will-change: max-height;
 }
 
+.job-subrow.opening .job-subrow-content {
+  max-height: 0;
+  opacity: 0;
+}
+
 .job-subrow.open .job-subrow-content {
   max-height: 500px;
   opacity: 1;

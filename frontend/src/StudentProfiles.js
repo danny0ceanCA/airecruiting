@@ -228,12 +228,13 @@ function StudentProfiles() {
 
   const toggleRow = (email, assignedJobs = []) => {
     setExpandedRows((prev) => {
-      const isOpen = prev[email] === 'open';
+      const state = prev[email];
+      const isOpen = state === 'open' || state === 'opening';
       if (!isOpen) {
         for (const job of assignedJobs) {
           fetchJobDescriptionStatus(email, job.job_code);
         }
-        return { ...prev, [email]: 'open' };
+        return { ...prev, [email]: 'opening' };
       } else {
         setTimeout(() => {
           setExpandedRows((cur) => {
@@ -244,6 +245,12 @@ function StudentProfiles() {
         }, 300);
         return { ...prev, [email]: 'closing' };
       }
+    });
+
+    requestAnimationFrame(() => {
+      setExpandedRows((prev) =>
+        prev[email] === 'opening' ? { ...prev, [email]: 'open' } : prev
+      );
     });
   };
 
