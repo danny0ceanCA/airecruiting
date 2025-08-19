@@ -9,6 +9,8 @@ import os
 import uuid
 from typing import Optional
 import smtplib
+import logging
+import sys
 from email.message import EmailMessage
 from fastapi import (
     FastAPI,
@@ -43,6 +45,13 @@ from backend.app.services.resume import generate_resume_text
 from backend.app.services.description import generate_description_text
 from backend.app.school_codes import SCHOOL_CODE_MAP
 from backend.app.services.summary import send_weekly_summary
+
+log = logging.getLogger(__name__)
+logging.basicConfig(
+    stream=sys.stdout,
+    level=logging.INFO,
+    format="%(levelname)s %(message)s",
+)
 
 
 def init_default_school_codes():
@@ -878,10 +887,20 @@ async def create_student(request: Request, current_user: dict = Depends(get_curr
 
     student_data.license = license_to_code(student_data.license)
 
+    owner = current_user.get("sub")
+    log.info("POST /students attempt email=%s owner=%s", student_data.email, owner)
+
     if current_user.get("role") == "applicant" and student_data.email != current_user.get("sub"):
         raise HTTPException(status_code=403, detail="Applicants can only create their own profile")
 
     if redis_client.exists(student_key(student_data.email)):
+        created_by_in_db = json.loads(redis_client.get(student_key(student_data.email))).get("created_by")
+        log.warning(
+            "POST /students duplicate/conflict email=%s owner=%s created_by_in_db=%s",
+            student_data.email,
+            owner,
+            created_by_in_db,
+        )
         raise HTTPException(status_code=400, detail="Student already exists")
 
     resume_text = ""
