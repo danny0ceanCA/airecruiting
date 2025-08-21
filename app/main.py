@@ -1148,8 +1148,10 @@ def update_job(job_code: str, updated: dict, token_data: dict = Depends(get_curr
 
     if not raw:
         raise HTTPException(status_code=404, detail="Job not found")
-
-    job = json.loads(raw)
+    try:
+        job = json.loads(raw)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail="Malformed job record")
 
     if token_data.get("role") != "admin" and token_data.get("sub") != job.get("posted_by"):
         raise HTTPException(status_code=403, detail="Not authorized to edit this job")
