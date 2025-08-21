@@ -1430,11 +1430,11 @@ def get_match_results(job_code: str, current_user: dict = Depends(get_current_us
         return {"matches": []}
 
     try:
-        matches = json.loads(results_json)
+        matches = {m["email"]: m for m in json.loads(results_json)}
         log.info("📦 Returning %s stored matches for job %s", len(matches), job_code)
 
         # Ensure each match has first and last name fields
-        for m in matches:
+        for m in matches.values():
             if "first_name" not in m or "last_name" not in m:
                 parts = m.get("name", "").split(" ", 1)
                 m.setdefault("first_name", parts[0] if parts else "")
@@ -1449,38 +1449,38 @@ def get_match_results(job_code: str, current_user: dict = Depends(get_current_us
         placed = set(job.get("placed_students", []))
         rejected = set(job.get("rejected_students", []))
 
-        existing = {m["email"] for m in matches}
+        existing = set(matches)
         for email in assigned | placed | rejected:
             if email not in existing:
                 udata = json.loads(redis_client.get(f"user:{email}") or "{}")
                 first = udata.get("first_name", "")
                 last = udata.get("last_name", "")
                 name = f"{first} {last}".strip()
-                matches.append({
+                matches[email] = {
                     "name": name,
                     "first_name": first,
                     "last_name": last,
                     "email": email,
                     "score": None,
-                })
+                }
 
-        for m in matches:
-            if m["email"] in placed:
+        for email, m in matches.items():
+            if email in placed:
                 m["status"] = "placed"
-            elif m["email"] in assigned:
+            elif email in assigned:
                 m["status"] = "assigned"
-            elif m["email"] in rejected:
+            elif email in rejected:
                 m["status"] = "rejected"
             else:
                 m["status"] = None
 
-            notes_raw = job.get("student_notes", {}).get(m["email"], [])
+            notes_raw = job.get("student_notes", {}).get(email, [])
             notes, latest_note = _normalize_notes(notes_raw)
             m["notes"] = notes
             if latest_note is not None:
                 m["note"] = latest_note
 
-        return {"matches": matches}
+        return {"matches": list(matches.values())}
     except Exception as e:
         log.error("❌ Failed to load match results for %s: %s", job_code, e)
         return {"matches": []}
