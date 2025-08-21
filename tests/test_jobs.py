@@ -441,6 +441,21 @@ def test_license_label_vs_code_matching(monkeypatch):
     assert any(m["email"] == "code@example.com" for m in match_resp2.json()["matches"])
 
 
+def test_update_job_with_corrupted_data():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+    token = login_admin()
+    job_code = "CORRUPT1"
+    main_app.redis_client.set(f"job:{job_code}", "not-json")
+    resp = client.put(
+        f"/jobs/{job_code}",
+        json={"job_title": "New"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 500
+    assert resp.json()["detail"] == "Malformed job record"
+
+
 def test_match_respects_travel_distance(monkeypatch):
     token = login_admin()
 
