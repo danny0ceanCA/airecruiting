@@ -288,6 +288,39 @@ def test_get_match_results_includes_notes(monkeypatch):
     assert data["note"] == "hi"
 
 
+def test_get_match_results_no_duplicate_emails(monkeypatch):
+    token = login_admin()
+
+    store = {}
+
+    def fake_get(key):
+        return store.get(key)
+
+    def fake_set(key, value):
+        store[key] = value
+
+    monkeypatch.setattr(main_app.redis_client, "get", fake_get)
+    monkeypatch.setattr(main_app.redis_client, "set", fake_set)
+
+    job_code = "XYZ5"
+    store[f"match_results:{job_code}"] = json.dumps([
+        {"email": "dup@example.com", "score": 1.0},
+        {"email": "dup@example.com", "score": 2.0},
+    ])
+    store[f"job:{job_code}"] = json.dumps({
+        "job_code": job_code,
+        "assigned_students": [],
+        "placed_students": [],
+    })
+
+    resp = client.get(f"/match/{job_code}", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200
+    data = resp.json()["matches"]
+    emails = [m["email"] for m in data]
+    assert emails == ["dup@example.com"]
+    assert len(emails) == len(set(emails))
+
+
 def test_match_filters_by_license(monkeypatch):
     token = login_admin()
 
