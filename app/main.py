@@ -2095,7 +2095,11 @@ def generate_resume(req: ResumeRequest, current_user: dict = Depends(get_current
             return {"status": "exists"}
 
     job_raw = redis_client.get(f"job:{req.job_code}")
-    student_raw = redis_client.get(student_key(req.student_email))
+    # Prefer profile stored under "user:" key, falling back to legacy "student:" key
+    profile_key = find_user_key(req.student_email) or user_key(req.student_email)
+    student_raw = redis_client.get(profile_key)
+    if not student_raw:
+        student_raw = redis_client.get(student_key(req.student_email))
     if not job_raw or not student_raw:
         log.warning("❌ Job or student not found")
         raise HTTPException(status_code=404, detail="Job or student not found")
