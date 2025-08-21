@@ -241,14 +241,8 @@ def test_get_match_results_includes_missing_assigned(monkeypatch):
         "placed_students": []
     })
 
-    def fake_hgetall(key):
-        data = {
-            "user:a@example.com": {"first_name": "A", "last_name": "One"},
-            "user:b@example.com": {"first_name": "B", "last_name": "Two"},
-        }
-        return data.get(key, {})
-
-    monkeypatch.setattr(main_app.redis_client, "hgetall", fake_hgetall, raising=False)
+    store["user:a@example.com"] = json.dumps({"first_name": "A", "last_name": "One"})
+    store["user:b@example.com"] = json.dumps({"first_name": "B", "last_name": "Two"})
 
     resp = client.get(f"/match/{job_code}", headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 200
