@@ -1072,6 +1072,86 @@ def test_generate_resume_preview(monkeypatch):
     assert main_app.redis_client.get("resumehtml:coder:stud@example.com") is None
 
 
+def test_generate_resume_user_key_lookup(monkeypatch):
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    # store profile using a mixed-case user key to exercise find_user_key()
+    main_app.redis_client.set(
+        "user:Stud@Example.com",
+        json.dumps({"first_name": "Stud", "last_name": "S", "skills": ["python"]}),
+    )
+    main_app.redis_client.set(
+        "job:coder",
+        json.dumps({
+            "job_code": "coder",
+            "job_title": "Dev",
+            "job_description": "desc",
+            "desired_skills": ["python"],
+            "assigned_students": ["stud@example.com"],
+        }),
+    )
+
+    class FakeResp:
+        def __init__(self):
+            self.choices = [type("obj", (), {"message": type("obj", (), {"content": "<h2>Summary</h2>"})})]
+
+    def fake_create(model, messages, temperature):
+        return FakeResp()
+
+    monkeypatch.setattr(main_app.client.chat.completions, "create", fake_create)
+
+    token = client.post("/login", json={"email": "admin@example.com", "password": "admin123"}).json()["token"]
+
+    resp = client.post(
+        "/generate-resume",
+        json={"student_email": "stud@example.com", "job_code": "coder"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "success"
+
+
+def test_generate_resume_student_key_fallback(monkeypatch):
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    # only legacy student: key exists
+    main_app.redis_client.set(
+        "student:stud@example.com",
+        json.dumps({"first_name": "Stud", "last_name": "S", "skills": ["python"]}),
+    )
+    main_app.redis_client.set(
+        "job:coder",
+        json.dumps({
+            "job_code": "coder",
+            "job_title": "Dev",
+            "job_description": "desc",
+            "desired_skills": ["python"],
+            "assigned_students": ["stud@example.com"],
+        }),
+    )
+
+    class FakeResp:
+        def __init__(self):
+            self.choices = [type("obj", (), {"message": type("obj", (), {"content": "<h2>Summary</h2>"})})]
+
+    def fake_create(model, messages, temperature):
+        return FakeResp()
+
+    monkeypatch.setattr(main_app.client.chat.completions, "create", fake_create)
+
+    token = client.post("/login", json={"email": "admin@example.com", "password": "admin123"}).json()["token"]
+
+    resp = client.post(
+        "/generate-resume",
+        json={"student_email": "stud@example.com", "job_code": "coder"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "success"
+
+
 def test_generate_resume_requires_assignment():
     main_app.redis_client.flushdb()
     init_default_admin()
