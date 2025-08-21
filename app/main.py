@@ -1450,7 +1450,7 @@ def get_match_results(job_code: str, current_user: dict = Depends(get_current_us
         existing = {m["email"] for m in matches}
         for email in assigned | placed | rejected:
             if email not in existing:
-                udata = redis_client.hgetall(f"user:{email}") or {}
+                udata = json.loads(redis_client.get(f"user:{email}") or "{}")
                 first = udata.get("first_name", "")
                 last = udata.get("last_name", "")
                 name = f"{first} {last}".strip()
