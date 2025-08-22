@@ -45,13 +45,22 @@ from backend.app.services.resume import generate_resume_text
 from backend.app.services.description import generate_description_text
 from backend.app.school_codes import SCHOOL_CODE_MAP
 from backend.app.services.summary import send_weekly_summary
+from backend.app.logging_utils import (
+    RequestIdFilter,
+    get_logger,
+    request_id_ctx_var,
+)
 
-log = logging.getLogger(__name__)
 logging.basicConfig(
     stream=sys.stdout,
     level=logging.INFO,
-    format="%(levelname)s %(message)s",
+    format="%(levelname)s [%(request_id)s] %(message)s",
 )
+for handler in logging.getLogger().handlers:
+    handler.addFilter(RequestIdFilter())
+
+
+log = get_logger(__name__)
 
 
 def init_default_school_codes():
@@ -339,34 +348,41 @@ app = FastAPI()
 # Simple request logging and activity tracking
 @app.middleware("http")
 async def log_requests(request, call_next):
-    log.info("Incoming %s %s", request.method, request.url)
-    user = None
-    auth = request.headers.get("Authorization")
-    if auth and auth.startswith("Bearer "):
-        token = auth.split(" ", 1)[1]
-        try:
-            payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM])
-            user = payload.get("sub")
-        except JWTError:
-            user = "invalid_token"
-
-    log_entry = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "method": request.method,
-        "path": request.url.path,
-        "user": user,
-    }
-    start = datetime.now()
-    response = await call_next(request)
-    duration = (datetime.now() - start).total_seconds()
-    log.info("Response %s in %.3fs", response.status_code, duration)
-    log_entry["status"] = response.status_code
-    log_entry["duration"] = duration
+    request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+    request.state.request_id = request_id
+    token = request_id_ctx_var.set(request_id)
     try:
-        redis_client.rpush(ACTIVITY_LOG_KEY, json.dumps(log_entry))
-    except Exception as e:
-        log.error("Failed to store activity log: %s", e)
-    return response
+        log.info("Incoming %s %s", request.method, request.url)
+        user = None
+        auth = request.headers.get("Authorization")
+        if auth and auth.startswith("Bearer "):
+            token_val = auth.split(" ", 1)[1]
+            try:
+                payload = jwt.decode(token_val, JWT_SECRET, algorithms=[ALGORITHM])
+                user = payload.get("sub")
+            except JWTError:
+                user = "invalid_token"
+
+        log_entry = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "method": request.method,
+            "path": request.url.path,
+            "user": user,
+            "request_id": request_id,
+        }
+        start = datetime.now()
+        response = await call_next(request)
+        duration = (datetime.now() - start).total_seconds()
+        log.info("Response %s in %.3fs", response.status_code, duration)
+        log_entry["status"] = response.status_code
+        log_entry["duration"] = duration
+        try:
+            redis_client.rpush(ACTIVITY_LOG_KEY, json.dumps(log_entry))
+        except Exception as e:
+            log.error("Failed to store activity log: %s", e)
+        return response
+    finally:
+        request_id_ctx_var.reset(token)
 
 @app.get("/routes")
 def list_routes():
@@ -1233,11 +1249,21 @@ def update_job(job_code: str, updated: dict, token_data: dict = Depends(get_curr
     return {"message": "Job updated"}
 
 @app.post("/match")
-def match_job(req: JobCodeRequest, current_user: dict = Depends(get_current_user)):
+def match_job(
+    req: JobCodeRequest,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+):
     """Enqueue a matching job and return immediately."""
     enq_time = datetime.now().timestamp()
     if hasattr(redis_client, "pipeline"):
-        get_queue().enqueue(match_worker, req.job_code, True, enq_time)
+        get_queue().enqueue(
+            match_worker,
+            req.job_code,
+            True,
+            enq_time,
+            meta={"request_id": request.state.request_id},
+        )
         return {"message": "Match job queued"}
     else:
         matches = match_worker(req.job_code, True, enq_time)
@@ -1245,11 +1271,21 @@ def match_job(req: JobCodeRequest, current_user: dict = Depends(get_current_user
 
 
 @app.post("/rematches/{job_code}")
-def rematch_job(job_code: str, current_user: dict = Depends(get_current_user)):
+def rematch_job(
+    job_code: str,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+):
     """Queue a rematch computation without notifying students."""
     enq_time = datetime.now().timestamp()
     if hasattr(redis_client, "pipeline"):
-        get_queue().enqueue(match_worker, job_code, False, enq_time)
+        get_queue().enqueue(
+            match_worker,
+            job_code,
+            False,
+            enq_time,
+            meta={"request_id": request.state.request_id},
+        )
         return {"message": "Rematch queued"}
     else:
         matches = match_worker(job_code, False, enq_time)

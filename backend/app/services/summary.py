@@ -10,13 +10,15 @@ from typing import Any, Dict, List, Tuple
 
 from openai import OpenAI
 
+from backend.app.logging_utils import get_logger
+
 ACTIVITY_LOG_KEY = "activity_logs"
 redis_client = None
 send_email = None
 
 # Reuse a single OpenAI client; reads OPENAI_API_KEY from env
 openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def _ensure_dependencies() -> None:

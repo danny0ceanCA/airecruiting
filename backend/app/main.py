@@ -1,1 +1,3 @@
-"""Placeholder module so tests can import backend.app.main."""
+"""Expose the FastAPI application for test imports."""
+
+from app.main import app  # noqa: F401
