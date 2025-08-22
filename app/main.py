@@ -320,13 +320,16 @@ async def log_requests(request, call_next):
         "path": request.url.path,
         "user": user,
     }
+    start = datetime.now()
+    response = await call_next(request)
+    duration = (datetime.now() - start).total_seconds()
+    log.info("Response %s in %.3fs", response.status_code, duration)
+    log_entry["status"] = response.status_code
+    log_entry["duration"] = duration
     try:
         redis_client.rpush(ACTIVITY_LOG_KEY, json.dumps(log_entry))
     except Exception as e:
         log.error("Failed to store activity log: %s", e)
-
-    response = await call_next(request)
-    log.info("Response status: %s", response.status_code)
     return response
 
 @app.get("/routes")
