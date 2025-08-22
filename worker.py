@@ -8,6 +8,11 @@ from rq import Worker, Queue
 
 from backend.app.services.summary import send_weekly_summary
 from scripts.schedule_weekly_summary import schedule_weekly_summary
+from backend.app.logging_utils import (
+    RequestIdFilter,
+    get_logger,
+    request_id_ctx_var,
+)
 
 load_dotenv()
 
@@ -34,7 +39,14 @@ if not redis_url:
 redis_client = redis.Redis.from_url(redis_url, decode_responses=True)
 rq_client = redis.Redis.from_url(redis_url)
 
-logger = logging.getLogger(__name__)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(levelname)s [%(request_id)s] %(message)s",
+)
+for handler in logging.getLogger().handlers:
+    handler.addFilter(RequestIdFilter())
+
+logger = get_logger(__name__)
 
 def normalize_email(email: str | None) -> str:
     return (email or "").strip().lower()
@@ -63,8 +75,19 @@ def weekly_summary_worker() -> None:
                 logger.exception("Failed to send weekly summary to %s", email)
 
 
+class RequestIdWorker(Worker):
+    """RQ Worker that sets request ID context from job metadata."""
+
+    def execute_job(self, job, queue):  # type: ignore[override]
+        token = request_id_ctx_var.set(job.meta.get("request_id", "-"))
+        try:
+            return super().execute_job(job, queue)
+        finally:
+            request_id_ctx_var.reset(token)
+
+
 if __name__ == "__main__":
     schedule_weekly_summary()
     default_queue = Queue(connection=rq_client)
     weekly_queue = Queue("weekly", connection=rq_client)
-    Worker([default_queue, weekly_queue], connection=rq_client).work()
+    RequestIdWorker([default_queue, weekly_queue], connection=rq_client).work()
