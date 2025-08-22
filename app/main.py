@@ -45,13 +45,22 @@ from backend.app.services.resume import generate_resume_text
 from backend.app.services.description import generate_description_text
 from backend.app.school_codes import SCHOOL_CODE_MAP
 from backend.app.services.summary import send_weekly_summary
+from backend.app.logging_utils import (
+    RequestIdFilter,
+    get_logger,
+    request_id_ctx_var,
+)
 
-log = logging.getLogger(__name__)
 logging.basicConfig(
     stream=sys.stdout,
     level=logging.INFO,
-    format="%(levelname)s %(message)s",
+    format="%(levelname)s [%(request_id)s] %(message)s",
 )
+for handler in logging.getLogger().handlers:
+    handler.addFilter(RequestIdFilter())
+
+
+log = get_logger(__name__)
 
 
 def init_default_school_codes():
@@ -171,9 +180,45 @@ def user_key(email: str) -> str:
     return f"user:{normalize_email(email)}"
 
 
-def student_key(email: str) -> str:
-    """Return the redis key for a student."""
-    return f"student:{normalize_email(email)}"
+def student_key(institution_code: str, student_id: str) -> str:
+    """Return the canonical redis key for a student."""
+    return f"student:{institution_code}:{student_id}"
+
+
+def student_email_key(email: str) -> str:
+    """Return the secondary index key for a student email."""
+    return f"student_email:{normalize_email(email)}"
+
+
+def resolve_student_key(email: str) -> str | None:
+    """Resolve a student's canonical key from their email."""
+    idx = redis_client.get(student_email_key(email))
+    if idx:
+        inst, sid = idx.split(":", 1)
+        return student_key(inst, sid)
+    legacy = f"student:{normalize_email(email)}"
+    if redis_client.exists(legacy):
+        return legacy
+    return None
+
+
+def generate_student_id() -> str:
+    """Generate a unique student identifier."""
+    return str(redis_client.incr("student_id"))
+
+
+def persist_student_record(email: str, data: dict, institution_code: str, student_id: str) -> None:
+    """Persist the student record under canonical, legacy, and index keys."""
+    payload = json.dumps(data)
+    key = student_key(institution_code, student_id)
+    redis_client.set(key, payload)
+    if hasattr(redis_client, "store") and getattr(redis_client.get, "__qualname__", "").endswith("DummyRedis.get"):
+        redis_client.store[key] = payload
+        redis_client.store[student_email_key(email)] = f"{institution_code}:{student_id}"
+        redis_client.store[f"student:{email}"] = payload
+    else:
+        redis_client.set(student_email_key(email), f"{institution_code}:{student_id}")
+        redis_client.set(f"student:{email}", payload)
 
 
 def find_user_key(email: str) -> str | None:
@@ -216,7 +261,7 @@ def rebuild_vector_index() -> None:
                 ensure_index(len(emb))
                 if vector_index is not None:
                     vector_index.add(np.array([emb], dtype="float32"))
-                    vector_emails.append(key.split("student:", 1)[1])
+                    vector_emails.append(student.get("email"))
         except Exception:
             continue
 
@@ -303,31 +348,41 @@ app = FastAPI()
 # Simple request logging and activity tracking
 @app.middleware("http")
 async def log_requests(request, call_next):
-    log.info("Incoming %s %s", request.method, request.url)
-    user = None
-    auth = request.headers.get("Authorization")
-    if auth and auth.startswith("Bearer "):
-        token = auth.split(" ", 1)[1]
-        try:
-            payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM])
-            user = payload.get("sub")
-        except JWTError:
-            user = "invalid_token"
-
-    log_entry = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "method": request.method,
-        "path": request.url.path,
-        "user": user,
-    }
+    request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+    request.state.request_id = request_id
+    token = request_id_ctx_var.set(request_id)
     try:
-        redis_client.rpush(ACTIVITY_LOG_KEY, json.dumps(log_entry))
-    except Exception as e:
-        log.error("Failed to store activity log: %s", e)
+        log.info("Incoming %s %s", request.method, request.url)
+        user = None
+        auth = request.headers.get("Authorization")
+        if auth and auth.startswith("Bearer "):
+            token_val = auth.split(" ", 1)[1]
+            try:
+                payload = jwt.decode(token_val, JWT_SECRET, algorithms=[ALGORITHM])
+                user = payload.get("sub")
+            except JWTError:
+                user = "invalid_token"
 
-    response = await call_next(request)
-    log.info("Response status: %s", response.status_code)
-    return response
+        log_entry = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "method": request.method,
+            "path": request.url.path,
+            "user": user,
+            "request_id": request_id,
+        }
+        start = datetime.now()
+        response = await call_next(request)
+        duration = (datetime.now() - start).total_seconds()
+        log.info("Response %s in %.3fs", response.status_code, duration)
+        log_entry["status"] = response.status_code
+        log_entry["duration"] = duration
+        try:
+            redis_client.rpush(ACTIVITY_LOG_KEY, json.dumps(log_entry))
+        except Exception as e:
+            log.error("Failed to store activity log: %s", e)
+        return response
+    finally:
+        request_id_ctx_var.reset(token)
 
 @app.get("/routes")
 def list_routes():
@@ -892,8 +947,9 @@ async def create_student(request: Request, current_user: dict = Depends(get_curr
     if current_user.get("role") == "applicant" and student_data.email != current_user.get("sub"):
         raise HTTPException(status_code=403, detail="Applicants can only create their own profile")
 
-    if redis_client.exists(student_key(student_data.email)):
-        created_by_in_db = json.loads(redis_client.get(student_key(student_data.email))).get("created_by")
+    existing_key = resolve_student_key(student_data.email)
+    if existing_key:
+        created_by_in_db = json.loads(redis_client.get(existing_key)).get("created_by")
         log.warning(
             "POST /students duplicate/conflict email=%s owner=%s created_by_in_db=%s",
             student_data.email,
@@ -956,26 +1012,29 @@ async def create_student(request: Request, current_user: dict = Depends(get_curr
 
     u_key = user_key(current_user.get('sub'))
     user_raw = redis_client.get(u_key)
-    institutional_code = None
+    institution_code = None
     school_label = None
     if user_raw:
         try:
             user_data = json.loads(user_raw)
-            institutional_code = user_data.get("institutional_code")
+            institution_code = user_data.get("institutional_code")
             school_label = user_data.get("school_label")
         except Exception:
-            institutional_code = None
+            institution_code = None
             school_label = None
+
+    student_id = generate_student_id()
 
     data = student_data.model_dump()
     data["embedding"] = embedding
-    if institutional_code is not None:
-        data["institutional_code"] = institutional_code
+    data["institution_code"] = institution_code
+    data["institutional_code"] = institution_code
+    data["student_id"] = student_id
     if school_label is not None:
         data["school_label"] = school_label
     data["created_by"] = current_user.get("sub")
     data["created_at"] = datetime.now(timezone.utc).isoformat()
-    redis_client.set(student_key(student_data.email), json.dumps(data))
+    persist_student_record(student_data.email, data, institution_code, student_id)
     log.info(
         "POST /students success email=%s owner=%s",
         student_data.email,
@@ -997,8 +1056,8 @@ def update_student(
     email: str, updated: StudentRequest, current_user: dict = Depends(get_current_user)
 ):
     email = normalize_email(email)
-    key = student_key(email)
-    raw = redis_client.get(key)
+    key = resolve_student_key(email)
+    raw = redis_client.get(key) if key else None
     if not raw:
         raise HTTPException(status_code=404, detail="Student not found")
 
@@ -1026,14 +1085,17 @@ def update_student(
     data = updated.model_dump()
     data["email"] = email
     data["embedding"] = embedding
-    inst_code = existing.get("institutional_code") or existing.get("school_code")
+    inst_code = existing.get("institution_code") or existing.get("institutional_code") or existing.get("school_code")
+    student_id = existing.get("student_id") or generate_student_id()
     school_label = existing.get("school_label")
     if inst_code is not None:
+        data["institution_code"] = inst_code
         data["institutional_code"] = inst_code
     if school_label is not None:
         data["school_label"] = school_label
     if "school_code" in existing:
         data["school_code"] = existing.get("school_code")
+    data["student_id"] = student_id
     created_by = existing.get("created_by")
     created_at = existing.get("created_at")
     if created_by is not None:
@@ -1041,7 +1103,9 @@ def update_student(
     if created_at is not None:
         data["created_at"] = created_at
 
-    redis_client.set(key, json.dumps(data))
+    if key and key != student_key(inst_code, student_id):
+        redis_client.delete(key)
+    persist_student_record(email, data, inst_code, student_id)
     rebuild_vector_index()
     return {"message": "Student updated successfully"}
 
@@ -1049,6 +1113,15 @@ def update_student(
 def upload_students(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
     content = file.file.read().decode("utf-8").splitlines()
     reader = csv.DictReader(content)
+    u_key = user_key(current_user.get('sub'))
+    user_raw = redis_client.get(u_key)
+    institution_code = None
+    if user_raw:
+        try:
+            user_data = json.loads(user_raw)
+            institution_code = user_data.get("institutional_code")
+        except Exception:
+            institution_code = None
     count = 0
     for row in reader:
         try:
@@ -1073,8 +1146,11 @@ def upload_students(file: UploadFile = File(...), current_user: dict = Depends(g
 
         student.license = license_to_code(student.license)
 
-        if redis_client.exists(student.email):
-            redis_client.delete(student.email)
+        existing_key = resolve_student_key(student.email)
+        if existing_key:
+            redis_client.delete(existing_key)
+        redis_client.delete(f"student:{student.email}")
+        redis_client.delete(student_email_key(student.email))
 
         combined = " ".join([
             ", ".join(student.skills),
@@ -1087,11 +1163,15 @@ def upload_students(file: UploadFile = File(...), current_user: dict = Depends(g
         except Exception:
             continue
 
+        student_id = generate_student_id()
         data = student.model_dump()
         data["embedding"] = embedding
         data["created_by"] = current_user.get("sub")
         data["created_at"] = datetime.now(timezone.utc).isoformat()
-        redis_client.set(f"student:{student.email}", json.dumps(data))
+        data["institution_code"] = institution_code
+        data["institutional_code"] = institution_code
+        data["student_id"] = student_id
+        persist_student_record(student.email, data, institution_code, student_id)
         ensure_index(len(embedding))
         if vector_index is not None:
             vector_index.add(np.array([embedding], dtype="float32"))
@@ -1148,8 +1228,10 @@ def update_job(job_code: str, updated: dict, token_data: dict = Depends(get_curr
 
     if not raw:
         raise HTTPException(status_code=404, detail="Job not found")
-
-    job = json.loads(raw)
+    try:
+        job = json.loads(raw)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail="Malformed job record")
 
     if token_data.get("role") != "admin" and token_data.get("sub") != job.get("posted_by"):
         raise HTTPException(status_code=403, detail="Not authorized to edit this job")
@@ -1167,11 +1249,21 @@ def update_job(job_code: str, updated: dict, token_data: dict = Depends(get_curr
     return {"message": "Job updated"}
 
 @app.post("/match")
-def match_job(req: JobCodeRequest, current_user: dict = Depends(get_current_user)):
+def match_job(
+    req: JobCodeRequest,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+):
     """Enqueue a matching job and return immediately."""
     enq_time = datetime.now().timestamp()
     if hasattr(redis_client, "pipeline"):
-        get_queue().enqueue(match_worker, req.job_code, True, enq_time)
+        get_queue().enqueue(
+            match_worker,
+            req.job_code,
+            True,
+            enq_time,
+            meta={"request_id": request.state.request_id},
+        )
         return {"message": "Match job queued"}
     else:
         matches = match_worker(req.job_code, True, enq_time)
@@ -1179,11 +1271,21 @@ def match_job(req: JobCodeRequest, current_user: dict = Depends(get_current_user
 
 
 @app.post("/rematches/{job_code}")
-def rematch_job(job_code: str, current_user: dict = Depends(get_current_user)):
+def rematch_job(
+    job_code: str,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+):
     """Queue a rematch computation without notifying students."""
     enq_time = datetime.now().timestamp()
     if hasattr(redis_client, "pipeline"):
-        get_queue().enqueue(match_worker, job_code, False, enq_time)
+        get_queue().enqueue(
+            match_worker,
+            job_code,
+            False,
+            enq_time,
+            meta={"request_id": request.state.request_id},
+        )
         return {"message": "Rematch queued"}
     else:
         matches = match_worker(job_code, False, enq_time)
@@ -1234,7 +1336,8 @@ async def _perform_match_async(job_code: str, send_emails: bool = True, enq_time
     tasks = []
     candidates = []
     for email in candidate_emails:
-        student_raw = redis_client.get(f"student:{email}")
+        skey = resolve_student_key(email)
+        student_raw = redis_client.get(skey) if skey else None
         if not student_raw:
             continue
         try:
@@ -1315,7 +1418,7 @@ async def _perform_match_async(job_code: str, send_emails: bool = True, enq_time
         email = ukey.split("user:", 1)[1]
         if email in job.get("uninterested_students", []):
             continue
-        if redis_client.exists(f"student:{email}"):
+        if resolve_student_key(email):
             continue
         matches.append(
             {
@@ -1428,11 +1531,11 @@ def get_match_results(job_code: str, current_user: dict = Depends(get_current_us
         return {"matches": []}
 
     try:
-        matches = json.loads(results_json)
+        matches = {m["email"]: m for m in json.loads(results_json)}
         log.info("📦 Returning %s stored matches for job %s", len(matches), job_code)
 
         # Ensure each match has first and last name fields
-        for m in matches:
+        for m in matches.values():
             if "first_name" not in m or "last_name" not in m:
                 parts = m.get("name", "").split(" ", 1)
                 m.setdefault("first_name", parts[0] if parts else "")
@@ -1447,38 +1550,38 @@ def get_match_results(job_code: str, current_user: dict = Depends(get_current_us
         placed = set(job.get("placed_students", []))
         rejected = set(job.get("rejected_students", []))
 
-        existing = {m["email"] for m in matches}
+        existing = set(matches)
         for email in assigned | placed | rejected:
             if email not in existing:
                 udata = json.loads(redis_client.get(f"user:{email}") or "{}")
                 first = udata.get("first_name", "")
                 last = udata.get("last_name", "")
                 name = f"{first} {last}".strip()
-                matches.append({
+                matches[email] = {
                     "name": name,
                     "first_name": first,
                     "last_name": last,
                     "email": email,
                     "score": None,
-                })
+                }
 
-        for m in matches:
-            if m["email"] in placed:
+        for email, m in matches.items():
+            if email in placed:
                 m["status"] = "placed"
-            elif m["email"] in assigned:
+            elif email in assigned:
                 m["status"] = "assigned"
-            elif m["email"] in rejected:
+            elif email in rejected:
                 m["status"] = "rejected"
             else:
                 m["status"] = None
 
-            notes_raw = job.get("student_notes", {}).get(m["email"], [])
+            notes_raw = job.get("student_notes", {}).get(email, [])
             notes, latest_note = _normalize_notes(notes_raw)
             m["notes"] = notes
             if latest_note is not None:
                 m["note"] = latest_note
 
-        return {"matches": matches}
+        return {"matches": list(matches.values())}
     except Exception as e:
         log.error("❌ Failed to load match results for %s: %s", job_code, e)
         return {"matches": []}
@@ -2047,7 +2150,8 @@ def notify_interest(data: dict, token_data: dict = Depends(get_current_user)):
 
     desc_html, _ = generate_job_description_html(job_code, student_email)
 
-    student_raw = redis_client.get(f"student:{student_email}")
+    skey = resolve_student_key(student_email)
+    student_raw = redis_client.get(skey) if skey else None
     first_name = ""
     if student_raw:
         try:
@@ -2095,7 +2199,12 @@ def generate_resume(req: ResumeRequest, current_user: dict = Depends(get_current
             return {"status": "exists"}
 
     job_raw = redis_client.get(f"job:{req.job_code}")
-    student_raw = redis_client.get(student_key(req.student_email))
+    # Prefer profile stored under "user:" key, falling back to student profile
+    profile_key = find_user_key(req.student_email) or user_key(req.student_email)
+    student_raw = redis_client.get(profile_key)
+    if not student_raw:
+        skey = resolve_student_key(req.student_email)
+        student_raw = redis_client.get(skey) if skey else None
     if not job_raw or not student_raw:
         log.warning("❌ Job or student not found")
         raise HTTPException(status_code=404, detail="Job or student not found")
@@ -2172,7 +2281,8 @@ def generate_description(req: DescriptionRequest, current_user: dict = Depends(g
         return {"status": "exists", "description": existing}
 
     job_raw = redis_client.get(f"job:{req.job_code}")
-    student_raw = redis_client.get(student_key(req.student_email))
+    skey = resolve_student_key(req.student_email)
+    student_raw = redis_client.get(skey) if skey else None
     if not job_raw or not student_raw:
         raise HTTPException(status_code=404, detail="Job or student not found")
 
@@ -2197,7 +2307,8 @@ def generate_job_description_html(job_code: str, student_email: str) -> tuple[st
         return existing, True
 
     job_raw = redis_client.get(f"job:{job_code}")
-    student_raw = redis_client.get(student_key(student_email))
+    skey = resolve_student_key(student_email)
+    student_raw = redis_client.get(skey) if skey else None
     if not job_raw or not student_raw:
         raise HTTPException(status_code=404, detail="Job or student not found")
 
@@ -2390,8 +2501,8 @@ def get_placements(
     if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin privileges required")
     student_email = normalize_email(student_email)
-    key = student_key(student_email)
-    if not redis_client.exists(key):
+    key = resolve_student_key(student_email)
+    if not key or not redis_client.exists(key):
         raise HTTPException(status_code=404, detail="Student not found")
 
     raw = redis_client.get(key)
@@ -2420,12 +2531,13 @@ def delete_student(email: str, current_user: dict = Depends(get_current_user)):
     if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin privileges required")
     email = normalize_email(email)
-    skey = student_key(email)
-    if not redis_client.exists(skey):
+    skey = resolve_student_key(email)
+    if not skey or not redis_client.exists(skey):
         raise HTTPException(status_code=404, detail="Student not found")
 
     # Delete student profile
     redis_client.delete(skey)
+    redis_client.delete(student_email_key(email))
 
     # Clean up from job assignments/placements
     for job_key in redis_client.scan_iter("job:*"):
@@ -2672,8 +2784,8 @@ def students_by_school(current_user: dict = Depends(get_current_user)):
 def student_me(current_user: dict = Depends(get_current_user)):
     """Return the logged-in applicant's student profile."""
     email = current_user.get("sub")
-    key = f"student:{email}"
-    raw = redis_client.get(key)
+    key = resolve_student_key(email)
+    raw = redis_client.get(key) if key else None
     if not raw:
         raise HTTPException(status_code=404, detail="Profile not found")
 

@@ -288,6 +288,39 @@ def test_get_match_results_includes_notes(monkeypatch):
     assert data["note"] == "hi"
 
 
+def test_get_match_results_no_duplicate_emails(monkeypatch):
+    token = login_admin()
+
+    store = {}
+
+    def fake_get(key):
+        return store.get(key)
+
+    def fake_set(key, value):
+        store[key] = value
+
+    monkeypatch.setattr(main_app.redis_client, "get", fake_get)
+    monkeypatch.setattr(main_app.redis_client, "set", fake_set)
+
+    job_code = "XYZ5"
+    store[f"match_results:{job_code}"] = json.dumps([
+        {"email": "dup@example.com", "score": 1.0},
+        {"email": "dup@example.com", "score": 2.0},
+    ])
+    store[f"job:{job_code}"] = json.dumps({
+        "job_code": job_code,
+        "assigned_students": [],
+        "placed_students": [],
+    })
+
+    resp = client.get(f"/match/{job_code}", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200
+    data = resp.json()["matches"]
+    emails = [m["email"] for m in data]
+    assert emails == ["dup@example.com"]
+    assert len(emails) == len(set(emails))
+
+
 def test_match_filters_by_license(monkeypatch):
     token = login_admin()
 
@@ -383,7 +416,8 @@ def test_license_label_vs_code_matching(monkeypatch):
     }
     resp = client.post("/students", json=s_label, headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 200
-    stored = json.loads(main_app.redis_client.get("student:label@example.com"))
+    skey = main_app.resolve_student_key("label@example.com")
+    stored = json.loads(main_app.redis_client.get(skey))
     assert stored["license"] == "ma"
 
     job_code_req = {
@@ -439,6 +473,21 @@ def test_license_label_vs_code_matching(monkeypatch):
     assert stored_job["required_license"] == "ma"
     match_resp2 = client.post("/match", json={"job_code": job_code2}, headers={"Authorization": f"Bearer {token}"})
     assert any(m["email"] == "code@example.com" for m in match_resp2.json()["matches"])
+
+
+def test_update_job_with_corrupted_data():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+    token = login_admin()
+    job_code = "CORRUPT1"
+    main_app.redis_client.set(f"job:{job_code}", "not-json")
+    resp = client.put(
+        f"/jobs/{job_code}",
+        json={"job_title": "New"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 500
+    assert resp.json()["detail"] == "Malformed job record"
 
 
 def test_match_respects_travel_distance(monkeypatch):
@@ -1075,8 +1124,12 @@ def test_student_note_school_code_fallback():
         "lng": 0.0,
         "max_travel": 10.0,
         "school_code": "1001",
+        "institutional_code": "1001",
+        "student_id": "stu1",
     }
-    main_app.redis_client.set(f"student:{student['email']}", json.dumps(student))
+    main_app.persist_student_record(
+        student["email"], student, student["institutional_code"], student["student_id"]
+    )
 
     client.post(
         "/assign",
@@ -1422,8 +1475,12 @@ def test_recruiter_can_add_note_for_assigned_student():
         "lng": 0.0,
         "max_travel": 10.0,
         "school_code": "1001",
+        "institutional_code": "1001",
+        "student_id": "stu2",
     }
-    main_app.redis_client.set(f"student:{student['email']}", json.dumps(student))
+    main_app.persist_student_record(
+        student["email"], student, student["institutional_code"], student["student_id"]
+    )
 
     job = {
         "job_title": "Dev",
@@ -1506,10 +1563,16 @@ def test_recruiter_note_forbidden_unassigned_or_unowned():
         "lng": 0.0,
         "max_travel": 10.0,
         "school_code": "1001",
+        "institutional_code": "1001",
+        "student_id": "s1",
     }
-    student2 = {**student1, "email": "s2@example.com"}
-    main_app.redis_client.set(f"student:{student1['email']}", json.dumps(student1))
-    main_app.redis_client.set(f"student:{student2['email']}", json.dumps(student2))
+    student2 = {**student1, "email": "s2@example.com", "student_id": "s2"}
+    main_app.persist_student_record(
+        student1["email"], student1, student1["institutional_code"], student1["student_id"]
+    )
+    main_app.persist_student_record(
+        student2["email"], student2, student2["institutional_code"], student2["student_id"]
+    )
 
     job = {
         "job_title": "Dev",
@@ -1596,8 +1659,12 @@ def test_recruiter_cannot_modify_unowned_job():
         "lng": 0.0,
         "max_travel": 10.0,
         "school_code": "1001",
+        "institutional_code": "1001",
+        "student_id": "stu3",
     }
-    main_app.redis_client.set(f"student:{student['email']}", json.dumps(student))
+    main_app.persist_student_record(
+        student["email"], student, student["institutional_code"], student["student_id"]
+    )
 
     job = {
         "job_title": "Dev",
