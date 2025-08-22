@@ -1,6 +1,7 @@
 import os
 import json
 import redis
+from dotenv import load_dotenv
 
 
 def normalize_email(email: str | None) -> str:
@@ -25,25 +26,37 @@ def generate_student_id(client: redis.Redis) -> str:
 
 def migrate_student_keys() -> None:
     """Migrate legacy student:* keys to student:{institution_code}:{student_id}."""
+    load_dotenv()
     redis_url = os.getenv("REDIS_URL")
     if not redis_url:
-        raise RuntimeError("Missing REDIS_URL")
+        raise RuntimeError("Missing REDIS_URL in .env or environment variables")
 
     client = redis.Redis.from_url(redis_url, decode_responses=True)
 
     migrated = 0
     manual_review: list[str] = []
 
-    for key in list(client.scan_iter("student:*")):
-        # Skip new-style keys which already contain two colons
-        if key.count(":") != 1:
+    for key in client.scan_iter("student:*"):
+        parts = key.split(":", 2)
+        if len(parts) == 2:
+            # Legacy key: student:<email>
+            email = parts[1]
+            inst_code = None
+        elif len(parts) == 3:
+            if parts[2].isdigit():
+                # New-style key: student:<institution_code>:<student_id>
+                continue
+            inst_code = parts[1]
+            email = parts[2]
+        else:
             continue
-        email = key.split("student:", 1)[1]
+
         raw = client.get(key)
         if not raw:
             manual_review.append(email)
             client.delete(key)
             continue
+
         try:
             data = json.loads(raw)
         except Exception:
@@ -51,7 +64,7 @@ def migrate_student_keys() -> None:
             client.delete(key)
             continue
 
-        inst_code = data.get("institutional_code")
+        inst_code = data.get("institutional_code") or inst_code
         rec_email = normalize_email(data.get("email") or email)
         if not inst_code or not rec_email:
             manual_review.append(email)
@@ -67,9 +80,10 @@ def migrate_student_keys() -> None:
         client.set(student_email_key(rec_email), f"{inst_code}:{student_id}")
         client.delete(key)
         migrated += 1
+        print(f"Migrated: {key} → {new_key}")
 
     print(
-        f"Migration complete. Migrated {migrated} students; {len(manual_review)} need manual review."
+        f"\nMigration complete. Migrated {migrated} students; {len(manual_review)} need manual review."
     )
     if manual_review:
         print("Manual review:", ", ".join(sorted(manual_review)))
