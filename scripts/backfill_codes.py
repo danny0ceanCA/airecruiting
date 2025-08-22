@@ -12,7 +12,7 @@ def backfill_institutional_codes():
     client = redis.Redis.from_url(redis_url, decode_responses=True)
     total_updated = 0
 
-    for pattern in ("user:*", "student:*"):
+    for pattern in ("user:*", "student:*:*"):
         for key in client.scan_iter(pattern):
             if client.type(key) != "string":
                 continue
@@ -26,10 +26,27 @@ def backfill_institutional_codes():
                 data = json.loads(raw)
             except Exception:
                 continue
+
+            modified = False
+            if pattern.startswith("student"):
+                key_str = key if isinstance(key, str) else key.decode()
+                parts = key_str.split(":", 2)
+                if len(parts) == 3:
+                    _, inst_code, sid = parts
+                    if "institutional_code" not in data:
+                        data["institutional_code"] = inst_code
+                        modified = True
+                    if "student_id" not in data:
+                        data["student_id"] = sid
+                        modified = True
+
             inst = data.get("institutional_code")
             school = data.get("school_code")
             if (not inst) and school:
                 data["institutional_code"] = school
+                modified = True
+
+            if modified:
                 try:
                     client.set(key, json.dumps(data))
                 except redis.exceptions.ResponseError:
