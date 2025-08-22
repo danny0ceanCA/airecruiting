@@ -245,6 +245,21 @@ python scripts/backfill_codes.py
 The script scans all `user:*` and `student:*` keys and updates records where
 `institutional_code` is absent but `school_code` exists.
 
+## Migrating Student Keys
+
+Legacy student records were previously stored using `student:{email}` keys. Run
+the migration script to convert them to the new
+`student:{institutional_code}:{student_id}` format and create `student_email`
+index entries:
+
+```bash
+export REDIS_URL=redis://localhost:6379/0  # or your instance
+python scripts/migrate_student_keys.py
+```
+
+The script assigns a `student_id` when missing, adds the required index keys,
+and logs any records missing necessary data for manual review.
+
 ## Scheduling Weekly Summaries
 
 Run the scheduler script to enqueue weekly summary jobs:
