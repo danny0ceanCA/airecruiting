@@ -407,7 +407,8 @@ def test_student_creation_records_metadata(monkeypatch):
     resp = client.post("/students", json=profile, headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 200
 
-    raw = main_app.redis_client.get(f"student:{profile['email']}")
+    skey = main_app.resolve_student_key(profile["email"])
+    raw = main_app.redis_client.get(skey)
     stored = json.loads(raw)
     assert stored["created_by"] == "admin@example.com"
     assert "created_at" in stored
@@ -421,7 +422,7 @@ def test_student_creation_records_metadata(monkeypatch):
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp2.status_code == 200
-    raw2 = main_app.redis_client.get(f"student:{profile['email']}")
+    raw2 = main_app.redis_client.get(skey)
     stored2 = json.loads(raw2)
     assert stored2["city"] == "NewCity"
     assert stored2["created_by"] == "admin@example.com"
@@ -523,6 +524,8 @@ def test_students_all_admin_access():
         "license": "lvn",
         "city": "City1",
         "state": "ST",
+        "institutional_code": "1001",
+        "student_id": "one",
     }
     s2 = {
         "first_name": "Two",
@@ -531,9 +534,15 @@ def test_students_all_admin_access():
         "license": "ma",
         "city": "City2",
         "state": "ST",
+        "institutional_code": "1001",
+        "student_id": "two",
     }
-    main_app.redis_client.set("student:one@example.com", json.dumps(s1))
-    main_app.redis_client.set("student:two@example.com", json.dumps(s2))
+    main_app.persist_student_record(
+        s1["email"], s1, s1["institutional_code"], s1["student_id"]
+    )
+    main_app.persist_student_record(
+        s2["email"], s2, s2["institutional_code"], s2["student_id"]
+    )
 
     login_resp = client.post("/login", json={"email": "admin@example.com", "password": "admin123"})
     token = login_resp.json()["token"]
@@ -597,8 +606,12 @@ def test_update_student(monkeypatch):
         "max_travel": 100.0,
         "embedding": [0.0, 0.0],
         "school_code": "SC1",
+        "institutional_code": "SC1",
+        "student_id": "stud1",
     }
-    main_app.redis_client.set("student:stud@example.com", json.dumps(existing))
+    main_app.persist_student_record(
+        existing["email"], existing, existing["institutional_code"], existing["student_id"]
+    )
 
     class FakeResp:
         def __init__(self):
@@ -633,7 +646,8 @@ def test_update_student(monkeypatch):
     assert resp.status_code == 200
     assert resp.json()["message"] == "Student updated successfully"
 
-    saved = json.loads(main_app.redis_client.get("student:stud@example.com"))
+    skey = main_app.resolve_student_key("stud@example.com")
+    saved = json.loads(main_app.redis_client.get(skey))
     assert saved["first_name"] == "New"
     assert saved["license"] == "lvn"
     assert saved["embedding"] == [1.0, 2.0]
@@ -645,9 +659,16 @@ def test_generate_description(monkeypatch):
     init_default_admin()
 
     # Seed job and student
-    main_app.redis_client.set(
-        "student:stud@example.com",
-        json.dumps({"first_name": "Stud", "last_name": "S", "skills": ["python"]})
+    student = {
+        "first_name": "Stud",
+        "last_name": "S",
+        "skills": ["python"],
+        "email": "stud@example.com",
+        "institutional_code": "1001",
+        "student_id": "stud2",
+    }
+    main_app.persist_student_record(
+        student["email"], student, student["institutional_code"], student["student_id"]
     )
     main_app.redis_client.set(
         "job:code1",
@@ -684,9 +705,16 @@ def test_generate_job_description(monkeypatch):
     main_app.redis_client.flushdb()
     init_default_admin()
 
-    main_app.redis_client.set(
-        "student:stud@example.com",
-        json.dumps({"first_name": "Stud", "last_name": "S", "skills": ["python"]})
+    student = {
+        "first_name": "Stud",
+        "last_name": "S",
+        "skills": ["python"],
+        "email": "stud@example.com",
+        "institutional_code": "1001",
+        "student_id": "stud3",
+    }
+    main_app.persist_student_record(
+        student["email"], student, student["institutional_code"], student["student_id"]
     )
     main_app.redis_client.set(
         "job:code2",
@@ -784,9 +812,16 @@ def test_notify_interest_generates_description(monkeypatch):
     main_app.redis_client.flushdb()
     init_default_admin()
 
-    main_app.redis_client.set(
-        "student:stud@example.com",
-        json.dumps({"first_name": "Stud", "last_name": "S", "skills": ["python"]})
+    student = {
+        "first_name": "Stud",
+        "last_name": "S",
+        "skills": ["python"],
+        "email": "stud@example.com",
+        "institutional_code": "1001",
+        "student_id": "stud4",
+    }
+    main_app.persist_student_record(
+        student["email"], student, student["institutional_code"], student["student_id"]
     )
     main_app.redis_client.set(
         "job:codei",
@@ -835,9 +870,16 @@ def test_notify_interest_multiple_times(monkeypatch):
     main_app.redis_client.flushdb()
     init_default_admin()
 
-    main_app.redis_client.set(
-        "student:stud@example.com",
-        json.dumps({"first_name": "Stud", "last_name": "S", "skills": ["python"]})
+    student = {
+        "first_name": "Stud",
+        "last_name": "S",
+        "skills": ["python"],
+        "email": "stud@example.com",
+        "institutional_code": "1001",
+        "student_id": "stud5",
+    }
+    main_app.persist_student_record(
+        student["email"], student, student["institutional_code"], student["student_id"]
     )
     main_app.redis_client.set(
         "job:codei",
@@ -889,9 +931,16 @@ def test_generate_resume_html(monkeypatch):
     main_app.redis_client.flushdb()
     init_default_admin()
 
-    main_app.redis_client.set(
-        "student:stud@example.com",
-        json.dumps({"first_name": "Stud", "last_name": "S", "skills": ["python"]})
+    student = {
+        "first_name": "Stud",
+        "last_name": "S",
+        "skills": ["python"],
+        "email": "stud@example.com",
+        "institutional_code": "1001",
+        "student_id": "stud6",
+    }
+    main_app.persist_student_record(
+        student["email"], student, student["institutional_code"], student["student_id"]
     )
     main_app.redis_client.set(
         "job:coder",
@@ -949,9 +998,16 @@ def test_generate_resume_full_html(monkeypatch):
     main_app.redis_client.flushdb()
     init_default_admin()
 
-    main_app.redis_client.set(
-        "student:stud@example.com",
-        json.dumps({"first_name": "Stud", "last_name": "S", "skills": ["python"]})
+    student = {
+        "first_name": "Stud",
+        "last_name": "S",
+        "skills": ["python"],
+        "email": "stud@example.com",
+        "institutional_code": "1001",
+        "student_id": "stud7",
+    }
+    main_app.persist_student_record(
+        student["email"], student, student["institutional_code"], student["student_id"]
     )
     main_app.redis_client.set(
         "job:coder",
@@ -1032,9 +1088,16 @@ def test_generate_resume_preview(monkeypatch):
     main_app.redis_client.flushdb()
     init_default_admin()
 
-    main_app.redis_client.set(
-        "student:stud@example.com",
-        json.dumps({"first_name": "Stud", "last_name": "S", "phone": "123", "email": "stud@example.com"})
+    student = {
+        "first_name": "Stud",
+        "last_name": "S",
+        "phone": "123",
+        "email": "stud@example.com",
+        "institutional_code": "1001",
+        "student_id": "stud8",
+    }
+    main_app.persist_student_record(
+        student["email"], student, student["institutional_code"], student["student_id"]
     )
     main_app.redis_client.set(
         "job:coder",
@@ -1117,10 +1180,15 @@ def test_generate_resume_student_key_fallback(monkeypatch):
     init_default_admin()
 
     # only legacy student: key exists
-    main_app.redis_client.set(
-        "student:stud@example.com",
-        json.dumps({"first_name": "Stud", "last_name": "S", "skills": ["python"]}),
-    )
+    legacy_student = {
+        "first_name": "Stud",
+        "last_name": "S",
+        "skills": ["python"],
+        "email": "stud@example.com",
+        "institutional_code": "1001",
+        "student_id": "legacy",
+    }
+    main_app.redis_client.set("student:stud@example.com", json.dumps(legacy_student))
     main_app.redis_client.set(
         "job:coder",
         json.dumps({
@@ -1156,7 +1224,15 @@ def test_generate_resume_requires_assignment():
     main_app.redis_client.flushdb()
     init_default_admin()
 
-    main_app.redis_client.set("student:s1@example.com", json.dumps({"first_name": "S"}))
+    student = {
+        "first_name": "S",
+        "email": "s1@example.com",
+        "institutional_code": "1001",
+        "student_id": "s1",
+    }
+    main_app.persist_student_record(
+        student["email"], student, student["institutional_code"], student["student_id"]
+    )
     main_app.redis_client.set("job:j1", json.dumps({"job_code": "j1"}))
 
     token = client.post("/login", json={"email": "admin@example.com", "password": "admin123"}).json()["token"]
@@ -1173,7 +1249,15 @@ def test_get_resume_requires_assignment():
     main_app.redis_client.flushdb()
     init_default_admin()
 
-    main_app.redis_client.set("student:s1@example.com", json.dumps({"first_name": "S"}))
+    student = {
+        "first_name": "S",
+        "email": "s1@example.com",
+        "institutional_code": "1001",
+        "student_id": "s1",
+    }
+    main_app.persist_student_record(
+        student["email"], student, student["institutional_code"], student["student_id"]
+    )
     main_app.redis_client.set("job:j1", json.dumps({"job_code": "j1"}))
     main_app.redis_client.set("resume:j1:s1@example.com", "resume")
 
@@ -1190,7 +1274,15 @@ def test_get_resume_html_requires_assignment():
     main_app.redis_client.flushdb()
     init_default_admin()
 
-    main_app.redis_client.set("student:s1@example.com", json.dumps({"first_name": "S"}))
+    student = {
+        "first_name": "S",
+        "email": "s1@example.com",
+        "institutional_code": "1001",
+        "student_id": "s1",
+    }
+    main_app.persist_student_record(
+        student["email"], student, student["institutional_code"], student["student_id"]
+    )
     main_app.redis_client.set("job:j1", json.dumps({"job_code": "j1"}))
     main_app.redis_client.set("resumehtml:j1:s1@example.com", "<html>")
 
@@ -1207,7 +1299,15 @@ def test_admin_delete_student_cleans_up():
     main_app.redis_client.flushdb()
     init_default_admin()
 
-    main_app.redis_client.set("student:del@example.com", json.dumps({"email": "del@example.com"}))
+    student = {
+        "email": "del@example.com",
+        "institutional_code": "1001",
+        "student_id": "del1",
+    }
+    main_app.persist_student_record(
+        student["email"], student, student["institutional_code"], student["student_id"]
+    )
+    skey = main_app.student_key(student["institutional_code"], student["student_id"])
     main_app.redis_client.set(
         "job:j1",
         json.dumps({"job_code": "j1", "assigned_students": ["del@example.com"], "placed_students": ["del@example.com"]}),
@@ -1225,7 +1325,8 @@ def test_admin_delete_student_cleans_up():
     )
     assert resp.status_code == 200
 
-    assert not main_app.redis_client.exists("student:del@example.com")
+    assert not main_app.redis_client.exists(skey)
+    assert main_app.redis_client.get(main_app.student_email_key("del@example.com")) is None
     job = json.loads(main_app.redis_client.get("job:j1"))
     assert "del@example.com" not in job.get("assigned_students", [])
     assert "del@example.com" not in job.get("placed_students", [])
@@ -1268,7 +1369,14 @@ def test_delete_student_forbidden_non_admin():
     login_resp = client.post("/login", json={"email": user["email"], "password": user["password"]})
     token = login_resp.json()["token"]
 
-    main_app.redis_client.set("student:del@example.com", json.dumps({"email": "del@example.com"}))
+    student = {
+        "email": "del@example.com",
+        "institutional_code": "1001",
+        "student_id": "del2",
+    }
+    main_app.persist_student_record(
+        student["email"], student, student["institutional_code"], student["student_id"]
+    )
 
     resp = client.delete(
         "/admin/delete-student/del@example.com",
@@ -1770,9 +1878,13 @@ def test_match_metrics_increment(monkeypatch):
         "lat": 0.0,
         "lng": 0.0,
         "max_travel": 10,
+        "institutional_code": "1001",
+        "student_id": "s123",
     }
     main_app.redis_client.set("job:abc", json.dumps(job))
-    main_app.redis_client.set("student:s@example.com", json.dumps(student))
+    main_app.persist_student_record(
+        student["email"], student, student["institutional_code"], student["student_id"]
+    )
     main_app.rebuild_vector_index()
 
     class FakeResp:
@@ -1812,8 +1924,12 @@ def test_students_by_school_fallback():
         "created_by": "counselor@example.com",
         "city": "City",
         "state": "ST",
+        "institutional_code": "1001",
+        "student_id": "stud9",
     }
-    main_app.redis_client.set("student:student@example.com", json.dumps(student))
+    main_app.persist_student_record(
+        student["email"], student, student["institutional_code"], student["student_id"]
+    )
 
     token = jwt.encode(
         {
@@ -1873,11 +1989,14 @@ def test_student_endpoints_handle_string_notes():
         "last_name": "Dent",
         "email": "student@example.com",
         "institutional_code": "001",
+        "student_id": "stud10",
         "created_by": "counselor@example.com",
         "city": "City",
         "state": "ST",
     }
-    main_app.redis_client.set("student:student@example.com", json.dumps(student))
+    main_app.persist_student_record(
+        student["email"], student, student["institutional_code"], student["student_id"]
+    )
 
     job = {
         "job_code": "J1",

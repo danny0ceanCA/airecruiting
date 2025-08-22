@@ -58,14 +58,20 @@ def main() -> None:
     updated = []
     manual_review = []
 
-    for key in redis_client.scan_iter("student:*"):
+    for key in redis_client.scan_iter("student:*:*"):
+        key_str = key if isinstance(key, str) else key.decode()
+        parts = key_str.split(":", 2)
+        if len(parts) != 3:
+            continue
+        _, inst_code, student_id = parts
+
         raw = redis_client.get(key)
         if not raw:
             continue
         try:
             student = json.loads(raw)
         except Exception:
-            manual_review.append(key.split("student:", 1)[1])
+            manual_review.append(f"{inst_code}:{student_id}")
             continue
 
         created_at = student.get("created_at")
@@ -73,7 +79,7 @@ def main() -> None:
         if created_at and created_by:
             continue
 
-        email = key.split("student:", 1)[1]
+        email = student.get("email") or f"{inst_code}:{student_id}"
         modified = False
 
         # Match applicant-created profiles by email
