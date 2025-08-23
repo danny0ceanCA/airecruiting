@@ -33,7 +33,14 @@ redis_client = None  # replaced by tests with a dummy implementation
 
 # Placeholder OpenAI client used by tests.  The ``embeddings.create`` method is
 # monkeypatched in the unit tests to avoid external API calls.
-client = type("Client", (), {"embeddings": type("Emb", (), {"create": lambda *a, **k: None})()})()
+client = type(
+    "Client",
+    (),
+    {
+        "embeddings": type("Emb", (), {"create": lambda *a, **k: None})(),
+        "chat": type("Chat", (), {"completions": type("Comp", (), {"create": lambda *a, **k: None})()})(),
+    },
+)()
 
 
 def send_email(recipient: str, subject: str, body: str) -> None:
@@ -128,7 +135,7 @@ from app.routes import auth, admin, students, jobs, matching, notes
 app.include_router(auth.router)
 app.include_router(admin.router)
 app.include_router(students.router)
-app.include_router(jobs.router, prefix="/jobs", tags=["jobs"])
+app.include_router(jobs.router)
 app.include_router(matching.router, prefix="/matching", tags=["matching"])
 app.include_router(notes.router, prefix="/notes", tags=["notes"])
 
