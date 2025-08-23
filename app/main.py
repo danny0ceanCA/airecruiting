@@ -705,8 +705,16 @@ def pending_users(current_user: dict = Depends(get_current_user)):
             continue
         try:
             info = json.loads(raw)
-        except json.JSONDecodeError:
-            log.warning("Invalid JSON for key %s", key)
+        except json.JSONDecodeError as exc:
+            sample = raw[:200] + ("..." if len(raw) > 200 else "")
+            log.error(
+                "Malformed JSON for Redis key %s (len=%d) sample=%r: %s",
+                key,
+                len(raw),
+                sample,
+                exc,
+                exc_info=True,
+            )
             continue
         if info.get("approved") or info.get("rejected"):
             continue
@@ -726,8 +734,16 @@ def list_users(current_user: dict = Depends(get_current_user)):
             continue
         try:
             data = json.loads(raw)
-        except json.JSONDecodeError:
-            log.warning("Invalid JSON for key %s", key)
+        except json.JSONDecodeError as exc:
+            sample = raw[:200] + ("..." if len(raw) > 200 else "")
+            log.error(
+                "Malformed JSON for Redis key %s (len=%d) sample=%r: %s",
+                key,
+                len(raw),
+                sample,
+                exc,
+                exc_info=True,
+            )
             continue
         email = key.split("user:", 1)[1]
         data.pop("password", None)
