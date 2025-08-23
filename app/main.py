@@ -703,7 +703,11 @@ def pending_users(current_user: dict = Depends(get_current_user)):
         raw = redis_client.get(key)
         if not raw:
             continue
-        info = json.loads(raw)
+        try:
+            info = json.loads(raw)
+        except json.JSONDecodeError:
+            log.warning("Invalid JSON for key %s", key)
+            continue
         if info.get("approved") or info.get("rejected"):
             continue
         email = key.split("user:", 1)[1]
@@ -720,7 +724,11 @@ def list_users(current_user: dict = Depends(get_current_user)):
         raw = redis_client.get(key)
         if not raw:
             continue
-        data = json.loads(raw)
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            log.warning("Invalid JSON for key %s", key)
+            continue
         email = key.split("user:", 1)[1]
         data.pop("password", None)
         users.append({"email": email, **data})

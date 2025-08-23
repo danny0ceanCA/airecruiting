@@ -2064,3 +2064,30 @@ def test_student_endpoints_handle_string_notes():
     assert entry["note"] == "legacy"
     assert "posted_by" in entry
 
+
+def test_malformed_user_skipped_in_listings():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    login_resp = client.post(
+        "/login", json={"email": "admin@example.com", "password": "admin123"}
+    )
+    token = login_resp.json()["token"]
+
+    # Insert one valid and one malformed user record
+    main_app.redis_client.set(
+        "user:good@example.com", json.dumps({"first_name": "Good", "password": "pw"})
+    )
+    main_app.redis_client.set("user:bad@example.com", "{not-json}")
+
+    pending = client.get("/pending-users", headers={"Authorization": f"Bearer {token}"})
+    assert pending.status_code == 200
+    emails = [u["email"] for u in pending.json()]
+    assert "good@example.com" in emails
+    assert "bad@example.com" not in emails
+
+    users = client.get("/admin/users", headers={"Authorization": f"Bearer {token}"})
+    assert users.status_code == 200
+    user_emails = [u["email"] for u in users.json()["users"]]
+    assert "bad@example.com" not in user_emails
+
