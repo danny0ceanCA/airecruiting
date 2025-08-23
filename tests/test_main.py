@@ -747,7 +747,7 @@ def test_generate_job_description(monkeypatch):
     token = login_resp.json()["token"]
 
     resp = client.post(
-        "/generate-job-description",
+        "/jobs/generate-job-description",
         json={"student_email": "stud@example.com", "job_code": "code2"},
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -758,7 +758,7 @@ def test_generate_job_description(monkeypatch):
     assert "10.0" in captured["messages"][0]["content"]
 
     get_resp = client.get(
-        "/job-description/code2/stud@example.com",
+        "/jobs/job-description/code2/stud@example.com",
         headers={"Authorization": f"Bearer {token}"},
     )
     assert get_resp.status_code == 200
@@ -785,7 +785,7 @@ def test_job_description_html_route():
     token = login_resp.json()["token"]
 
     resp = client.get(
-        "/job-description-html/codeh/stud@example.com",
+        "/jobs/job-description-html/codeh/stud@example.com",
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 200
@@ -802,7 +802,7 @@ def test_public_job_description_html_route():
     )
 
     resp = client.get(
-        "/public/job-description-html/codep/stud@example.com",
+        "/jobs/public/job-description-html/codep/stud@example.com",
     )
     assert resp.status_code == 200
     assert "public" in resp.text.lower()
@@ -853,7 +853,7 @@ def test_notify_interest_generates_description(monkeypatch):
     token = client.post("/login", json={"email": "admin@example.com", "password": "admin123"}).json()["token"]
 
     resp = client.post(
-        "/notify-interest",
+        "/jobs/notify-interest",
         json={"student_email": "stud@example.com", "job_code": "codei"},
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -862,7 +862,7 @@ def test_notify_interest_generates_description(monkeypatch):
     assert stored is not None and "done" in stored
     assert main_app.redis_client.get("jobdesc:codei:stud@example.com") == stored
     assert "Good Luck" in sent.get("body")
-    assert "/public/job-description-html/codei/stud@example.com" in sent.get("body")
+    assert "/jobs/public/job-description-html/codei/stud@example.com" in sent.get("body")
     assert sent.get("attachments") is None
 
 
@@ -910,12 +910,12 @@ def test_notify_interest_multiple_times(monkeypatch):
     token = client.post("/login", json={"email": "admin@example.com", "password": "admin123"}).json()["token"]
 
     resp1 = client.post(
-        "/notify-interest",
+        "/jobs/notify-interest",
         json={"student_email": "stud@example.com", "job_code": "codei"},
         headers={"Authorization": f"Bearer {token}"},
     )
     resp2 = client.post(
-        "/notify-interest",
+        "/jobs/notify-interest",
         json={"student_email": "stud@example.com", "job_code": "codei"},
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -977,7 +977,7 @@ def test_generate_resume_html(monkeypatch):
     token = client.post("/login", json={"email": "admin@example.com", "password": "admin123"}).json()["token"]
 
     resp = client.post(
-        "/generate-resume",
+        "/jobs/generate-resume",
         json={"student_email": "stud@example.com", "job_code": "coder"},
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -985,7 +985,7 @@ def test_generate_resume_html(monkeypatch):
     assert resp.json()["status"] == "success"
 
     html_resp = client.get(
-        "/resume-html/coder/stud@example.com",
+        "/jobs/resume-html/coder/stud@example.com",
         headers={"Authorization": f"Bearer {token}"},
     )
     assert html_resp.status_code == 200
@@ -1043,7 +1043,7 @@ def test_generate_resume_full_html(monkeypatch):
     token = client.post("/login", json={"email": "admin@example.com", "password": "admin123"}).json()["token"]
 
     resp = client.post(
-        "/generate-resume",
+        "/jobs/generate-resume",
         json={"student_email": "stud@example.com", "job_code": "coder"},
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -1051,7 +1051,7 @@ def test_generate_resume_full_html(monkeypatch):
     assert resp.json()["status"] == "success"
 
     html_resp = client.get(
-        "/resume-html/coder/stud@example.com",
+        "/jobs/resume-html/coder/stud@example.com",
         headers={"Authorization": f"Bearer {token}"},
     )
     assert html_resp.status_code == 200
@@ -1077,7 +1077,7 @@ def test_resume_html_route():
     token = client.post("/login", json={"email": "admin@example.com", "password": "admin123"}).json()["token"]
 
     resp = client.get(
-        "/resume-html/codeh/stud@example.com",
+        "/jobs/resume-html/codeh/stud@example.com",
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 200
@@ -1125,7 +1125,7 @@ def test_generate_resume_preview(monkeypatch):
     token = client.post("/login", json={"email": "admin@example.com", "password": "admin123"}).json()["token"]
 
     resp = client.post(
-        "/generate-resume",
+        "/jobs/generate-resume",
         json={"student_email": "stud@example.com", "job_code": "coder", "preview": True},
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -1167,7 +1167,7 @@ def test_generate_resume_user_key_lookup(monkeypatch):
     token = client.post("/login", json={"email": "admin@example.com", "password": "admin123"}).json()["token"]
 
     resp = client.post(
-        "/generate-resume",
+        "/jobs/generate-resume",
         json={"student_email": "stud@example.com", "job_code": "coder"},
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -1212,7 +1212,7 @@ def test_generate_resume_student_key_fallback(monkeypatch):
     token = client.post("/login", json={"email": "admin@example.com", "password": "admin123"}).json()["token"]
 
     resp = client.post(
-        "/generate-resume",
+        "/jobs/generate-resume",
         json={"student_email": "stud@example.com", "job_code": "coder"},
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -1238,7 +1238,7 @@ def test_generate_resume_requires_assignment():
     token = client.post("/login", json={"email": "admin@example.com", "password": "admin123"}).json()["token"]
 
     resp = client.post(
-        "/generate-resume",
+        "/jobs/generate-resume",
         json={"student_email": "s1@example.com", "job_code": "j1"},
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -1264,7 +1264,7 @@ def test_get_resume_requires_assignment():
     token = client.post("/login", json={"email": "admin@example.com", "password": "admin123"}).json()["token"]
 
     resp = client.get(
-        "/resume/j1/s1@example.com",
+        "/jobs/resume/j1/s1@example.com",
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 403
@@ -1289,7 +1289,7 @@ def test_get_resume_html_requires_assignment():
     token = client.post("/login", json={"email": "admin@example.com", "password": "admin123"}).json()["token"]
 
     resp = client.get(
-        "/resume-html/j1/s1@example.com",
+        "/jobs/resume-html/j1/s1@example.com",
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 403
