@@ -1308,6 +1308,10 @@ def test_admin_delete_student_cleans_up():
         student["email"], student, student["institutional_code"], student["student_id"]
     )
     skey = main_app.student_key(student["institutional_code"], student["student_id"])
+    # Simulate leftover user record
+    main_app.redis_client.set(
+        "user:del@example.com", json.dumps({"role": "applicant"})
+    )
     main_app.redis_client.set(
         "job:j1",
         json.dumps({"job_code": "j1", "assigned_students": ["del@example.com"], "placed_students": ["del@example.com"]}),
@@ -1327,6 +1331,7 @@ def test_admin_delete_student_cleans_up():
 
     assert not main_app.redis_client.exists(skey)
     assert main_app.redis_client.get(main_app.student_email_key("del@example.com")) is None
+    assert main_app.redis_client.get("user:del@example.com") is None
     job = json.loads(main_app.redis_client.get("job:j1"))
     assert "del@example.com" not in job.get("assigned_students", [])
     assert "del@example.com" not in job.get("placed_students", [])
@@ -1383,6 +1388,46 @@ def test_delete_student_forbidden_non_admin():
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 403
+
+
+def test_creating_student_does_not_create_user(monkeypatch):
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    admin_token = client.post(
+        "/login", json={"email": "admin@example.com", "password": "admin123"}
+    ).json()["token"]
+
+    profile = {
+        "first_name": "Stu",
+        "last_name": "Dent",
+        "email": "stu@example.com",
+        "phone": "123",
+        "license": "lvn",
+        "skills": ["skill"],
+        "experience_summary": "summary",
+        "interests": "interest",
+        "city": "City",
+        "state": "ST",
+        "lat": 0.0,
+        "lng": 0.0,
+        "max_travel": 10.0,
+    }
+
+    class FakeResp:
+        def __init__(self):
+            self.data = [type("obj", (), {"embedding": [0.0, 0.0]})]
+
+    def fake_create(input, model):
+        return FakeResp()
+
+    monkeypatch.setattr(main_app.client.embeddings, "create", fake_create)
+
+    resp = client.post(
+        "/students", json=profile, headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    assert resp.status_code == 200
+    assert main_app.redis_client.get("user:stu@example.com") is None
 
 
 def test_recruiter_cannot_place_student():
