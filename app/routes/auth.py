@@ -107,7 +107,7 @@ def register(payload: RegisterRequest):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User already exists")
 
     data = payload.model_dump()
-    data.update({"approved": False, "rejected": False})
+    data.update({"approved": False, "rejected": False, "active": True})
     main.redis_client.set(key, json.dumps(data))
 
     return {"message": "Awaiting admin approval"}
@@ -126,6 +126,8 @@ def login(payload: LoginRequest):
 
     if not user.get("approved"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User not approved")
+    if not user.get("active", True):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User disabled")
 
     token = jwt.encode({"sub": user["email"], "role": user["role"]}, JWT_SECRET, algorithm=ALGORITHM)
     return {"token": token}

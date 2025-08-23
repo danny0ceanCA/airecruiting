@@ -9,10 +9,16 @@ routes are defined in :mod:`app.routes.auth` and included here.
 from __future__ import annotations
 
 import json
+from typing import Any
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+import httpx
+import xml.etree.ElementTree as ET
+
+from backend.app.school_codes import SCHOOL_CODE_MAP
 
 
 load_dotenv()
@@ -24,6 +30,38 @@ load_dotenv()
 JWT_SECRET = "secret"
 ALGORITHM = "HS256"
 redis_client = None  # replaced by tests with a dummy implementation
+
+
+def send_email(recipient: str, subject: str, body: str) -> None:
+    """Placeholder email sender used by tests."""
+
+
+def student_email_key(email: str) -> str:
+    """Return the redis key used to index students by email."""
+
+    return f"student_email:{email.strip().lower()}"
+
+
+def student_key(institution_code: str, student_id: str) -> str:
+    """Return the canonical redis key for a student."""
+
+    return f"student:{institution_code}:{student_id}"
+
+
+def persist_student_record(
+    email: str, data: dict[str, Any], institutional_code: str, student_id: str
+) -> None:
+    """Persist a student record and index it by email."""
+
+    if redis_client is None:
+        return
+
+    record = dict(data)
+    record.update(
+        {"email": email, "institutional_code": institutional_code, "student_id": student_id}
+    )
+    redis_client.set(f"student:{institutional_code}:{student_id}", json.dumps(record))
+    redis_client.set(student_email_key(email), f"{institutional_code}:{student_id}")
 
 
 def init_default_admin() -> None:
@@ -44,6 +82,19 @@ def init_default_admin() -> None:
             "rejected": False,
         }
         redis_client.set(key, json.dumps(admin))
+
+
+def init_default_school_codes() -> None:
+    """Load the default school codes into Redis if missing."""
+
+    if redis_client is None:
+        return
+
+    for code, label in SCHOOL_CODE_MAP.items():
+        redis_client.set(f"school_code:{code}", label)
+
+
+NURSING_FEEDS = [("Example", "http://example.com/feed")]
 
 
 # ---------------------------------------------------------------------------
@@ -71,9 +122,70 @@ from app.routes import auth, admin, students, jobs, matching, notes
 
 
 app.include_router(auth.router)
-app.include_router(admin.router, prefix="/admin", tags=["admin"])
+app.include_router(admin.router)
 app.include_router(students.router, prefix="/students", tags=["students"])
 app.include_router(jobs.router, prefix="/jobs", tags=["jobs"])
 app.include_router(matching.router, prefix="/matching", tags=["matching"])
 app.include_router(notes.router, prefix="/notes", tags=["notes"])
+
+
+@app.get("/school-codes")
+def list_school_codes() -> dict:
+    codes = []
+    if redis_client is not None:
+        # Ensure defaults are loaded if the store is empty
+        if not any(redis_client.scan_iter("school_code:*")):
+            init_default_school_codes()
+        for key in redis_client.scan_iter("school_code:*"):
+            code = key.split(":", 1)[1]
+            label = redis_client.get(key)
+            codes.append({"code": code, "label": label})
+    return {"codes": codes}
+
+
+@app.get("/rss-feeds")
+def list_rss_feeds() -> dict:
+    feeds = []
+    if redis_client is not None:
+        for key in redis_client.scan_iter("rss:*"):
+            name = key.split(":", 1)[1]
+            url = redis_client.get(key)
+            feeds.append({"name": name, "url": url})
+    return {"feeds": feeds}
+
+
+@app.get("/nursing-news")
+async def nursing_news() -> dict:
+    if redis_client is not None:
+        cached = redis_client.get("nursing_news")
+        if cached:
+            return json.loads(cached)
+
+    feeds_out = []
+    async with httpx.AsyncClient(timeout=10, headers={"User-Agent": "Mozilla/5.0"}) as client:
+        for name, url in NURSING_FEEDS:
+            resp = await client.get(url)
+            root = ET.fromstring(resp.text)
+            articles = []
+            for item in root.findall(".//item"):
+                title = item.findtext("title")
+                link = item.findtext("link")
+                desc = item.findtext("description")
+                enclosure = item.find("enclosure")
+                image = enclosure.get("url") if enclosure is not None else None
+                articles.append(
+                    {
+                        "title": title,
+                        "link": link,
+                        "description": desc,
+                        "summary": desc,
+                        "image": image,
+                    }
+                )
+            feeds_out.append({"name": name, "url": url, "articles": articles})
+
+    data = {"feeds": feeds_out}
+    if redis_client is not None:
+        redis_client.set("nursing_news", json.dumps(data))
+    return data
 
