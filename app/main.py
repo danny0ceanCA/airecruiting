@@ -9,6 +9,7 @@ routes are defined in :mod:`app.routes.auth` and included here.
 from __future__ import annotations
 
 import json
+import os
 from typing import Any
 
 from dotenv import load_dotenv
@@ -17,6 +18,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 import httpx
 import xml.etree.ElementTree as ET
+
+try:  # pragma: no cover - optional dependency during tests
+    import redis
+except Exception:  # pragma: no cover - redis not installed
+    redis = None
 
 from backend.app.school_codes import SCHOOL_CODE_MAP
 
@@ -30,6 +36,17 @@ load_dotenv()
 JWT_SECRET = "secret"
 ALGORITHM = "HS256"
 redis_client = None  # replaced by tests with a dummy implementation
+
+# Attempt to initialise a real Redis client when running the application
+# outside of the test suite.  If ``REDIS_URL`` is not defined or the
+# ``redis`` package/connection is unavailable, ``redis_client`` simply remains
+# ``None`` and the routes will raise an HTTP 503 error when accessed.
+redis_url = os.getenv("REDIS_URL")
+if redis_url and redis is not None:
+    try:  # pragma: no cover - network/connection errors are environment specific
+        redis_client = redis.Redis.from_url(redis_url, decode_responses=True)
+    except Exception:  # pragma: no cover
+        redis_client = None
 
 # Placeholder OpenAI client used by tests.  The ``embeddings.create`` method is
 # monkeypatched in the unit tests to avoid external API calls.

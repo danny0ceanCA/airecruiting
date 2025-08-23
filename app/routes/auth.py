@@ -115,6 +115,11 @@ def register(payload: RegisterRequest):
 
 @router.post("/login")
 def login(payload: LoginRequest):
+    if main.redis_client is None:  # pragma: no cover - depends on deployment
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Redis not configured",
+        )
     key = f"user:{payload.email}"
     raw = main.redis_client.get(key)
     if not raw:
