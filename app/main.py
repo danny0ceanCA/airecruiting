@@ -319,23 +319,41 @@ async def get_driving_distance_miles(orig_lat: float, orig_lng: float, dest_lat:
     cached = redis_client.get(cache_key)
     if cached is not None:
         try:
-            return float(cached)
+            miles = float(cached)
+            log.info("Distance cache hit for %s", cache_key)
+            return miles
         except ValueError:
-            pass
+            log.exception("Invalid cached distance for %s", cache_key)
 
+    log.info("Distance cache miss for %s", cache_key)
     params = {
         "origins": f"{orig_lat},{orig_lng}",
         "destinations": f"{dest_lat},{dest_lng}",
         "units": "imperial",
         "key": key,
     }
+    url = "https://maps.googleapis.com/maps/api/distancematrix/json"
     async with httpx.AsyncClient() as client:
-        resp = await client.get(
-            "https://maps.googleapis.com/maps/api/distancematrix/json",
-            params=params,
+        try:
+            log.info("Requesting %s params=%s", url, params)
+            resp = await client.get(url, params=params)
+        except Exception:
+            log.exception("Error requesting distance matrix")
+            raise
+
+    if resp.status_code != 200:
+        log.warning(
+            "Distance matrix non-200 response %s: %s", resp.status_code, resp.text
         )
-    data = resp.json()
-    value_meters = data["rows"][0]["elements"][0]["distance"]["value"]
+        resp.raise_for_status()
+
+    try:
+        data = resp.json()
+        value_meters = data["rows"][0]["elements"][0]["distance"]["value"]
+    except Exception:
+        log.exception("Error parsing distance matrix response")
+        raise
+
     miles = value_meters / 1609.34
     redis_client.setex(cache_key, int(timedelta(hours=24).total_seconds()), miles)
     return miles
@@ -352,7 +370,20 @@ async def log_requests(request, call_next):
     request.state.request_id = request_id
     token = request_id_ctx_var.set(request_id)
     try:
-        log.info("Incoming %s %s", request.method, request.url)
+        client_host = request.client.host if request.client else None
+        user_agent = request.headers.get("user-agent")
+        if client_host:
+            client_host = client_host.replace("\n", " ").replace("\r", " ")[:100]
+        if user_agent:
+            user_agent = user_agent.replace("\n", " ").replace("\r", " ")[:200]
+
+        log.info(
+            "Incoming %s %s from %s UA %s",
+            request.method,
+            request.url,
+            client_host or "-",
+            user_agent or "-",
+        )
         user = None
         auth = request.headers.get("Authorization")
         if auth and auth.startswith("Bearer "):
@@ -369,6 +400,8 @@ async def log_requests(request, call_next):
             "path": request.url.path,
             "user": user,
             "request_id": request_id,
+            "client_host": client_host,
+            "user_agent": user_agent,
         }
         start = datetime.now()
         response = await call_next(request)
@@ -705,8 +738,16 @@ def pending_users(current_user: dict = Depends(get_current_user)):
             continue
         try:
             info = json.loads(raw)
-        except json.JSONDecodeError:
-            log.warning("Invalid JSON for key %s", key)
+        except json.JSONDecodeError as exc:
+            sample = raw[:200] + ("..." if len(raw) > 200 else "")
+            log.error(
+                "Malformed JSON for Redis key %s (len=%d) sample=%r: %s",
+                key,
+                len(raw),
+                sample,
+                exc,
+                exc_info=True,
+            )
             continue
         if info.get("approved") or info.get("rejected"):
             continue
@@ -726,8 +767,16 @@ def list_users(current_user: dict = Depends(get_current_user)):
             continue
         try:
             data = json.loads(raw)
-        except json.JSONDecodeError:
-            log.warning("Invalid JSON for key %s", key)
+        except json.JSONDecodeError as exc:
+            sample = raw[:200] + ("..." if len(raw) > 200 else "")
+            log.error(
+                "Malformed JSON for Redis key %s (len=%d) sample=%r: %s",
+                key,
+                len(raw),
+                sample,
+                exc,
+                exc_info=True,
+            )
             continue
         email = key.split("user:", 1)[1]
         data.pop("password", None)
@@ -2536,6 +2585,7 @@ def reset_jobs(current_user: dict = Depends(get_current_user)):
 
 @app.delete("/admin/delete-student/{email}")
 def delete_student(email: str, current_user: dict = Depends(get_current_user)):
+    """Remove a student profile and any associated user record."""
     if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin privileges required")
     email = normalize_email(email)
@@ -2546,6 +2596,11 @@ def delete_student(email: str, current_user: dict = Depends(get_current_user)):
     # Delete student profile
     redis_client.delete(skey)
     redis_client.delete(student_email_key(email))
+
+    # Remove any lingering user record to avoid bogus admin entries
+    ukey = find_user_key(email)
+    if ukey:
+        redis_client.delete(ukey)
 
     # Clean up from job assignments/placements
     for job_key in redis_client.scan_iter("job:*"):
