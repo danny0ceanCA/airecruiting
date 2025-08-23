@@ -150,16 +150,20 @@ def login(payload: LoginRequest):
     if not raw:
         # Differentiate between non-existent users and password errors while
         # keeping the same 401 status code for authentication failures.
+
         logger.warning("Login failed: user %s not found", payload.email)
+
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
 
     user = json.loads(raw)
     if user.get("password") != payload.password:
+
         logger.warning("Login failed for %s: incorrect password", payload.email)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect password")
 
     if not user.get("approved"):
         logger.warning("Login denied for %s: not approved", payload.email)
+
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User not approved. Contact an administrator for approval.",
