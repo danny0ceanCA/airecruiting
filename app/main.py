@@ -2552,6 +2552,7 @@ def reset_jobs(current_user: dict = Depends(get_current_user)):
 
 @app.delete("/admin/delete-student/{email}")
 def delete_student(email: str, current_user: dict = Depends(get_current_user)):
+    """Remove a student profile and any associated user record."""
     if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin privileges required")
     email = normalize_email(email)
@@ -2562,6 +2563,11 @@ def delete_student(email: str, current_user: dict = Depends(get_current_user)):
     # Delete student profile
     redis_client.delete(skey)
     redis_client.delete(student_email_key(email))
+
+    # Remove any lingering user record to avoid bogus admin entries
+    ukey = find_user_key(email)
+    if ukey:
+        redis_client.delete(ukey)
 
     # Clean up from job assignments/placements
     for job_key in redis_client.scan_iter("job:*"):
