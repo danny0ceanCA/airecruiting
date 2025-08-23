@@ -15,7 +15,7 @@ from backend.app.services.job import (
 )
 
 
-router = APIRouter(prefix="/matching", tags=["matching"])
+router = APIRouter(prefix="", tags=["matching"])
 
 
 def _get_job(job_code: str) -> dict:
