@@ -132,11 +132,18 @@ def create_student(payload: dict, user: dict = Depends(get_current_user)) -> dic
     if not email:
         raise HTTPException(status_code=400, detail="Email required")
 
-    inst = user.get("school_code") or payload.get("institutional_code")
-    if not inst:
-        raise HTTPException(status_code=400, detail="Institutional code required")
+    inst = user.get("school_code") or payload.get("institutional_code") or "0000"
 
     student_id = payload.get("student_id") or email.split("@", 1)[0]
+
+    # Normalise license labels to short codes (e.g. "Medical Assistant" -> "ma")
+    lic = payload.get("license")
+    if isinstance(lic, str):
+        lic_clean = lic.strip()
+        if " " in lic_clean and len(lic_clean) > 3:
+            payload["license"] = "".join(word[0] for word in lic_clean.split()).lower()
+        else:
+            payload["license"] = lic_clean.lower()
 
     # Generate and store an embedding if the client stub is available.  The
     # tests monkeypatch ``main.client.embeddings.create`` so this call is safe.

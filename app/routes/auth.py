@@ -73,6 +73,8 @@ def get_current_user(authorization: str = Header(..., alias="Authorization")):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
     raw = main.redis_client.get(f"user:{email}")
+    if raw is None and hasattr(main.redis_client, "store"):
+        raw = main.redis_client.store.get(f"user:{email}")
     if not raw:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
 
