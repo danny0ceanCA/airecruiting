@@ -154,6 +154,25 @@ def run_match(data: dict) -> dict:
     return {"matches": matches}
 
 
+@router.post("/rematches/{job_code}")
+def queue_rematch(job_code: str) -> dict:
+    """Remove existing match results and record a rematch request."""
+
+    _get_job(job_code)
+
+    key = f"match_results:{job_code}"
+    if hasattr(main.redis_client, "delete"):
+        main.redis_client.delete(key)
+    else:  # fallback for simple test doubles
+        try:
+            main.redis_client.store.pop(key, None)  # type: ignore[attr-defined]
+        except Exception:  # pragma: no cover - very defensive
+            main.redis_client.set(key, None)
+
+    main.redis_client.incr("metrics:total_rematches")
+    return {"message": "Rematch queued"}
+
+
 @router.get("/match/{job_code}")
 def get_match_results(job_code: str) -> dict:
     """Return stored match results with job status/notes merged in."""
