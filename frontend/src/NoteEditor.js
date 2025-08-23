@@ -8,7 +8,7 @@ export default function NoteEditor({ jobCode, email, notes = [], onSaved, onCanc
 
   const save = async () => {
     const resp = await api.post(
-      '/student-note',
+      '/notes/student-note',
       {
         job_code: jobCode,
         student_email: email,

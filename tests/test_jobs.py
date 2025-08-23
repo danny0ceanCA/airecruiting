@@ -1142,7 +1142,7 @@ def test_student_note_school_code_fallback():
         "/login", json={"email": "admin@example.com", "password": "admin123"}
     ).json()["token"]
     r = client.post(
-        "/student-note",
+        "/notes/student-note",
         json={"job_code": job_code, "student_email": student["email"], "note": note},
         headers={"Authorization": f"Bearer {admin_token}"},
     )
@@ -1270,7 +1270,7 @@ def test_student_note_unassigned(monkeypatch):
 
     note = "standalone note"
     r = client.post(
-        "/student-note",
+        "/notes/student-note",
         json={"job_code": job_code, "student_email": student["email"], "note": note},
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -1337,7 +1337,7 @@ def test_student_note_assigned(monkeypatch):
 
     note = "new note"
     r = client.post(
-        "/student-note",
+        "/notes/student-note",
         json={"job_code": job_code, "student_email": student["email"], "note": note},
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -1421,12 +1421,12 @@ def test_student_note_multiple_posts_unassigned(monkeypatch):
     note1 = "first note"
     note2 = "second note"
     client.post(
-        "/student-note",
+        "/notes/student-note",
         json={"job_code": job_code, "student_email": student["email"], "note": note1},
         headers={"Authorization": f"Bearer {token}"},
     )
     client.post(
-        "/student-note",
+        "/notes/student-note",
         json={"job_code": job_code, "student_email": student["email"], "note": note2},
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -1504,7 +1504,7 @@ def test_recruiter_can_add_note_for_assigned_student():
 
     note = "follow up"
     r = client.post(
-        "/student-note",
+        "/notes/student-note",
         json={"job_code": job_code, "student_email": student["email"], "note": note},
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -1596,14 +1596,14 @@ def test_recruiter_note_forbidden_unassigned_or_unowned():
 
     note = "check"
     r_unassigned = client.post(
-        "/student-note",
+        "/notes/student-note",
         json={"job_code": job_code, "student_email": student2["email"], "note": note},
         headers={"Authorization": f"Bearer {token1}"},
     )
     assert r_unassigned.status_code == 403
 
     r_unowned = client.post(
-        "/student-note",
+        "/notes/student-note",
         json={"job_code": job_code, "student_email": student1["email"], "note": note},
         headers={"Authorization": f"Bearer {token2}"},
     )
@@ -1754,12 +1754,12 @@ def test_student_note_multiple_posts_assigned(monkeypatch):
     note1 = "first note"
     note2 = "second note"
     client.post(
-        "/student-note",
+        "/notes/student-note",
         json={"job_code": job_code, "student_email": student["email"], "note": note1},
         headers={"Authorization": f"Bearer {token}"},
     )
     client.post(
-        "/student-note",
+        "/notes/student-note",
         json={"job_code": job_code, "student_email": student["email"], "note": note2},
         headers={"Authorization": f"Bearer {token}"},
     )

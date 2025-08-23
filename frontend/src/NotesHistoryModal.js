@@ -29,7 +29,7 @@ function NotesHistoryModal({ notes = [], onClose, isAdmin = false, canAdd = fals
   const saveEdit = async () => {
     try {
       const resp = await api.put(
-        '/student-note',
+        '/notes/student-note',
         {
           job_code: jobCode,
           student_email: studentEmail,
@@ -54,7 +54,7 @@ function NotesHistoryModal({ notes = [], onClose, isAdmin = false, canAdd = fals
 
   const deleteNote = async (idx) => {
     try {
-      await api.delete('/student-note', {
+      await api.delete('/notes/student-note', {
         headers: { Authorization: `Bearer ${token}` },
         data: { job_code: jobCode, student_email: studentEmail, index: idx },
       });

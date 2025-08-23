@@ -27,7 +27,7 @@ test('saves note via API', async () => {
   fireEvent.click(screen.getByText('Save'));
   await waitFor(() => {
     expect(api.post).toHaveBeenCalledWith(
-      '/student-note',
+      '/notes/student-note',
       {
         job_code: 'J1',
         student_email: 's1@example.com',
