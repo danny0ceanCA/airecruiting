@@ -370,7 +370,20 @@ async def log_requests(request, call_next):
     request.state.request_id = request_id
     token = request_id_ctx_var.set(request_id)
     try:
-        log.info("Incoming %s %s", request.method, request.url)
+        client_host = request.client.host if request.client else None
+        user_agent = request.headers.get("user-agent")
+        if client_host:
+            client_host = client_host.replace("\n", " ").replace("\r", " ")[:100]
+        if user_agent:
+            user_agent = user_agent.replace("\n", " ").replace("\r", " ")[:200]
+
+        log.info(
+            "Incoming %s %s from %s UA %s",
+            request.method,
+            request.url,
+            client_host or "-",
+            user_agent or "-",
+        )
         user = None
         auth = request.headers.get("Authorization")
         if auth and auth.startswith("Bearer "):
@@ -387,6 +400,8 @@ async def log_requests(request, call_next):
             "path": request.url.path,
             "user": user,
             "request_id": request_id,
+            "client_host": client_host,
+            "user_agent": user_agent,
         }
         start = datetime.now()
         response = await call_next(request)
