@@ -137,7 +137,7 @@ app.include_router(admin.router)
 app.include_router(students.router)
 app.include_router(jobs.router)
 app.include_router(matching.router)
-app.include_router(notes.router, prefix="/notes", tags=["notes"])
+app.include_router(notes.router)
 
 
 @app.get("/school-codes")

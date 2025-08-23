@@ -137,7 +137,7 @@ both assigned and rejected students.
 
 ### Student Notes
 
-Use `POST /student-note` with a `job_code`, the `student_email`, and a `note` to
+Use `POST /notes/student-note` with a `job_code`, the `student_email`, and a `note` to
 record comments for a candidate. Recruiters may add notes only for jobs they
 created **and** students they have assigned to those jobs. Administrators may
 add notes for any job and are the only role permitted to edit or delete
@@ -155,7 +155,7 @@ Example recruiter request:
 }
 ```
 
-Example admin edit request (`PUT /student-note`):
+Example admin edit request (`PUT /notes/student-note`):
 
 ```json
 {
