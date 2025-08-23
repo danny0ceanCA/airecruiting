@@ -178,9 +178,13 @@ def read_root() -> dict[str, str]:
     return {"message": "Hello, World"}
 
 
+# Read allowed CORS origins from the environment.
+# Defaults to ["*"] to permit any origin when not set.
+allowed_origins = [origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "*").split(",")]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

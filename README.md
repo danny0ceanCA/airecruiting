@@ -81,12 +81,17 @@ EMAIL_SENDER=noreply@example.com
 ADMIN_EMAIL=admin@example.com
 ADMIN_PASSWORD=admin123
 SITE_BASE_URL=https://yourdomain.com
+ALLOWED_ORIGINS=http://localhost:3000
 ```
 
 `SITE_BASE_URL` is used when building links in notification emails. It **must**
 point to the publicly reachable FastAPI backend (for example,
 `https://your-api.com`). If this value is set to the React frontend's address or
 left blank, the links in emails will lead to missing pages.
+
+`ALLOWED_ORIGINS` controls which origins may access the API via CORS. Provide a
+comma-separated list (e.g., `https://example.com,http://localhost:3000`). It
+defaults to `*` to allow requests from any origin.
 
 ## Registration Codes
 
