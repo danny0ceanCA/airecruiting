@@ -1,6 +1,8 @@
 import os
 import redis
-from typing import Any
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 def remove_student_user_records() -> None:
