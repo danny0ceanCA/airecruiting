@@ -317,6 +317,7 @@ Stats JSON:
 """.strip()
 
     model = os.getenv("SUMMARY_MODEL", "gpt-4o")
+    logger.info("Generating weekly summary with model %s", model)
     try:
         no_temp_models = {"gpt-5-mini", "gpt-5-preview"}
         params = {
@@ -326,9 +327,23 @@ Stats JSON:
         if model not in no_temp_models:
             params["temperature"] = 0.4
         resp = openai_client.chat.completions.create(**params)
+        usage = getattr(resp, "usage", None)
+        if usage:
+            logger.info(
+                "Summary tokens used (model=%s): prompt=%s, completion=%s, total=%s",
+                model,
+                getattr(usage, "prompt_tokens", None),
+                getattr(usage, "completion_tokens", None),
+                getattr(usage, "total_tokens", None),
+            )
         return (resp.choices[0].message.content or "").strip()
-    except Exception:
+    except Exception as exc:
         api_key_present = bool(os.getenv("OPENAI_API_KEY"))
+        status = getattr(getattr(exc, "response", None), "status_code", None) or getattr(
+            exc, "status", None
+        )
+        if status:
+            logger.warning("OpenAI summary HTTP error status=%s", status)
         logger.exception(
             "OpenAI summary generation failed (model=%s, api_key=%s)",
             model,

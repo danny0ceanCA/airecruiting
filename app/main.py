@@ -319,23 +319,41 @@ async def get_driving_distance_miles(orig_lat: float, orig_lng: float, dest_lat:
     cached = redis_client.get(cache_key)
     if cached is not None:
         try:
-            return float(cached)
+            miles = float(cached)
+            log.info("Distance cache hit for %s", cache_key)
+            return miles
         except ValueError:
-            pass
+            log.exception("Invalid cached distance for %s", cache_key)
 
+    log.info("Distance cache miss for %s", cache_key)
     params = {
         "origins": f"{orig_lat},{orig_lng}",
         "destinations": f"{dest_lat},{dest_lng}",
         "units": "imperial",
         "key": key,
     }
+    url = "https://maps.googleapis.com/maps/api/distancematrix/json"
     async with httpx.AsyncClient() as client:
-        resp = await client.get(
-            "https://maps.googleapis.com/maps/api/distancematrix/json",
-            params=params,
+        try:
+            log.info("Requesting %s params=%s", url, params)
+            resp = await client.get(url, params=params)
+        except Exception:
+            log.exception("Error requesting distance matrix")
+            raise
+
+    if resp.status_code != 200:
+        log.warning(
+            "Distance matrix non-200 response %s: %s", resp.status_code, resp.text
         )
-    data = resp.json()
-    value_meters = data["rows"][0]["elements"][0]["distance"]["value"]
+        resp.raise_for_status()
+
+    try:
+        data = resp.json()
+        value_meters = data["rows"][0]["elements"][0]["distance"]["value"]
+    except Exception:
+        log.exception("Error parsing distance matrix response")
+        raise
+
     miles = value_meters / 1609.34
     redis_client.setex(cache_key, int(timedelta(hours=24).total_seconds()), miles)
     return miles
