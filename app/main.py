@@ -25,6 +25,7 @@ except Exception:  # pragma: no cover - redis not installed
     redis = None
 
 from backend.app.school_codes import SCHOOL_CODE_MAP
+from backend.app.services.job import resolve_student_key as _resolve_student_key
 
 
 load_dotenv()
@@ -62,6 +63,28 @@ client = type(
 
 def send_email(recipient: str, subject: str, body: str) -> None:
     """Placeholder email sender used by tests."""
+
+
+def get_driving_distance_miles(*_args, **_kwargs) -> float:
+    """Return a dummy driving distance in miles.
+
+    The tests monkeypatch this function with predictable values to avoid any
+    external API calls.  The default implementation simply returns ``0.0`` so
+    that calling code has a sensible fallback when the function has not been
+    patched.
+    """
+
+    return 0.0
+
+
+def resolve_student_key(email: str) -> str | None:
+    """Wrapper exposing :func:`backend.app.services.job.resolve_student_key`.
+
+    The tests import ``resolve_student_key`` from :mod:`app.main` directly, so
+    we provide this thin wrapper that supplies the configured ``redis_client``.
+    """
+
+    return _resolve_student_key(redis_client, email)
 
 
 def student_email_key(email: str) -> str:

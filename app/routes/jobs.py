@@ -34,6 +34,13 @@ def create_job(job: dict, _: dict = Depends(get_current_user)) -> dict:
     data["job_code"] = code
     data.setdefault("assigned_students", [])
     data.setdefault("placed_students", [])
+    rl = data.get("required_license")
+    if isinstance(rl, str):
+        rl_clean = rl.strip()
+        if " " in rl_clean and len(rl_clean) > 3:
+            data["required_license"] = "".join(w[0] for w in rl_clean.split()).lower()
+        else:
+            data["required_license"] = rl_clean.lower()
     main.redis_client.set(f"job:{code}", json.dumps(data))
     return {"message": "Job stored", "job_code": code}
 
