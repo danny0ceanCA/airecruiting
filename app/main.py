@@ -132,6 +132,24 @@ NURSING_FEEDS = [("Example", "http://example.com/feed")]
 app = FastAPI()
 
 
+@app.on_event("startup")
+def startup() -> None:
+    """Populate Redis with baseline data when the API starts.
+
+    The tests monkeypatch ``redis_client`` with an in-memory stand in, so we
+    guard against ``None`` to keep import side effects minimal.  When the
+    application runs normally with a real Redis backend we pre-create the
+    default administrator account and load the initial set of school codes so
+    that a fresh deployment can be used immediately.
+    """
+
+    if redis_client is None:  # pragma: no cover - depends on deployment
+        return
+
+    init_default_admin()
+    init_default_school_codes()
+
+
 @app.get("/")
 def read_root() -> dict[str, str]:
     return {"message": "Hello, World"}
