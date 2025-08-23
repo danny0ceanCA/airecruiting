@@ -133,14 +133,19 @@ def login(payload: LoginRequest):
         main.init_default_admin()
         raw = main.redis_client.get(key)
     if not raw:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+        # Differentiate between non-existent users and password errors while
+        # keeping the same 401 status code for authentication failures.
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
 
     user = json.loads(raw)
     if user.get("password") != payload.password:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect password")
 
     if not user.get("approved"):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User not approved")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User not approved. Contact an administrator for approval.",
+        )
     if not user.get("active", True):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User disabled")
 
