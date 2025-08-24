@@ -19,10 +19,13 @@ import app.main as main
 from app.routes.auth import get_current_user, require_admin
 from app.routes.notes import _normalize_notes
 from backend.app.services.job import normalize_email
+from backend.app.logging_utils import get_logger
 
 
 # Router configured with prefix and tag information as required by the tests.
 router = APIRouter(prefix="/students", tags=["students"])
+
+logger = get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -101,12 +104,16 @@ def list_all_students(_: dict = Depends(require_admin)) -> dict:
     :func:`app.main.persist_student_record`.
     """
 
+    logger.info("Listing all students")
     students: list[dict[str, Any]] = []
     if main.redis_client is not None:
         for key in main.redis_client.scan_iter("student:*:*"):
             raw = main.redis_client.get(key)
             if raw:
                 students.append(_merge_assignments(json.loads(raw)))
+    else:
+        logger.warning("Redis unavailable while listing students")
+    logger.info("Returning %d student(s)", len(students))
     return {"students": students}
 
 
@@ -121,7 +128,9 @@ def list_students_by_school(
     """
 
     inst = code or user.get("school_code") or user.get("institutional_code")
+    logger.info("Listing students for institution %s", inst)
     if not inst:
+        logger.warning("Institutional code missing for user %s", user.get("email"))
         raise HTTPException(status_code=400, detail="Institutional code required")
 
     students: list[dict[str, Any]] = []
@@ -130,25 +139,34 @@ def list_students_by_school(
             raw = main.redis_client.get(key)
             if raw:
                 students.append(_merge_assignments(json.loads(raw)))
+    else:
+        logger.warning("Redis unavailable while listing students for %s", inst)
+    logger.info("Returning %d student(s) for %s", len(students), inst)
     return {"students": students}
 
 
 @router.get("/me")
 def get_me(user: dict = Depends(get_current_user)) -> dict:
     """Return the student profile for the currently authenticated user."""
-
+    email = user.get("email")
+    logger.info("Fetching profile for %s", email)
     if main.redis_client is None:
+        logger.warning("Redis unavailable while fetching profile for %s", email)
         raise HTTPException(status_code=404, detail="Student not found")
 
-    loc = main.redis_client.get(main.student_email_key(user["email"]))
+    loc = main.redis_client.get(main.student_email_key(email))
     if not loc:
+        logger.warning("Student %s not found", email)
         raise HTTPException(status_code=404, detail="Student not found")
 
     inst, sid = loc.split(":", 1)
     raw = main.redis_client.get(main.student_key(inst, sid))
     if not raw:
+        logger.warning("Student record %s not found", email)
         raise HTTPException(status_code=404, detail="Student not found")
-    return _merge_assignments(json.loads(raw))
+    student = _merge_assignments(json.loads(raw))
+    logger.info("Profile fetched for %s", email)
+    return student
 
 
 # ---------------------------------------------------------------------------
@@ -165,6 +183,7 @@ def get_placements(student_email: str, _: dict = Depends(get_current_user)) -> d
     ``placed_students`` list is returned.
     """
 
+    logger.info("Listing placements for %s", student_email)
     placements: list[dict[str, Any]] = []
     if main.redis_client is not None:
         for key in main.redis_client.scan_iter("job:*"):
@@ -174,6 +193,9 @@ def get_placements(student_email: str, _: dict = Depends(get_current_user)) -> d
             job = json.loads(raw)
             if student_email in job.get("placed_students", []):
                 placements.append(job)
+    else:
+        logger.warning("Redis unavailable while listing placements for %s", student_email)
+    logger.info("Returning %d placement(s) for %s", len(placements), student_email)
     return {"placements": placements}
 
 
@@ -192,7 +214,9 @@ def create_student(payload: dict, user: dict = Depends(get_current_user)) -> dic
     """
 
     email = payload.get("email")
+    logger.info("Creating student profile for %s", email)
     if not email:
+        logger.warning("Email missing in create_student payload")
         raise HTTPException(status_code=400, detail="Email required")
 
     inst = user.get("school_code") or payload.get("institutional_code") or "0000"
@@ -218,5 +242,6 @@ def create_student(payload: dict, user: dict = Depends(get_current_user)) -> dic
         payload["embedding"] = []
 
     main.persist_student_record(email, payload, inst, student_id)
+    logger.info("Student profile created for %s", email)
     return {"message": "Student created"}
 

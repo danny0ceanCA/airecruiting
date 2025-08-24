@@ -28,7 +28,12 @@ except Exception:  # pragma: no cover - redis not installed
 
 from backend.app.school_codes import SCHOOL_CODE_MAP
 from backend.app.services.job import resolve_student_key as _resolve_student_key
-from backend.app.logging_utils import RequestIdFilter, RequestLoggingMiddleware
+from backend.app.services.summary import send_weekly_summary
+from backend.app.logging_utils import (
+    RequestIdFilter,
+    RequestLoggingMiddleware,
+    get_logger,
+)
 
 
 load_dotenv()
@@ -36,6 +41,8 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(levelname)s [%(request_id)s] %(message)s")
 for handler in logging.getLogger().handlers:
     handler.addFilter(RequestIdFilter())
+
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Global settings used by the auth routes and tests
@@ -218,6 +225,7 @@ app.include_router(licenses.router)
 
 @app.get("/school-codes")
 def list_school_codes() -> dict:
+    logger.info("Listing school codes")
     codes = []
     if redis_client is not None:
         # Ensure defaults are loaded if the store is empty
@@ -227,52 +235,65 @@ def list_school_codes() -> dict:
             code = key.split(":", 1)[1]
             label = redis_client.get(key)
             codes.append({"code": code, "label": label})
+    else:
+        logger.warning("Redis unavailable while listing school codes")
+    logger.info("Returning %d school code(s)", len(codes))
     return {"codes": codes}
 
 
 @app.get("/rss-feeds")
 def list_rss_feeds() -> dict:
+    logger.info("Listing RSS feeds")
     feeds = []
     if redis_client is not None:
         for key in redis_client.scan_iter("rss:*"):
             name = key.split(":", 1)[1]
             url = redis_client.get(key)
             feeds.append({"name": name, "url": url})
+    else:
+        logger.warning("Redis unavailable while listing RSS feeds")
+    logger.info("Returning %d RSS feed(s)", len(feeds))
     return {"feeds": feeds}
 
 
 @app.get("/nursing-news")
 async def nursing_news() -> dict:
+    logger.info("Fetching nursing news")
     if redis_client is not None:
         cached = redis_client.get("nursing_news")
         if cached:
+            logger.info("Returning nursing news from cache")
             return json.loads(cached)
 
     feeds_out = []
     async with httpx.AsyncClient(timeout=10, headers={"User-Agent": "Mozilla/5.0"}) as client:
         for name, url in NURSING_FEEDS:
-            resp = await client.get(url)
-            root = ET.fromstring(resp.text)
-            articles = []
-            for item in root.findall(".//item"):
-                title = item.findtext("title")
-                link = item.findtext("link")
-                desc = item.findtext("description")
-                enclosure = item.find("enclosure")
-                image = enclosure.get("url") if enclosure is not None else None
-                articles.append(
-                    {
-                        "title": title,
-                        "link": link,
-                        "description": desc,
-                        "summary": desc,
-                        "image": image,
-                    }
-                )
-            feeds_out.append({"name": name, "url": url, "articles": articles})
+            try:
+                resp = await client.get(url)
+                root = ET.fromstring(resp.text)
+                articles = []
+                for item in root.findall(".//item"):
+                    title = item.findtext("title")
+                    link = item.findtext("link")
+                    desc = item.findtext("description")
+                    enclosure = item.find("enclosure")
+                    image = enclosure.get("url") if enclosure is not None else None
+                    articles.append(
+                        {
+                            "title": title,
+                            "link": link,
+                            "description": desc,
+                            "summary": desc,
+                            "image": image,
+                        }
+                    )
+                feeds_out.append({"name": name, "url": url, "articles": articles})
+            except Exception as exc:  # pragma: no cover - network errors
+                logger.warning("Failed to fetch %s: %s", url, exc)
 
     data = {"feeds": feeds_out}
     if redis_client is not None:
         redis_client.set("nursing_news", json.dumps(data))
+        logger.info("Nursing news cache updated")
     return data
 
