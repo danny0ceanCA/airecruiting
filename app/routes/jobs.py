@@ -57,6 +57,26 @@ def create_job(job: dict, user: dict = Depends(get_current_user)) -> dict:
     return {"message": "Job stored", "job_code": code}
 
 
+@router.put("/{job_code}")
+def update_job(job_code: str, data: dict, _: dict = Depends(get_current_user)) -> dict:
+    """Update an existing job record."""
+    logger.info("Updating job %s", job_code)
+    raw = main.redis_client.get(f"job:{job_code}")
+    if not raw:
+        logger.warning("Job %s not found for update", job_code)
+        raise HTTPException(status_code=404, detail="Job not found")
+    try:
+        job = json.loads(raw)
+    except json.JSONDecodeError:
+        snippet = raw[:40] if isinstance(raw, (bytes, str)) else str(raw)[:40]
+        logger.error("Malformed JSON for job %s: %s", job_code, snippet)
+        raise HTTPException(status_code=500, detail="Malformed job record")
+    job.update(data)
+    main.redis_client.set(f"job:{job_code}", json.dumps(job))
+    logger.info("Job %s updated", job_code)
+    return {"message": "Job updated"}
+
+
 @router.post("/generate-job-description")
 def generate_job_description(req: ResumeRequest, _: dict = Depends(get_current_user)):
     logger.info(
