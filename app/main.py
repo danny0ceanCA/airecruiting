@@ -204,7 +204,7 @@ app.add_middleware(
 )
 
 
-from app.routes import auth, admin, students, jobs, matching, notes
+from app.routes import auth, admin, students, jobs, matching, notes, licenses
 
 
 app.include_router(auth.router)
@@ -213,6 +213,7 @@ app.include_router(students.router)
 app.include_router(jobs.router)
 app.include_router(matching.router)
 app.include_router(notes.router)
+app.include_router(licenses.router)
 
 
 @app.get("/school-codes")
