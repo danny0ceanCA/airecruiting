@@ -122,11 +122,14 @@ def init_default_admin() -> None:
     if redis_client is None:
         return
 
-    key = "user:admin@example.com"
+    email = os.getenv("ADMIN_EMAIL", "admin@example.com")
+    password = os.getenv("ADMIN_PASSWORD", "admin123")
+
+    key = f"user:{email}"
     if not redis_client.exists(key):
-        hashed = bcrypt.hashpw("admin123".encode(), bcrypt.gensalt()).decode()
+        hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
         admin = {
-            "email": "admin@example.com",
+            "email": email,
             "first_name": "Admin",
             "last_name": "User",
             "password": hashed,

@@ -93,6 +93,10 @@ left blank, the links in emails will lead to missing pages.
 comma-separated list (e.g., `https://example.com,http://localhost:3000`). It
 defaults to `*` to allow requests from any origin.
 
+`ADMIN_EMAIL` and `ADMIN_PASSWORD` set the credentials for the default
+administrator account created in Redis on startup. When these variables are not
+defined, the application falls back to `admin@example.com` and `admin123`.
+
 ## Registration Codes
 
 Career services staff and recruiters must supply an institutional code when registering.
