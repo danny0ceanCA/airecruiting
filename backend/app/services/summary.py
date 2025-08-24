@@ -8,16 +8,30 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Tuple
 
+from dotenv import load_dotenv
 from openai import OpenAI
 
 from backend.app.logging_utils import get_logger
+
+# Load .env file so OPENAI_API_KEY is in os.environ
+load_dotenv()
 
 ACTIVITY_LOG_KEY = "activity_logs"
 redis_client = None
 send_email = None
 
-# Reuse a single OpenAI client; reads OPENAI_API_KEY from env
-openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# OpenAI client (lazy init)
+_openai_client: OpenAI | None = None
+def get_openai_client() -> OpenAI:
+    """Return a singleton OpenAI client, loading from env when first used."""
+    global _openai_client
+    if _openai_client is None:
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise RuntimeError("OPENAI_API_KEY not set in environment")
+        _openai_client = OpenAI(api_key=api_key)
+    return _openai_client
+
 logger = get_logger(__name__)
 
 
@@ -64,10 +78,7 @@ def _day_end(d: datetime) -> datetime:
 
 def _week_window(now: datetime) -> Tuple[datetime, datetime]:
     """
-    Return Monday–Friday window ending on the most recent Friday, normalized to full days (UTC):
-      start: Monday 00:00:00
-      end:   Friday 23:59:59.999999
-    Example: run on Mon 2025-08-11 -> Mon 2025-08-04 00:00 to Fri 2025-08-08 23:59:59.999999.
+    Return Monday–Friday window ending on the most recent Friday, normalized to full days (UTC).
     """
     if now.tzinfo is None:
         now = now.replace(tzinfo=timezone.utc)
@@ -85,19 +96,12 @@ def _in_window(ts_str: str | None, start: datetime, end: datetime) -> bool:
 
 def compile_weekly_stats(user_email: str, now: datetime) -> Dict[str, Any]:
     """
-    Aggregate stats for a career user over the last Mon–Fri window:
-      - created_count: # students created in-window
-      - engaged_count: # students with >=1 assignment (within created-in-window cohort)
-      - assignment_count: total assignments across those students
-      - placement_count: total placements across those students
-      - notes_count: # students with a note in-window
-      - students: per-student breakdown (assigned, placed, notes list, latest_note)
+    Aggregate stats for a career user over the last Mon–Fri window.
     """
     _ensure_dependencies()
     window_start, window_end = _week_window(now)
     user_lc = (user_email or "").strip().lower()
 
-    # ---- Discover students created in-window by this user (union of logs + student:* scan) ----
     created_emails: set[str] = set()
 
     # From activity logs (POST/PUT /students*)
@@ -111,15 +115,12 @@ def compile_weekly_stats(user_email: str, now: datetime) -> Dict[str, Any]:
 
         if (entry.get("user") or "").strip().lower() != user_lc:
             continue
-
         method = (entry.get("method") or "").upper()
         if method not in {"POST", "PUT"}:
             continue
-
         path = str(entry.get("path", ""))
         if not path.startswith("/students"):
             continue
-
         if not _in_window(entry.get("timestamp"), window_start, window_end):
             continue
 
@@ -132,7 +133,7 @@ def compile_weekly_stats(user_email: str, now: datetime) -> Dict[str, Any]:
         if email:
             created_emails.add(email)
 
-    # Also scan student:* objects (schema: created_by, created_at, email)
+    # Also scan student:* objects
     for key in redis_client.scan_iter("student:*"):
         raw = _decode(redis_client.get(key))
         if not raw:
@@ -144,13 +145,11 @@ def compile_weekly_stats(user_email: str, now: datetime) -> Dict[str, Any]:
 
         if (student.get("created_by") or "").strip().lower() != user_lc:
             continue
-
         if _in_window(student.get("created_at"), window_start, window_end):
             email = student.get("email") or key.split("student:", 1)[1]
             if email:
                 created_emails.add(email)
 
-    # ---- Build per-student stats for those created in-window ----
     stats_students: List[Dict[str, Any]] = []
     engaged_count = 0
     assignment_count = 0
@@ -178,14 +177,12 @@ def compile_weekly_stats(user_email: str, now: datetime) -> Dict[str, Any]:
             if email in job.get("placed_students", []):
                 placed += 1
 
-            # Optional per-job notes: { student_email: [ {text, timestamp}, ... ] }
             notes_map = job.get("student_notes", {})
             if isinstance(notes_map, str):
                 try:
                     notes_map = json.loads(notes_map)
                 except Exception:
                     notes_map = {}
-
             raw_notes = notes_map.get(email) or []
             if isinstance(raw_notes, str):
                 raw_notes = [{"text": raw_notes, "timestamp": None}]
@@ -210,10 +207,7 @@ def compile_weekly_stats(user_email: str, now: datetime) -> Dict[str, Any]:
                         "text": candidate.get("text", ""),
                         "timestamp": candidate.get("timestamp"),
                     }
-                if any(
-                    _in_window(n.get("timestamp"), window_start, window_end)
-                    for n in raw_notes
-                ):
+                if any(_in_window(n.get("timestamp"), window_start, window_end) for n in raw_notes):
                     note_in_window = True
 
         if assigned > 0:
@@ -223,20 +217,15 @@ def compile_weekly_stats(user_email: str, now: datetime) -> Dict[str, Any]:
         if note_in_window:
             notes_count += 1
 
-        all_notes.sort(
-            key=lambda n: _parse_ts(n.get("timestamp"))
-            or datetime.min.replace(tzinfo=timezone.utc)
-        )
+        all_notes.sort(key=lambda n: _parse_ts(n.get("timestamp")) or datetime.min.replace(tzinfo=timezone.utc))
 
-        stats_students.append(
-            {
-                "email": email,
-                "assigned_jobs": assigned,
-                "placed_jobs": placed,
-                "latest_note": latest_note,
-                "notes": all_notes,
-            }
-        )
+        stats_students.append({
+            "email": email,
+            "assigned_jobs": assigned,
+            "placed_jobs": placed,
+            "latest_note": latest_note,
+            "notes": all_notes,
+        })
 
     return {
         "created_count": len(created_emails),
@@ -272,12 +261,9 @@ def compile_all_weekly_stats(now: datetime) -> Dict[str, Any]:
 
 def build_summary_narrative(stats: Dict[str, Any], user_name: str) -> str:
     """Generate a narrative summary of the week's activity via OpenAI."""
-    # Use the computed Friday in the subject
     now = _parse_ts(stats.get("window_end")) or datetime.now(timezone.utc)
-    # Recompute for safety; but window_end already reflects Fri 23:59:59.999999
     week_ending_str = now.strftime("%Y-%m-%d")
 
-    # Concrete numbers for the “Key Numbers” section (no guessing)
     created_count = stats.get("created_count", 0)
     engaged_count = stats.get("engaged_count", 0)
     assignment_count = stats.get("assignment_count", 0)
@@ -320,13 +306,10 @@ Stats JSON:
     logger.info("Generating weekly summary with model %s", model)
     try:
         no_temp_models = {"gpt-5-mini", "gpt-5-preview"}
-        params = {
-            "model": model,
-            "messages": [{"role": "user", "content": prompt}],
-        }
+        params = {"model": model, "messages": [{"role": "user", "content": prompt}]}
         if model not in no_temp_models:
             params["temperature"] = 0.4
-        resp = openai_client.chat.completions.create(**params)
+        resp = get_openai_client().chat.completions.create(**params)
         usage = getattr(resp, "usage", None)
         if usage:
             logger.info(
@@ -339,24 +322,15 @@ Stats JSON:
         return (resp.choices[0].message.content or "").strip()
     except Exception as exc:
         api_key_present = bool(os.getenv("OPENAI_API_KEY"))
-        status = getattr(getattr(exc, "response", None), "status_code", None) or getattr(
-            exc, "status", None
-        )
+        status = getattr(getattr(exc, "response", None), "status_code", None) or getattr(exc, "status", None)
         if status:
             logger.warning("OpenAI summary HTTP error status=%s", status)
-        logger.exception(
-            "OpenAI summary generation failed (model=%s, api_key=%s)",
-            model,
-            "present" if api_key_present else "missing",
-        )
+        logger.exception("OpenAI summary generation failed (model=%s, api_key=%s)", model, "present" if api_key_present else "missing")
         return "Here is your activity summary:\n" + json.dumps(stats, indent=2)
 
 
 def send_weekly_summary(user_email: str) -> bool:
-    """Compile stats and email a weekly summary to the given user (career or admin).
-
-    Returns True if an email was sent, otherwise False.
-    """
+    """Compile stats and email a weekly summary to the given user (career or admin)."""
     _ensure_dependencies()
     user_email = (user_email or "").strip().lower()
     raw = _decode(redis_client.get(f"user:{user_email}"))
@@ -375,11 +349,7 @@ def send_weekly_summary(user_email: str) -> bool:
     display_name = f"{user.get('first_name', '')} {user.get('last_name', '')}".strip() or user_email
     now = datetime.now(timezone.utc)
 
-    stats = (
-        compile_weekly_stats(user_email, now)
-        if role == "career"
-        else compile_all_weekly_stats(now)
-    )
+    stats = compile_weekly_stats(user_email, now) if role == "career" else compile_all_weekly_stats(now)
 
     body = build_summary_narrative(stats, display_name)
     send_email(user_email, "Your Weekly Activity Summary", body)
