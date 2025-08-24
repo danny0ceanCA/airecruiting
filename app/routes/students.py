@@ -17,10 +17,73 @@ from fastapi import APIRouter, Depends, HTTPException
 
 import app.main as main
 from app.routes.auth import get_current_user, require_admin
+from app.routes.notes import _normalize_notes
+from backend.app.services.job import normalize_email
 
 
 # Router configured with prefix and tag information as required by the tests.
 router = APIRouter(prefix="/students", tags=["students"])
+
+
+# ---------------------------------------------------------------------------
+# Helper utilities
+# ---------------------------------------------------------------------------
+
+
+def _merge_assignments(student: dict) -> dict:
+    """Populate ``assigned_jobs`` from job records.
+
+    Older student records may lack assignment information.  To keep the frontend
+    in sync we scan all job entries and merge any assignments, placements or
+    rejections for the student's email.  Notes are normalised so the latest
+    entry is also available under ``note``.
+    """
+
+    if main.redis_client is None:
+        return student
+
+    email = normalize_email(student.get("email"))
+    assigned = {j.get("job_code"): dict(j) for j in student.get("assigned_jobs", []) if j.get("job_code")}
+
+    for key in main.redis_client.scan_iter("job:*"):
+        raw = main.redis_client.get(key)
+        if not raw:
+            continue
+        job = json.loads(raw)
+        job_code = job.get("job_code")
+        if not job_code:
+            continue
+
+        status = None
+        if email in job.get("placed_students", []):
+            status = "placed"
+        elif email in job.get("rejected_students", []):
+            status = "rejected"
+        elif email in job.get("assigned_students", []):
+            status = "assigned"
+        if status is None:
+            continue
+
+        notes = _normalize_notes(job.get("student_notes", {}).get(email, []))
+        entry = assigned.get(job_code, {"job_code": job_code})
+        entry.update(
+            {
+                "job_title": job.get("job_title"),
+                "company": job.get("company"),
+                "min_pay": job.get("min_pay"),
+                "max_pay": job.get("max_pay"),
+                "source": job.get("source"),
+                "status": status,
+                "posted_by": job.get("posted_by"),
+                "notes": notes,
+            }
+        )
+        if notes:
+            entry["note"] = notes[-1].get("text")
+        assigned[job_code] = entry
+
+    student["assigned_jobs"] = list(assigned.values())
+    return student
 
 
 # ---------------------------------------------------------------------------
@@ -43,7 +106,7 @@ def list_all_students(_: dict = Depends(require_admin)) -> dict:
         for key in main.redis_client.scan_iter("student:*:*"):
             raw = main.redis_client.get(key)
             if raw:
-                students.append(json.loads(raw))
+                students.append(_merge_assignments(json.loads(raw)))
     return {"students": students}
 
 
@@ -57,7 +120,7 @@ def list_students_by_school(
     results in a ``400`` response as exercised by the tests.
     """
 
-    inst = code or user.get("school_code")
+    inst = code or user.get("school_code") or user.get("institutional_code")
     if not inst:
         raise HTTPException(status_code=400, detail="Institutional code required")
 
@@ -66,7 +129,7 @@ def list_students_by_school(
         for key in main.redis_client.scan_iter(f"student:{inst}:*"):
             raw = main.redis_client.get(key)
             if raw:
-                students.append(json.loads(raw))
+                students.append(_merge_assignments(json.loads(raw)))
     return {"students": students}
 
 
@@ -85,7 +148,7 @@ def get_me(user: dict = Depends(get_current_user)) -> dict:
     raw = main.redis_client.get(main.student_key(inst, sid))
     if not raw:
         raise HTTPException(status_code=404, detail="Student not found")
-    return json.loads(raw)
+    return _merge_assignments(json.loads(raw))
 
 
 # ---------------------------------------------------------------------------
