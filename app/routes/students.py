@@ -14,7 +14,7 @@ import json
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 import app.main as main
 from app.routes.auth import get_current_user, require_admin
@@ -50,13 +50,16 @@ def _merge_assignments(student: dict) -> dict:
     assigned = {j.get("job_code"): dict(j) for j in student.get("assigned_jobs", []) if j.get("job_code")}
 
     for key in main.redis_client.scan_iter("job:*"):
+        logger.debug("Retrieving job key %s", key)
         raw = main.redis_client.get(key)
         if not raw:
+            logger.debug("Skipping job key %s: empty value", key)
             continue
         try:
             job = json.loads(raw)
         except json.JSONDecodeError:
-            logger.error("Malformed JSON for job %s", key)
+            snippet = raw[:40] if isinstance(raw, (bytes, str)) else str(raw)[:40]
+            logger.error("Malformed JSON for job %s: %s", key, snippet)
             continue
         job_code = job.get("job_code")
         if not job_code:
@@ -89,8 +92,16 @@ def _merge_assignments(student: dict) -> dict:
         if notes:
             entry["note"] = notes[-1].get("text")
         assigned[job_code] = entry
+        logger.debug(
+            "Merged assignment for job %s: status=%s, notes=%s, note_field=%s",
+            job_code,
+            status,
+            bool(notes),
+            "note" in entry,
+        )
 
     student["assigned_jobs"] = list(assigned.values())
+    logger.debug("Merged %d assignment(s) for %s", len(assigned), email)
     return student
 
 
@@ -100,7 +111,7 @@ def _merge_assignments(student: dict) -> dict:
 
 
 @router.get("/all")
-def list_all_students(_: dict = Depends(require_admin)) -> dict:
+def list_all_students(request: Request, user: dict = Depends(require_admin)) -> dict:
     """Return all student records stored in Redis.
 
     Access to this endpoint is restricted to admin users.  Each student record
@@ -109,18 +120,27 @@ def list_all_students(_: dict = Depends(require_admin)) -> dict:
     :func:`app.main.persist_student_record`.
     """
 
-    logger.info("Listing all students")
+    auth_present = "authorization" in request.headers
+    logger.info(
+        "Listing all students for %s (auth header: %s)",
+        user.get("email"),
+        auth_present,
+    )
     students: list[dict[str, Any]] = []
     if main.redis_client is not None:
         for key in main.redis_client.scan_iter("student:*:*"):
+            logger.debug("Retrieving student key %s", key)
             raw = main.redis_client.get(key)
             if not raw:
+                logger.debug("Skipping student key %s: empty value", key)
                 continue
             try:
                 data = json.loads(raw)
             except json.JSONDecodeError:
-                logger.error("Malformed JSON for student %s", key)
+                snippet = raw[:40] if isinstance(raw, (bytes, str)) else str(raw)[:40]
+                logger.error("Malformed JSON for student %s: %s", key, snippet)
                 continue
+            logger.debug("Loaded student %s with fields %s", key, list(data.keys()))
             students.append(_merge_assignments(data))
     else:
         logger.warning("Redis unavailable while listing students")
@@ -130,7 +150,9 @@ def list_all_students(_: dict = Depends(require_admin)) -> dict:
 
 @router.get("/by-school")
 def list_students_by_school(
-    code: str | None = None, user: dict = Depends(get_current_user)
+    request: Request,
+    code: str | None = None,
+    user: dict = Depends(get_current_user),
 ) -> dict:
     """Return students for the institution associated with ``code``.
 
@@ -139,7 +161,13 @@ def list_students_by_school(
     """
 
     inst = code or user.get("school_code") or user.get("institutional_code")
-    logger.info("Listing students for institution %s", inst)
+    auth_present = "authorization" in request.headers
+    logger.info(
+        "Listing students for institution %s requested by %s (auth header: %s)",
+        inst,
+        user.get("email"),
+        auth_present,
+    )
     if not inst:
         logger.warning("Institutional code missing for user %s", user.get("email"))
         raise HTTPException(status_code=400, detail="Institutional code required")
@@ -147,14 +175,18 @@ def list_students_by_school(
     students: list[dict[str, Any]] = []
     if main.redis_client is not None:
         for key in main.redis_client.scan_iter(f"student:{inst}:*"):
+            logger.debug("Retrieving student key %s", key)
             raw = main.redis_client.get(key)
             if not raw:
+                logger.debug("Skipping student key %s: empty value", key)
                 continue
             try:
                 data = json.loads(raw)
             except json.JSONDecodeError:
-                logger.error("Malformed JSON for student %s", key)
+                snippet = raw[:40] if isinstance(raw, (bytes, str)) else str(raw)[:40]
+                logger.error("Malformed JSON for student %s: %s", key, snippet)
                 continue
+            logger.debug("Loaded student %s with fields %s", key, list(data.keys()))
             students.append(_merge_assignments(data))
     else:
         logger.warning("Redis unavailable while listing students for %s", inst)
@@ -171,13 +203,17 @@ def get_me(user: dict = Depends(get_current_user)) -> dict:
         logger.warning("Redis unavailable while fetching profile for %s", email)
         raise HTTPException(status_code=404, detail="Student not found")
 
-    loc = main.redis_client.get(main.student_email_key(email))
+    email_key = main.student_email_key(email)
+    logger.debug("Retrieving student email index %s", email_key)
+    loc = main.redis_client.get(email_key)
     if not loc:
         logger.warning("Student %s not found", email)
         raise HTTPException(status_code=404, detail="Student not found")
 
     inst, sid = loc.split(":", 1)
-    raw = main.redis_client.get(main.student_key(inst, sid))
+    student_key = main.student_key(inst, sid)
+    logger.debug("Retrieving student key %s", student_key)
+    raw = main.redis_client.get(student_key)
     if not raw:
         logger.warning("Student record %s not found", email)
         raise HTTPException(status_code=404, detail="Student not found")
@@ -204,13 +240,16 @@ def get_placements(student_email: str, _: dict = Depends(get_current_user)) -> d
     placements: list[dict[str, Any]] = []
     if main.redis_client is not None:
         for key in main.redis_client.scan_iter("job:*"):
+            logger.debug("Retrieving job key %s", key)
             raw = main.redis_client.get(key)
             if not raw:
+                logger.debug("Skipping job key %s: empty value", key)
                 continue
             try:
                 job = json.loads(raw)
             except json.JSONDecodeError:
-                logger.error("Malformed JSON for job %s", key)
+                snippet = raw[:40] if isinstance(raw, (bytes, str)) else str(raw)[:40]
+                logger.error("Malformed JSON for job %s: %s", key, snippet)
                 continue
             if student_email in job.get("placed_students", []):
                 placements.append(job)
@@ -242,8 +281,10 @@ def create_student(payload: dict, user: dict = Depends(get_current_user)) -> dic
 
     inst = user.get("school_code") or user.get("institutional_code")
     if not inst:
-        logger.warning("Institutional code missing for user %s", user.get("email"))
-        raise HTTPException(status_code=400, detail="Institutional code required")
+        logger.warning(
+            "Institutional code missing for user %s; using placeholder", user.get("email")
+        )
+        inst = "unknown"
 
     if "student_id" in payload and payload["student_id"]:
         student_id = payload["student_id"]
