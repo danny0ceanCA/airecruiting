@@ -11,6 +11,7 @@ application without additional arguments.
 from __future__ import annotations
 
 import json
+import uuid
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -52,7 +53,11 @@ def _merge_assignments(student: dict) -> dict:
         raw = main.redis_client.get(key)
         if not raw:
             continue
-        job = json.loads(raw)
+        try:
+            job = json.loads(raw)
+        except json.JSONDecodeError:
+            logger.error("Malformed JSON for job %s", key)
+            continue
         job_code = job.get("job_code")
         if not job_code:
             continue
@@ -109,8 +114,14 @@ def list_all_students(_: dict = Depends(require_admin)) -> dict:
     if main.redis_client is not None:
         for key in main.redis_client.scan_iter("student:*:*"):
             raw = main.redis_client.get(key)
-            if raw:
-                students.append(_merge_assignments(json.loads(raw)))
+            if not raw:
+                continue
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError:
+                logger.error("Malformed JSON for student %s", key)
+                continue
+            students.append(_merge_assignments(data))
     else:
         logger.warning("Redis unavailable while listing students")
     logger.info("Returning %d student(s)", len(students))
@@ -137,8 +148,14 @@ def list_students_by_school(
     if main.redis_client is not None:
         for key in main.redis_client.scan_iter(f"student:{inst}:*"):
             raw = main.redis_client.get(key)
-            if raw:
-                students.append(_merge_assignments(json.loads(raw)))
+            if not raw:
+                continue
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError:
+                logger.error("Malformed JSON for student %s", key)
+                continue
+            students.append(_merge_assignments(data))
     else:
         logger.warning("Redis unavailable while listing students for %s", inst)
     logger.info("Returning %d student(s) for %s", len(students), inst)
@@ -190,7 +207,11 @@ def get_placements(student_email: str, _: dict = Depends(get_current_user)) -> d
             raw = main.redis_client.get(key)
             if not raw:
                 continue
-            job = json.loads(raw)
+            try:
+                job = json.loads(raw)
+            except json.JSONDecodeError:
+                logger.error("Malformed JSON for job %s", key)
+                continue
             if student_email in job.get("placed_students", []):
                 placements.append(job)
     else:
@@ -219,9 +240,17 @@ def create_student(payload: dict, user: dict = Depends(get_current_user)) -> dic
         logger.warning("Email missing in create_student payload")
         raise HTTPException(status_code=400, detail="Email required")
 
-    inst = user.get("school_code") or payload.get("institutional_code") or "0000"
+    inst = user.get("school_code") or user.get("institutional_code")
+    if not inst:
+        logger.warning("Institutional code missing for user %s", user.get("email"))
+        raise HTTPException(status_code=400, detail="Institutional code required")
 
-    student_id = payload.get("student_id") or email.split("@", 1)[0]
+    if "student_id" in payload and payload["student_id"]:
+        student_id = payload["student_id"]
+    elif main.redis_client is not None:
+        student_id = str(main.redis_client.incr("student_id"))
+    else:  # pragma: no cover - redis is always patched in tests
+        student_id = uuid.uuid4().hex
 
     # Normalise license labels to short codes (e.g. "Medical Assistant" -> "ma")
     lic = payload.get("license")
