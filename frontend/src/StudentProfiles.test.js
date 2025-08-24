@@ -32,6 +32,20 @@ test('renders StudentProfiles without errors', () => {
   }).not.toThrow();
 });
 
+test('fetches licenses on load', async () => {
+  const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYWRtaW4ifQ.signature';
+  localStorage.setItem('token', token);
+  render(
+    <BrowserRouter>
+      <StudentProfiles />
+    </BrowserRouter>
+  );
+  await waitFor(() => {
+    expect(api.get).toHaveBeenCalledWith('/licenses');
+  });
+  localStorage.clear();
+});
+
 test('displays student count in tab bar', async () => {
   const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYWRtaW4ifQ.signature';
   localStorage.setItem('token', token);

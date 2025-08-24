@@ -2163,3 +2163,15 @@ def test_malformed_user_skipped_in_listings():
     user_emails = [u["email"] for u in users.json()["users"]]
     assert "bad@example.com" not in user_emails
 
+
+def test_list_licenses():
+    main_app.redis_client.flushdb()
+    main_app.redis_client.set("license:rn", "Registered Nurse")
+    main_app.redis_client.set("license:lpn", "Licensed Practical Nurse")
+
+    resp = client.get("/licenses")
+    assert resp.status_code == 200
+    data = resp.json()["licenses"]
+    assert {"code": "rn", "label": "Registered Nurse"} in data
+    assert {"code": "lpn", "label": "Licensed Practical Nurse"} in data
+
