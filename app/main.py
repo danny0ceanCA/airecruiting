@@ -10,11 +10,13 @@ from __future__ import annotations
 
 import json
 import os
+import logging
+import uuid
 from typing import Any
-import bcrypt
 
+import bcrypt
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 import httpx
@@ -25,11 +27,19 @@ try:  # pragma: no cover - optional dependency during tests
 except Exception:  # pragma: no cover - redis not installed
     redis = None
 
+from backend.app.logging_utils import RequestIdFilter, get_logger, request_id_ctx_var
 from backend.app.school_codes import SCHOOL_CODE_MAP
 from backend.app.services.job import resolve_student_key as _resolve_student_key
 
 
 load_dotenv()
+
+# Configure root logger with request ID support for structured troubleshooting
+logging.basicConfig(level=logging.INFO, format="%(levelname)s [%(request_id)s] %(message)s")
+for handler in logging.getLogger().handlers:
+    handler.addFilter(RequestIdFilter())
+
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Global settings used by the auth routes and tests
@@ -158,6 +168,26 @@ NURSING_FEEDS = [("Example", "http://example.com/feed")]
 # ---------------------------------------------------------------------------
 
 app = FastAPI()
+
+
+@app.middleware("http")
+async def add_request_id(request: Request, call_next):
+    """Attach a unique request ID to each request for correlation."""
+
+    request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+    token = request_id_ctx_var.set(request_id)
+    logger.info("Incoming %s %s", request.method, request.url.path)
+    try:
+        response = await call_next(request)
+    except Exception:
+        logger.exception("Unhandled error for %s %s", request.method, request.url.path)
+        raise
+    finally:
+        request_id_ctx_var.reset(token)
+
+    response.headers.setdefault("X-Request-ID", request_id)
+    logger.info("Completed %s %s with status %s", request.method, request.url.path, response.status_code)
+    return response
 
 
 @app.on_event("startup")

@@ -16,9 +16,12 @@ from fastapi import APIRouter, Depends, HTTPException
 import app.main as main
 from app.routes.auth import get_current_user, require_admin
 from backend.app.services.job import normalize_email, resolve_student_key
+from backend.app.logging_utils import get_logger
 
 
 router = APIRouter(prefix="/notes", tags=["notes"])
+
+logger = get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -46,18 +49,23 @@ def _normalize_notes(notes: Any) -> list[dict[str, Any]]:
 
 
 def _get_job(job_code: str) -> dict:
+    logger.debug("Retrieving job %s for notes", job_code)
     raw = main.redis_client.get(f"job:{job_code}")
     if not raw:
+        logger.warning("Job %s not found when accessing notes", job_code)
         raise HTTPException(status_code=404, detail="Job not found")
     return json.loads(raw)
 
 
 def _get_student(email: str) -> tuple[dict | None, str | None]:
+    logger.debug("Resolving student %s for notes", email)
     skey = resolve_student_key(main.redis_client, email)
     if not skey:
+        logger.debug("No student key found for %s", email)
         return None, None
     raw = main.redis_client.get(skey)
     if not raw:
+        logger.debug("Student key %s resolved for %s but no record found", skey, email)
         return None, skey
     return json.loads(raw), skey
 
@@ -76,7 +84,7 @@ def add_student_note(data: dict, user: dict = Depends(get_current_user)) -> dict
     note_text = data.get("note")
     if not job_code or not student_email or not note_text:
         raise HTTPException(status_code=400, detail="Missing job_code, student_email or note")
-
+    logger.info("Adding note for student %s on job %s", student_email, job_code)
     job = _get_job(job_code)
     if user.get("role") != "admin":
         if job.get("posted_by") != user.get("email"):
@@ -100,6 +108,7 @@ def add_student_note(data: dict, user: dict = Depends(get_current_user)) -> dict
             entry["notes"] = entry_notes
             main.redis_client.set(skey, json.dumps(student))
 
+    logger.info("Added note for student %s on job %s", student_email, job_code)
     return {"notes": notes_dict[student_email]}
 
 
@@ -113,7 +122,9 @@ def update_student_note(data: dict, _: dict = Depends(require_admin)) -> dict:
     note_text = data.get("note")
     if job_code is None or student_email is None or index is None or note_text is None:
         raise HTTPException(status_code=400, detail="Missing fields")
-
+    logger.info(
+        "Updating note %s for student %s on job %s", index, student_email, job_code
+    )
     job = _get_job(job_code)
     notes_dict = job.setdefault("student_notes", {})
     notes = _normalize_notes(notes_dict.get(student_email, []))
@@ -134,6 +145,9 @@ def update_student_note(data: dict, _: dict = Depends(require_admin)) -> dict:
                 entry["notes"] = entry_notes
                 main.redis_client.set(skey, json.dumps(student))
 
+    logger.info(
+        "Updated note %s for student %s on job %s", index, student_email, job_code
+    )
     return {"notes": notes}
 
 
@@ -146,7 +160,9 @@ def delete_student_note(data: dict, _: dict = Depends(require_admin)) -> dict:
     index = data.get("index")
     if job_code is None or student_email is None or index is None:
         raise HTTPException(status_code=400, detail="Missing fields")
-
+    logger.info(
+        "Deleting note %s for student %s on job %s", index, student_email, job_code
+    )
     job = _get_job(job_code)
     notes_dict = job.setdefault("student_notes", {})
     notes = _normalize_notes(notes_dict.get(student_email, []))
@@ -173,5 +189,8 @@ def delete_student_note(data: dict, _: dict = Depends(require_admin)) -> dict:
                 entry.pop("notes", None)
             main.redis_client.set(skey, json.dumps(student))
 
+    logger.info(
+        "Deleted note %s for student %s on job %s", index, student_email, job_code
+    )
     return {"notes": notes_dict.get(student_email, [])}
 
