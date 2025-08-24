@@ -8,6 +8,7 @@ from jose import jwt
 import json
 import app.main as main_app
 from datetime import datetime, timedelta
+import bcrypt
 
 
 class DummyRedis:
@@ -70,6 +71,7 @@ def test_default_admin_exists():
     assert admin is not None
     assert admin["role"] == "admin"
     assert admin["approved"] is True
+    assert bcrypt.checkpw("admin123".encode(), admin["password"].encode())
 
 
 def test_applicant_registration_without_code():
@@ -122,6 +124,9 @@ def test_registration_flow():
     resp = client.post("/register", json=user_data)
     assert resp.status_code == 200
     assert "Awaiting admin approval" in resp.json()["message"]
+    stored = json.loads(main_app.redis_client.get(f"user:{user_data['email']}"))
+    assert stored["password"] != user_data["password"]
+    assert bcrypt.checkpw(user_data["password"].encode(), stored["password"].encode())
 
     # Duplicate registration
     dup_resp = client.post("/register", json=user_data)
@@ -151,6 +156,28 @@ def test_registration_flow():
     payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM])
     assert payload["sub"] == user_data["email"]
     assert payload["role"] == "career"
+
+
+def test_login_rejects_bad_password():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+    user = {
+        "email": "badpwd@example.com",
+        "first_name": "Bad",
+        "last_name": "Pwd",
+        "school_code": "1001",
+        "password": "secret",
+        "role": "applicant",
+    }
+    client.post("/register", json=user)
+    key = f"user:{user['email']}"
+    data = json.loads(main_app.redis_client.get(key))
+    data["approved"] = True
+    main_app.redis_client.set(key, json.dumps(data))
+    resp = client.post(
+        "/login", json={"email": user["email"], "password": "wrong"}
+    )
+    assert resp.status_code == 401
 
 
 def test_non_admin_cannot_approve():

@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 from typing import Any
+import bcrypt
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -123,11 +124,12 @@ def init_default_admin() -> None:
 
     key = "user:admin@example.com"
     if not redis_client.exists(key):
+        hashed = bcrypt.hashpw("admin123".encode(), bcrypt.gensalt()).decode()
         admin = {
             "email": "admin@example.com",
             "first_name": "Admin",
             "last_name": "User",
-            "password": "admin123",
+            "password": hashed,
             "role": "admin",
             "approved": True,
             "rejected": False,

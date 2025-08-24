@@ -14,6 +14,7 @@ from typing import List
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from jose import JWTError, jwt
 from pydantic import BaseModel, EmailStr
+import bcrypt
 
 from backend.app.logging_utils import get_logger
 
@@ -120,7 +121,8 @@ def register(payload: RegisterRequest):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User already exists")
 
     data = payload.model_dump()
-    data.update({"approved": False, "rejected": False, "active": True})
+    hashed = bcrypt.hashpw(payload.password.encode(), bcrypt.gensalt()).decode()
+    data.update({"password": hashed, "approved": False, "rejected": False, "active": True})
     main.redis_client.set(key, json.dumps(data))
 
     logger.info("User %s registered successfully", payload.email)
@@ -156,7 +158,8 @@ def login(payload: LoginRequest):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
 
     user = json.loads(raw)
-    if user.get("password") != payload.password:
+    stored_password = user.get("password")
+    if not stored_password or not bcrypt.checkpw(payload.password.encode(), stored_password.encode()):
 
         logger.warning("Login failed for %s: incorrect password", payload.email)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect password")
