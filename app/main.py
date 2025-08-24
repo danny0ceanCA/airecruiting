@@ -12,6 +12,7 @@ import json
 import os
 from typing import Any
 import bcrypt
+import logging
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -27,9 +28,14 @@ except Exception:  # pragma: no cover - redis not installed
 
 from backend.app.school_codes import SCHOOL_CODE_MAP
 from backend.app.services.job import resolve_student_key as _resolve_student_key
+from backend.app.logging_utils import RequestIdFilter, RequestLoggingMiddleware
 
 
 load_dotenv()
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s [%(request_id)s] %(message)s")
+for handler in logging.getLogger().handlers:
+    handler.addFilter(RequestIdFilter())
 
 # ---------------------------------------------------------------------------
 # Global settings used by the auth routes and tests
@@ -158,6 +164,8 @@ NURSING_FEEDS = [("Example", "http://example.com/feed")]
 # ---------------------------------------------------------------------------
 
 app = FastAPI()
+
+app.add_middleware(RequestLoggingMiddleware)
 
 
 @app.on_event("startup")
