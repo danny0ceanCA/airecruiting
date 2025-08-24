@@ -11,8 +11,11 @@ from app.routes.auth import get_current_user
 from backend.app.schemas.resume import ResumeRequest
 from backend.app.services.job import generate_job_description_html, normalize_email, resolve_student_key
 from backend.app.services.resume import generate_resume_text
+from backend.app.logging_utils import get_logger
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
+
+logger = get_logger(__name__)
 
 
 def find_user_key(email: str) -> str | None:
@@ -28,7 +31,8 @@ def find_user_key(email: str) -> str | None:
 
 
 @router.post("")
-def create_job(job: dict, _: dict = Depends(get_current_user)) -> dict:
+def create_job(job: dict, user: dict = Depends(get_current_user)) -> dict:
+    logger.info("Creating job")
     data = dict(job)
     code = data.get("job_code") or str(uuid.uuid4())[:8]
     data["job_code"] = code
@@ -41,14 +45,33 @@ def create_job(job: dict, _: dict = Depends(get_current_user)) -> dict:
             data["required_license"] = "".join(w[0] for w in rl_clean.split()).lower()
         else:
             data["required_license"] = rl_clean.lower()
+    if "source" not in data:
+        sc = user.get("school_code")
+        if sc:
+            from backend.app.school_codes import SCHOOL_CODE_MAP
+
+            label = SCHOOL_CODE_MAP.get(sc, sc)
+            data["source"] = label.split("-", 1)[1] if "-" in label else label
     main.redis_client.set(f"job:{code}", json.dumps(data))
+    logger.info("Job %s created", code)
     return {"message": "Job stored", "job_code": code}
 
 
 @router.post("/generate-job-description")
 def generate_job_description(req: ResumeRequest, _: dict = Depends(get_current_user)):
+    logger.info(
+        "Generating job description for job %s and student %s",
+        req.job_code,
+        req.student_email,
+    )
     html, existed = generate_job_description_html(
         main.client, main.redis_client, req.job_code, req.student_email
+    )
+    logger.info(
+        "Job description generation %s for %s/%s",
+        "skipped" if existed else "completed",
+        req.job_code,
+        req.student_email,
     )
     return {"status": "exists" if existed else "success"}
 
@@ -56,35 +79,63 @@ def generate_job_description(req: ResumeRequest, _: dict = Depends(get_current_u
 @router.get("/job-description/{job_code}/{student_email}")
 def get_job_description(job_code: str, student_email: str, _: dict = Depends(get_current_user)):
     student_email = normalize_email(student_email)
+    logger.info(
+        "Retrieving job description for job %s and student %s",
+        job_code,
+        student_email,
+    )
     key = f"job_description:{job_code}:{student_email}"
     description = main.redis_client.get(key)
     if not description:
+        logger.warning("Job description missing for %s/%s", job_code, student_email)
         raise HTTPException(status_code=404, detail="Not found")
+    logger.info("Job description found for %s/%s", job_code, student_email)
     return {"status": "success", "description": description}
 
 
 @router.get("/job-description-html/{job_code}/{student_email}")
 def get_job_description_html(job_code: str, student_email: str, _: dict = Depends(get_current_user)):
     student_email = normalize_email(student_email)
+    logger.info(
+        "Retrieving job description HTML for job %s and student %s",
+        job_code,
+        student_email,
+    )
     key = f"jobdesc:{job_code}:{student_email}"
     html = main.redis_client.get(key)
     if not html:
+        logger.warning("Job description HTML missing for %s/%s", job_code, student_email)
         raise HTTPException(status_code=404, detail="Job description not found")
+    logger.info("Job description HTML served for %s/%s", job_code, student_email)
     return HTMLResponse(content=html, status_code=200)
 
 
 @router.get("/public/job-description-html/{job_code}/{student_email}")
 def get_public_job_description_html(job_code: str, student_email: str):
     student_email = normalize_email(student_email)
+    logger.info(
+        "Retrieving public job description HTML for job %s and student %s",
+        job_code,
+        student_email,
+    )
     key = f"jobdesc:{job_code}:{student_email}"
     html = main.redis_client.get(key)
     if not html:
+        logger.warning(
+            "Public job description HTML missing for %s/%s", job_code, student_email
+        )
         raise HTTPException(status_code=404, detail="Job description not found")
+    logger.info("Public job description HTML served for %s/%s", job_code, student_email)
     return HTMLResponse(content=html, status_code=200)
 
 
 @router.post("/generate-resume")
 def generate_resume(req: ResumeRequest, _: dict = Depends(get_current_user)):
+    logger.info(
+        "Generating resume for job %s and student %s",
+        req.job_code,
+        req.student_email,
+    )
     preview = getattr(req, "preview", False)
     resume_key = f"resume:{req.job_code}:{req.student_email}"
     html_key = f"resumehtml:{req.job_code}:{req.student_email}"
@@ -92,6 +143,9 @@ def generate_resume(req: ResumeRequest, _: dict = Depends(get_current_user)):
         existing = main.redis_client.get(resume_key)
         if existing:
             main.redis_client.set(html_key, existing)
+            logger.info(
+                "Resume already exists for %s/%s", req.job_code, req.student_email
+            )
             return {"status": "exists"}
 
     job_raw = main.redis_client.get(f"job:{req.job_code}")
@@ -101,12 +155,14 @@ def generate_resume(req: ResumeRequest, _: dict = Depends(get_current_user)):
         skey = resolve_student_key(main.redis_client, req.student_email)
         student_raw = main.redis_client.get(skey) if skey else None
     if not job_raw or not student_raw:
+        logger.warning("Job or student not found for resume %s/%s", req.job_code, req.student_email)
         raise HTTPException(status_code=404, detail="Job or student not found")
 
     job = json.loads(job_raw)
     student = json.loads(student_raw)
 
     if not preview and req.student_email not in job.get("assigned_students", []) and req.student_email not in job.get("placed_students", []):
+        logger.warning("Student %s not assigned to job %s", req.student_email, req.job_code)
         raise HTTPException(status_code=403, detail="Student not assigned to job")
 
     raw_html = generate_resume_text(main.client, student, job, include_contact=not preview).strip()
@@ -137,26 +193,33 @@ def generate_resume(req: ResumeRequest, _: dict = Depends(get_current_user)):
     if not preview:
         main.redis_client.set(resume_key, full_html)
         main.redis_client.set(html_key, full_html)
+        logger.info("Resume generated for %s/%s", req.job_code, req.student_email)
         return {"status": "success"}
     else:
+        logger.info("Preview resume generated for %s/%s", req.job_code, req.student_email)
         return {"status": "preview", "html": full_html}
 
 
 @router.get("/resume/{job_code}/{student_email}")
 def get_resume(job_code: str, student_email: str, _: dict = Depends(get_current_user)):
     student_email = normalize_email(student_email)
+    logger.info("Retrieving resume for %s/%s", job_code, student_email)
     key = f"resume:{job_code}:{student_email}"
 
     job_raw = main.redis_client.get(f"job:{job_code}")
     if not job_raw:
+        logger.warning("Job %s not found for resume", job_code)
         raise HTTPException(status_code=404, detail="Job not found")
     job = json.loads(job_raw)
     if student_email not in job.get("assigned_students", []) and student_email not in job.get("placed_students", []):
+        logger.warning("Student %s not assigned to job %s", student_email, job_code)
         raise HTTPException(status_code=403, detail="Student not assigned to job")
 
     resume = main.redis_client.get(key)
     if not resume:
+        logger.warning("Resume not found for %s/%s", job_code, student_email)
         raise HTTPException(status_code=404, detail="Resume not found")
+    logger.info("Resume served for %s/%s", job_code, student_email)
     return {
         "status": "success",
         "job_code": job_code,
@@ -168,20 +231,25 @@ def get_resume(job_code: str, student_email: str, _: dict = Depends(get_current_
 @router.get("/resume-html/{job_code}/{student_email}")
 def get_resume_html(job_code: str, student_email: str, _: dict = Depends(get_current_user)):
     student_email = normalize_email(student_email)
+    logger.info("Retrieving resume HTML for %s/%s", job_code, student_email)
     key = f"resumehtml:{job_code}:{student_email}"
 
     job_raw = main.redis_client.get(f"job:{job_code}")
     if not job_raw:
+        logger.warning("Job %s not found for resume HTML", job_code)
         raise HTTPException(status_code=404, detail="Job not found")
     job = json.loads(job_raw)
     if student_email not in job.get("assigned_students", []) and student_email not in job.get("placed_students", []):
+        logger.warning("Student %s not assigned to job %s", student_email, job_code)
         raise HTTPException(status_code=403, detail="Student not assigned to job")
 
     html = main.redis_client.get(key)
     if not html:
         html = main.redis_client.get(f"resume:{job_code}:{student_email}")
     if not html:
+        logger.warning("Resume HTML not found for %s/%s", job_code, student_email)
         raise HTTPException(status_code=404, detail="Resume not found")
+    logger.info("Resume HTML served for %s/%s", job_code, student_email)
     return HTMLResponse(content=html, status_code=200)
 
 

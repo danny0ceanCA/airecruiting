@@ -13,9 +13,12 @@ from backend.app.services.job import (
     normalize_email,
     resolve_student_key,
 )
+from backend.app.logging_utils import get_logger
 
 
 router = APIRouter(prefix="", tags=["matching"])
+
+logger = get_logger(__name__)
 
 
 def _get_job(job_code: str) -> dict:
@@ -57,9 +60,10 @@ def _similarity(a: list[float], b: list[float]) -> float:
 @router.post("/match")
 def run_match(data: dict) -> dict:
     """Compute student matches for ``job_code`` and store the results."""
-
     job_code = data.get("job_code")
+    logger.info("Running match for job %s", job_code)
     if not job_code:
+        logger.warning("run_match called without job_code")
         raise HTTPException(status_code=400, detail="job_code required")
 
     job = _get_job(job_code)
@@ -151,13 +155,14 @@ def run_match(data: dict) -> dict:
     matches = matches[:10]
 
     main.redis_client.set(f"match_results:{job_code}", json.dumps(matches))
+    logger.info("Stored %d match(es) for job %s", len(matches), job_code)
     return {"matches": matches}
 
 
 @router.post("/rematches/{job_code}")
 def queue_rematch(job_code: str) -> dict:
     """Remove existing match results and record a rematch request."""
-
+    logger.info("Queuing rematch for job %s", job_code)
     _get_job(job_code)
 
     key = f"match_results:{job_code}"
@@ -170,13 +175,14 @@ def queue_rematch(job_code: str) -> dict:
             main.redis_client.set(key, None)
 
     main.redis_client.incr("metrics:total_rematches")
+    logger.info("Rematch queued for job %s", job_code)
     return {"message": "Rematch queued"}
 
 
 @router.get("/match/{job_code}")
 def get_match_results(job_code: str) -> dict:
     """Return stored match results with job status/notes merged in."""
-
+    logger.info("Fetching match results for job %s", job_code)
     job = _get_job(job_code)
     raw = main.redis_client.get(f"match_results:{job_code}")
     matches = json.loads(raw) if raw else []
@@ -248,6 +254,7 @@ def get_match_results(job_code: str) -> dict:
         seen.add(email)
         final.append(m)
 
+    logger.info("Returning %d match(es) for job %s", len(final), job_code)
     return {"matches": final}
 
 
@@ -256,7 +263,9 @@ def assign_student(data: dict, user: dict = Depends(get_current_user)) -> dict:
     job_code = data.get("job_code")
     student_email = normalize_email(data.get("student_email"))
     note = data.get("note")
+    logger.info("Assigning student %s to job %s", student_email, job_code)
     if not job_code or not student_email:
+        logger.warning("assign_student missing job_code or student_email")
         raise HTTPException(status_code=400, detail="Missing job_code or student_email")
 
     job = _get_job(job_code)
@@ -286,6 +295,7 @@ def assign_student(data: dict, user: dict = Depends(get_current_user)) -> dict:
         entry.setdefault("notes", []).append({"text": note, "posted_by": user.get("email")})
     main.redis_client.set(skey, json.dumps(student))
 
+    logger.info("Student %s assigned to job %s", student_email, job_code)
     return {"message": "Student assigned"}
 
 
@@ -293,7 +303,9 @@ def assign_student(data: dict, user: dict = Depends(get_current_user)) -> dict:
 def place_student(data: dict, _: dict = Depends(require_admin)) -> dict:
     job_code = data.get("job_code")
     student_email = normalize_email(data.get("student_email"))
+    logger.info("Placing student %s for job %s", student_email, job_code)
     if not job_code or not student_email:
+        logger.warning("place_student missing job_code or student_email")
         raise HTTPException(status_code=400, detail="Missing job_code or student_email")
 
     job = _get_job(job_code)
@@ -319,6 +331,7 @@ def place_student(data: dict, _: dict = Depends(require_admin)) -> dict:
             }
         )
     main.redis_client.set(skey, json.dumps(student))
+    logger.info("Student %s placed for job %s", student_email, job_code)
     return {"message": "Student placed"}
 
 
@@ -327,7 +340,9 @@ def reject_assigned(data: dict, user: dict = Depends(get_current_user)) -> dict:
     job_code = data.get("job_code")
     student_email = normalize_email(data.get("student_email"))
     note = data.get("note")
+    logger.info("Rejecting assignment for %s/%s", student_email, job_code)
     if not job_code or not student_email:
+        logger.warning("reject_assigned missing job_code or student_email")
         raise HTTPException(status_code=400, detail="Missing job_code or student_email")
 
     job = _get_job(job_code)
@@ -359,6 +374,7 @@ def reject_assigned(data: dict, user: dict = Depends(get_current_user)) -> dict:
         entry.setdefault("notes", []).append({"text": note, "posted_by": user.get("email")})
     main.redis_client.set(skey, json.dumps(student))
 
+    logger.info("Assignment for %s/%s marked rejected", student_email, job_code)
     return {"message": "Assignment rejected"}
 
 
@@ -366,7 +382,9 @@ def reject_assigned(data: dict, user: dict = Depends(get_current_user)) -> dict:
 def mark_not_interested(data: dict, _: dict = Depends(get_current_user)) -> dict:
     job_code = data.get("job_code")
     student_email = normalize_email(data.get("student_email"))
+    logger.info("Marking not interested for %s/%s", student_email, job_code)
     if not job_code or not student_email:
+        logger.warning("not_interested missing job_code or student_email")
         raise HTTPException(status_code=400, detail="Missing job_code or student_email")
 
     job = _get_job(job_code)
@@ -374,6 +392,7 @@ def mark_not_interested(data: dict, _: dict = Depends(get_current_user)) -> dict
     if student_email not in job["uninterested_students"]:
         job["uninterested_students"].append(student_email)
     main.redis_client.set(f"job:{job_code}", json.dumps(job))
+    logger.info("Student %s marked not interested for job %s", student_email, job_code)
     return {"message": "Student marked not interested"}
 
 
@@ -381,12 +400,15 @@ def mark_not_interested(data: dict, _: dict = Depends(get_current_user)) -> dict
 def notify_interest(data: dict, _: dict = Depends(get_current_user)) -> dict:
     job_code = data.get("job_code")
     student_email = data.get("student_email")
+    logger.info("Notifying interest for %s/%s", student_email, job_code)
     if not job_code or not student_email:
+        logger.warning("notify_interest missing job_code or student_email")
         raise HTTPException(status_code=400, detail="Missing job_code or student_email")
 
     job = _get_job(job_code)
     student_email = normalize_email(student_email)
     if student_email not in job.get("assigned_students", []) and student_email not in job.get("placed_students", []):
+        logger.warning("Student %s not assigned to job %s", student_email, job_code)
         raise HTTPException(status_code=400, detail="Student not assigned to job")
 
     generate_job_description_html(main.client, main.redis_client, job_code, student_email)
@@ -418,5 +440,6 @@ def notify_interest(data: dict, _: dict = Depends(get_current_user)) -> dict:
         body,
     )
 
+    logger.info("Interest notification sent to %s for job %s", student_email, job_code)
     return {"message": "Notification sent"}
 
