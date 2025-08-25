@@ -60,6 +60,107 @@ def login_admin():
     return resp.json()["token"]
 
 
+def test_list_jobs():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+    token = login_admin()
+    job = {
+        "job_title": "Test",
+        "job_description": "desc",
+        "desired_skills": [],
+        "city": "City",
+        "state": "ST",
+        "lat": 0.0,
+        "lng": 0.0,
+        "required_license": "lvn",
+    }
+    resp = client.post("/jobs", json=job, headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200
+    code = resp.json()["job_code"]
+    resp = client.get("/jobs", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200
+    jobs = resp.json().get("jobs", [])
+    assert any(j["job_code"] == code and j.get("posted_by") == "admin@example.com" for j in jobs)
+
+
+def test_list_jobs_includes_existing_records():
+    """Jobs created before new defaults should still be returned."""
+    main_app.redis_client.flushdb()
+    init_default_admin()
+    # legacy job without defaults or job_code field
+    legacy = {"job_title": "Legacy", "job_description": "desc"}
+    main_app.redis_client.set("job:OLDCODE", json.dumps(legacy))
+
+    token = login_admin()
+    resp = client.get("/jobs", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200
+    jobs = resp.json().get("jobs", [])
+    legacy_job = next(j for j in jobs if j["job_code"] == "OLDCODE")
+    assert legacy_job["job_title"] == "Legacy"
+    assert legacy_job["student_notes"] == {}
+    assert legacy_job["assigned_students"] == []
+
+
+def test_list_jobs_includes_matches_and_assignments(monkeypatch):
+    main_app.redis_client.flushdb()
+    init_default_admin()
+    token = login_admin()
+
+    class FakeResp:
+        def __init__(self, emb):
+            self.data = [type("obj", (), {"embedding": emb})]
+
+    def fake_create(input, model):
+        if "python" in input:
+            return FakeResp([1.0, 0.0])
+        return FakeResp([0.0, 1.0])
+
+    monkeypatch.setattr(main_app.client.embeddings, "create", fake_create)
+    monkeypatch.setattr(main_app, "get_driving_distance_miles", lambda *a, **k: 0.0)
+
+    student = {
+        "first_name": "John",
+        "last_name": "Doe",
+        "email": "john@example.com",
+        "phone": "123",
+        "license": "lvn",
+        "skills": ["python"],
+        "experience_summary": "sum",
+        "interests": "",
+        "city": "City",
+        "state": "ST",
+        "lat": 0.0,
+        "lng": 0.0,
+        "max_travel": 100.0,
+    }
+    client.post("/students", json=student, headers={"Authorization": f"Bearer {token}"})
+
+    job = {
+        "job_title": "Dev",
+        "job_description": "Need python",
+        "desired_skills": ["python"],
+        "city": "City",
+        "state": "ST",
+        "lat": 0.0,
+        "lng": 0.0,
+        "required_license": "lvn",
+    }
+    resp = client.post("/jobs", json=job, headers={"Authorization": f"Bearer {token}"})
+    code = resp.json()["job_code"]
+
+    client.post("/match", json={"job_code": code}, headers={"Authorization": f"Bearer {token}"})
+    client.post(
+        "/assign",
+        json={"job_code": code, "student_email": student["email"]},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    resp = client.get("/jobs", headers={"Authorization": f"Bearer {token}"})
+    job_entry = next(j for j in resp.json()["jobs"] if j["job_code"] == code)
+    assert student["email"] in job_entry["assigned_students"]
+    assert any(m["email"] == student["email"] for m in job_entry.get("matches", []))
+
+
 def test_create_job_and_match(monkeypatch):
     token = login_admin()
 
