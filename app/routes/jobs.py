@@ -38,6 +38,9 @@ def create_job(job: dict, user: dict = Depends(get_current_user)) -> dict:
     data["job_code"] = code
     data.setdefault("assigned_students", [])
     data.setdefault("placed_students", [])
+    data.setdefault("rejected_students", [])
+    data.setdefault("student_notes", {})
+    data["posted_by"] = user.get("email")
     rl = data.get("required_license")
     if isinstance(rl, str):
         rl_clean = rl.strip()
@@ -55,6 +58,40 @@ def create_job(job: dict, user: dict = Depends(get_current_user)) -> dict:
     main.redis_client.set(f"job:{code}", json.dumps(data))
     logger.info("Job %s created", code)
     return {"message": "Job stored", "job_code": code}
+
+
+@router.get("")
+def list_jobs(_: dict = Depends(get_current_user)) -> dict:
+    """Return all stored jobs with sensible defaults.
+
+    Older job records may pre-date some of the fields added by the POST
+    handler (e.g. ``posted_by`` or ``student_notes``).  The front-end expects
+    these keys to exist, so we normalise each job before returning it.  Missing
+    ``job_code`` values are derived from the redis key.
+    """
+
+    jobs = []
+    for key in main.redis_client.scan_iter("job:*"):
+        k = key if isinstance(key, str) else key.decode()
+        raw = main.redis_client.get(k)
+        if not raw:
+            continue
+        try:
+            job = json.loads(raw)
+        except json.JSONDecodeError:
+            logger.error("Malformed job record for %s", k)
+            continue
+
+        if isinstance(job, dict):
+            job.setdefault("job_code", k.split("job:", 1)[1])
+            job.setdefault("posted_by", None)
+            job.setdefault("assigned_students", [])
+            job.setdefault("placed_students", [])
+            job.setdefault("rejected_students", [])
+            job.setdefault("student_notes", {})
+            jobs.append(job)
+
+    return {"jobs": jobs}
 
 
 @router.put("/{job_code}")

@@ -60,6 +60,47 @@ def login_admin():
     return resp.json()["token"]
 
 
+def test_list_jobs():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+    token = login_admin()
+    job = {
+        "job_title": "Test",
+        "job_description": "desc",
+        "desired_skills": [],
+        "city": "City",
+        "state": "ST",
+        "lat": 0.0,
+        "lng": 0.0,
+        "required_license": "lvn",
+    }
+    resp = client.post("/jobs", json=job, headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200
+    code = resp.json()["job_code"]
+    resp = client.get("/jobs", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200
+    jobs = resp.json().get("jobs", [])
+    assert any(j["job_code"] == code and j.get("posted_by") == "admin@example.com" for j in jobs)
+
+
+def test_list_jobs_includes_existing_records():
+    """Jobs created before new defaults should still be returned."""
+    main_app.redis_client.flushdb()
+    init_default_admin()
+    # legacy job without defaults or job_code field
+    legacy = {"job_title": "Legacy", "job_description": "desc"}
+    main_app.redis_client.set("job:OLDCODE", json.dumps(legacy))
+
+    token = login_admin()
+    resp = client.get("/jobs", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200
+    jobs = resp.json().get("jobs", [])
+    legacy_job = next(j for j in jobs if j["job_code"] == "OLDCODE")
+    assert legacy_job["job_title"] == "Legacy"
+    assert legacy_job["student_notes"] == {}
+    assert legacy_job["assigned_students"] == []
+
+
 def test_create_job_and_match(monkeypatch):
     token = login_admin()
 
