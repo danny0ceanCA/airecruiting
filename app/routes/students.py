@@ -34,20 +34,17 @@ logger = get_logger(__name__)
 # ---------------------------------------------------------------------------
 
 
-def _merge_assignments(student: dict) -> dict:
-    """Populate ``assigned_jobs`` from job records.
+def _build_job_index() -> dict[str, dict[str, dict[str, Any]]]:
+    """Return a mapping of student email to their job assignments.
 
-    Older student records may lack assignment information.  To keep the frontend
-    in sync we scan all job entries and merge any assignments, placements or
-    rejections for the student's email.  Notes are normalised so the latest
-    entry is also available under ``note``.
+    Each job is inspected once and any placements, rejections or assignments are
+    recorded under the normalised student email.  This allows assignment data to
+    be looked up in ``O(1)`` time for each student.
     """
 
+    index: dict[str, dict[str, dict[str, Any]]] = {}
     if main.redis_client is None:
-        return student
-
-    email = normalize_email(student.get("email"))
-    assigned = {j.get("job_code"): dict(j) for j in student.get("assigned_jobs", []) if j.get("job_code")}
+        return index
 
     for key in main.redis_client.scan_iter("job:*"):
         logger.debug("Retrieving job key %s", key)
@@ -65,40 +62,61 @@ def _merge_assignments(student: dict) -> dict:
         if not job_code:
             continue
 
-        status = None
-        if email in job.get("placed_students", []):
-            status = "placed"
-        elif email in job.get("rejected_students", []):
-            status = "rejected"
-        elif email in job.get("assigned_students", []):
-            status = "assigned"
-        if status is None:
-            continue
+        base = {
+            "job_code": job_code,
+            "job_title": job.get("job_title"),
+            "company": job.get("company"),
+            "min_pay": job.get("min_pay"),
+            "max_pay": job.get("max_pay"),
+            "source": job.get("source"),
+            "posted_by": job.get("posted_by"),
+        }
 
-        notes = _normalize_notes(job.get("student_notes", {}).get(email, []))
+        for field, status in [
+            ("placed_students", "placed"),
+            ("rejected_students", "rejected"),
+            ("assigned_students", "assigned"),
+        ]:
+            for raw_email in job.get(field, []):
+                email = normalize_email(raw_email)
+                notes = _normalize_notes(
+                    job.get("student_notes", {}).get(email, [])
+                )
+                entry = dict(base)
+                entry.update({"status": status, "notes": notes})
+                if notes:
+                    entry["note"] = notes[-1].get("text")
+                index.setdefault(email, {})[job_code] = entry
+                logger.debug(
+                    "Indexed job %s for %s with status %s", job_code, email, status
+                )
+
+    return index
+
+
+def _merge_assignments(
+    student: dict, job_index: dict[str, dict[str, dict[str, Any]]] | None = None
+) -> dict:
+    """Populate ``assigned_jobs`` for ``student`` using ``job_index``.
+
+    ``job_index`` should contain a mapping created by :func:`_build_job_index`.
+    If ``job_index`` is ``None`` the student record is returned unmodified.
+    """
+
+    if job_index is None:
+        return student
+
+    email = normalize_email(student.get("email"))
+    assigned = {
+        j.get("job_code"): dict(j)
+        for j in student.get("assigned_jobs", [])
+        if j.get("job_code")
+    }
+
+    for job_code, data in job_index.get(email, {}).items():
         entry = assigned.get(job_code, {"job_code": job_code})
-        entry.update(
-            {
-                "job_title": job.get("job_title"),
-                "company": job.get("company"),
-                "min_pay": job.get("min_pay"),
-                "max_pay": job.get("max_pay"),
-                "source": job.get("source"),
-                "status": status,
-                "posted_by": job.get("posted_by"),
-                "notes": notes,
-            }
-        )
-        if notes:
-            entry["note"] = notes[-1].get("text")
+        entry.update(data)
         assigned[job_code] = entry
-        logger.debug(
-            "Merged assignment for job %s: status=%s, notes=%s, note_field=%s",
-            job_code,
-            status,
-            bool(notes),
-            "note" in entry,
-        )
 
     student["assigned_jobs"] = list(assigned.values())
     logger.debug("Merged %d assignment(s) for %s", len(assigned), email)
@@ -128,6 +146,7 @@ def list_all_students(request: Request, user: dict = Depends(require_admin)) -> 
     )
     students: list[dict[str, Any]] = []
     if main.redis_client is not None:
+        job_index = _build_job_index()
         keys = list(main.redis_client.scan_iter("student:*:*"))
         if keys:
             values = main.redis_client.mget(keys)
@@ -143,7 +162,7 @@ def list_all_students(request: Request, user: dict = Depends(require_admin)) -> 
                     logger.error("Malformed JSON for student %s: %s", key, snippet)
                     continue
                 logger.debug("Loaded student %s with fields %s", key, list(data.keys()))
-                students.append(_merge_assignments(data))
+                students.append(_merge_assignments(data, job_index))
     else:
         logger.warning("Redis unavailable while listing students")
     logger.info("Returning %d student(s)", len(students))
@@ -172,10 +191,14 @@ def list_students_by_school(
     )
     if not inst:
         logger.warning("Institutional code missing for user %s", user.get("email"))
-        raise HTTPException(status_code=400, detail="Institutional code required")
+        if user.get("role") == "admin":
+            inst = "unknown"
+        else:
+            raise HTTPException(status_code=400, detail="Institutional code required")
 
     students: list[dict[str, Any]] = []
     if main.redis_client is not None:
+        job_index = _build_job_index()
         keys = list(main.redis_client.scan_iter(f"student:{inst}:*"))
         if keys:
             values = main.redis_client.mget(keys)
@@ -191,7 +214,7 @@ def list_students_by_school(
                     logger.error("Malformed JSON for student %s: %s", key, snippet)
                     continue
                 logger.debug("Loaded student %s with fields %s", key, list(data.keys()))
-                students.append(_merge_assignments(data))
+                students.append(_merge_assignments(data, job_index))
     else:
         logger.warning("Redis unavailable while listing students for %s", inst)
     logger.info("Returning %d student(s) for %s", len(students), inst)
@@ -221,7 +244,8 @@ def get_me(user: dict = Depends(get_current_user)) -> dict:
     if not raw:
         logger.warning("Student record %s not found", email)
         raise HTTPException(status_code=404, detail="Student not found")
-    student = _merge_assignments(json.loads(raw))
+    job_index = _build_job_index()
+    student = _merge_assignments(json.loads(raw), job_index)
     logger.info("Profile fetched for %s", email)
     return student
 
