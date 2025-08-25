@@ -142,7 +142,7 @@ function ApplicantProfile() {
 
   const fetchJobDescriptionStatus = async (jobCode) => {
     try {
-      const resp = await api.get(`/job-description/${jobCode}/${email}`, { headers: { Authorization: `Bearer ${token}` } });
+      const resp = await api.get(`/jobs/job-description/${jobCode}/${email}`, { headers: { Authorization: `Bearer ${token}` } });
       if (resp.data.status === 'success') {
         setJobDescriptionStatus(prev => ({ ...prev, [jobCode]: 'ready' }));
       }
@@ -154,7 +154,7 @@ function ApplicantProfile() {
   const generateJobDescription = async (jobCode) => {
     setLoadingJobDescriptions(prev => ({ ...prev, [jobCode]: true }));
     try {
-      await api.post('/generate-job-description', { job_code: jobCode, student_email: email }, { headers: { Authorization: `Bearer ${token}` } });
+      await api.post('/jobs/generate-job-description', { job_code: jobCode, student_email: email }, { headers: { Authorization: `Bearer ${token}` } });
       setJobDescriptionStatus(prev => ({ ...prev, [jobCode]: 'ready' }));
     } catch (err) {
       console.error('Generation failed', err);
@@ -165,7 +165,7 @@ function ApplicantProfile() {
 
   const viewJobDescription = async (jobCode) => {
     try {
-      const resp = await api.get(`/job-description-html/${jobCode}/${email}`, { headers: { Authorization: `Bearer ${token}` } });
+      const resp = await api.get(`/jobs/job-description-html/${jobCode}/${email}`, { headers: { Authorization: `Bearer ${token}` } });
       const newWindow = window.open('', '_blank');
       if (newWindow) {
         newWindow.document.write(resp.data);
