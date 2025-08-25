@@ -88,6 +88,9 @@ function StudentProfiles() {
   const [expandedRows, setExpandedRows] = useState({});
   const [modalNotes, setModalNotes] = useState(null);
 
+  const studentAbort = useRef(null);
+  const assignmentControllers = useRef({});
+
   const handleTourCallback = (data) => {
     const { status, type } = data;
     if (status === 'finished' || status === 'skipped') {
@@ -136,14 +139,21 @@ function StudentProfiles() {
   const isAdmin = userRole === 'admin';
 
   const fetchStudents = async () => {
+    studentAbort.current && studentAbort.current.abort();
+    const controller = new AbortController();
+    studentAbort.current = controller;
     setIsLoading(true);
     try {
       const endpoint = userRole === 'admin' ? '/students/all' : '/students/by-school';
       const resp = await api.get(endpoint, {
         headers: { Authorization: `Bearer ${token}` },
+        signal: controller.signal
       });
       setSchoolStudents(resp.data?.students || []);
     } catch (err) {
+      if (err.name === 'CanceledError') {
+        return;
+      }
       if (err.response && err.response.status === 401) {
         localStorage.removeItem('token');
         navigate('/login');
@@ -186,16 +196,44 @@ function StudentProfiles() {
     fetchStudents();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const toggleRow = (email, assignedJobs = []) => {
+  const fetchAssignments = async (student) => {
+    const controller = new AbortController();
+    assignmentControllers.current[student.email] = controller;
+    try {
+      const resp = await api.get(`/students/${student.student_id}/assignments`, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: controller.signal
+      });
+      const jobs = resp.data?.assigned_jobs || [];
+      setSchoolStudents((prev) =>
+        prev.map((s) => (s.email === student.email ? { ...s, assigned_jobs: jobs } : s))
+      );
+      for (const job of jobs) {
+        fetchJobDescriptionStatus(student.email, job.job_code);
+      }
+    } catch (err) {
+      if (err.name !== 'CanceledError') {
+        console.error('Failed to fetch assignments', err);
+      }
+    } finally {
+      delete assignmentControllers.current[student.email];
+    }
+  };
+
+  const toggleRow = (student) => {
+    const email = student.email;
     setExpandedRows((prev) => {
       const state = prev[email];
       const isOpen = state === 'open' || state === 'opening';
       if (!isOpen) {
-        for (const job of assignedJobs) {
-          fetchJobDescriptionStatus(email, job.job_code);
-        }
+        fetchAssignments(student);
         return { ...prev, [email]: 'opening' };
       } else {
+        const ctrl = assignmentControllers.current[email];
+        if (ctrl) {
+          ctrl.abort();
+          delete assignmentControllers.current[email];
+        }
         setTimeout(() => {
           setExpandedRows((cur) => {
             const updated = { ...cur };
@@ -213,6 +251,13 @@ function StudentProfiles() {
       );
     });
   };
+
+  useEffect(() => {
+    return () => {
+      studentAbort.current && studentAbort.current.abort();
+      Object.values(assignmentControllers.current).forEach((c) => c.abort());
+    };
+  }, [activeTab]);
 
   const handleEdit = (email) => {
     const student = schoolStudents.find((s) => s.email === email);
@@ -635,7 +680,7 @@ function StudentProfiles() {
                             >
                               <button
                                 className="expand-toggle"
-                                onClick={() => toggleRow(s.email, s.assigned_jobs)}
+                                onClick={() => toggleRow(s)}
                                 type="button"
                                 title={expandedRows[s.email] ? 'Collapse' : 'Expand'}
                               >

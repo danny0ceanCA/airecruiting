@@ -64,8 +64,9 @@ test('displays student count in tab bar', async () => {
             state: 'ST',
             institutional_code: 'ABC',
             license: '',
-            assigned_jobs: [],
-            placed_jobs: []
+            student_id: '1',
+            assigned_jobs: 0,
+            placed_jobs: 0
           },
           {
             first_name: 'C',
@@ -75,8 +76,9 @@ test('displays student count in tab bar', async () => {
             state: 'ST',
             institutional_code: 'ABC',
             license: '',
-            assigned_jobs: [],
-            placed_jobs: []
+            student_id: '2',
+            assigned_jobs: 0,
+            placed_jobs: 0
           }
         ]
       }
@@ -98,29 +100,40 @@ test('opens notes history modal when View Notes clicked', async () => {
     if (url === '/licenses') {
       return Promise.resolve({ data: { licenses: [] } });
     }
-    return Promise.resolve({
-      data: {
-        students: [
-          {
-            first_name: 'F',
-            last_name: 'L',
-            email: 's@example.com',
-            city: 'City',
-            state: 'ST',
-            institutional_code: 'ABC',
-            assigned_jobs: [
-              {
-                job_code: 'J1',
-                job_title: 'Job 1',
-                status: 'open',
-                notes: [{ text: 'Test note' }]
-              }
-            ],
-            placed_jobs: []
-          }
-        ]
-      }
-    });
+    if (url === '/students/all') {
+      return Promise.resolve({
+        data: {
+          students: [
+            {
+              first_name: 'F',
+              last_name: 'L',
+              email: 's@example.com',
+              city: 'City',
+              state: 'ST',
+              institutional_code: 'ABC',
+              student_id: '1',
+              assigned_jobs: 1,
+              placed_jobs: 0
+            }
+          ]
+        }
+      });
+    }
+    if (url === '/students/1/assignments') {
+      return Promise.resolve({
+        data: {
+          assigned_jobs: [
+            {
+              job_code: 'J1',
+              job_title: 'Job 1',
+              status: 'assigned',
+              notes: [{ text: 'Test note' }]
+            }
+          ]
+        }
+      });
+    }
+    return Promise.resolve({ data: { students: [] } });
   });
   render(
     <BrowserRouter>

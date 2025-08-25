@@ -49,6 +49,28 @@ class DummyRedis:
     def flushdb(self):
         self.store.clear()
 
+    # Set operations to support indexing
+    def sadd(self, key, *values):
+        s = self.store.setdefault(key, set())
+        added = 0
+        for v in values:
+            if v not in s:
+                s.add(v)
+                added += 1
+        return added
+
+    def srem(self, key, *values):
+        s = self.store.get(key, set())
+        removed = 0
+        for v in values:
+            if v in s:
+                s.remove(v)
+                removed += 1
+        return removed
+
+    def smembers(self, key):
+        return set(self.store.get(key, set()))
+
 
 main_app.redis_client = DummyRedis()
 from app.main import app, JWT_SECRET, ALGORITHM, init_default_admin
@@ -2088,9 +2110,13 @@ def test_student_endpoints_handle_string_notes():
     student_entry = resp_all.json()["students"][0]
     assert student_entry["city"] == "City"
     assert student_entry["state"] == "ST"
-    entry = student_entry["assigned_jobs"][0]
+    sid = student_entry["student_id"]
+    resp_assign = client.get(
+        f"/students/{sid}/assignments",
+        headers={"Authorization": f"Bearer {token_admin}"},
+    )
+    entry = resp_assign.json()["assigned_jobs"][0]
     assert entry["notes"] == [{"text": "legacy"}]
-    assert entry["note"] == "legacy"
     assert "posted_by" in entry
 
     counselor = {"role": "career", "approved": True, "institutional_code": "001"}

@@ -146,8 +146,12 @@ def list_all_students(request: Request, user: dict = Depends(require_admin)) -> 
     )
     students: list[dict[str, Any]] = []
     if main.redis_client is not None:
-        job_index = _build_job_index()
-        keys = list(main.redis_client.scan_iter("student:*:*"))
+        try:
+            keys = list(main.redis_client.smembers("idx:students:all"))
+        except Exception:
+            keys = []
+        if not keys:
+            keys = list(main.redis_client.scan_iter("student:*:*"))
         if keys:
             values = main.redis_client.mget(keys)
             for key, raw in zip(keys, values):
@@ -162,11 +166,86 @@ def list_all_students(request: Request, user: dict = Depends(require_admin)) -> 
                     logger.error("Malformed JSON for student %s: %s", key, snippet)
                     continue
                 logger.debug("Loaded student %s with fields %s", key, list(data.keys()))
-                students.append(_merge_assignments(data, job_index))
+                lean = {
+                    "email": data.get("email"),
+                    "first_name": data.get("first_name"),
+                    "last_name": data.get("last_name"),
+                    "city": data.get("city"),
+                    "state": data.get("state"),
+                    "institutional_code": data.get("institutional_code"),
+                    "student_id": data.get("student_id"),
+                    "license": data.get("license"),
+                    "assigned_jobs": len(data.get("assigned_jobs", [])),
+                    "placed_jobs": len(data.get("placed_jobs", [])),
+                }
+                students.append(lean)
     else:
         logger.warning("Redis unavailable while listing students")
     logger.info("Returning %d student(s)", len(students))
     return {"students": students}
+
+
+@router.get("/{student_id}/assignments")
+def get_student_assignments(student_id: str, user: dict = Depends(require_admin)) -> dict:
+    """Return job assignments for ``student_id`` with minimal job data."""
+
+    logger.info("Fetching assignments for student %s", student_id)
+    if main.redis_client is None:
+        logger.warning("Redis unavailable while fetching assignments for %s", student_id)
+        return {"assigned_jobs": []}
+
+    try:
+        job_keys = list(
+            main.redis_client.smembers(f"idx:assignments:by_student:{student_id}")
+        )
+    except Exception:
+        job_keys = []
+
+    assignments: dict[str, dict[str, Any]] = {}
+    student_key = next(
+        (k for k in main.redis_client.scan_iter(f"student:*:{student_id}")), None
+    )
+    if student_key:
+        raw_student = main.redis_client.get(student_key)
+        if raw_student:
+            try:
+                stu = json.loads(raw_student)
+                assignments = {
+                    a.get("job_code"): a for a in stu.get("assigned_jobs", [])
+                }
+            except json.JSONDecodeError:
+                pass
+
+    jobs: list[dict[str, Any]] = []
+    if job_keys:
+        values = main.redis_client.mget(job_keys)
+        for key, raw in zip(job_keys, values):
+            if raw is None:
+                continue
+            try:
+                job = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            job_code = job.get("job_code")
+            if not job_code:
+                continue
+            base = {
+                "job_code": job_code,
+                "job_title": job.get("job_title"),
+                "min_pay": job.get("min_pay"),
+                "max_pay": job.get("max_pay"),
+                "source": job.get("source"),
+                "posted_by": job.get("posted_by"),
+            }
+            entry = assignments.get(job_code, {"status": "assigned", "notes": []})
+            out = dict(base)
+            out["status"] = entry.get("status", "assigned")
+            if entry.get("notes"):
+                out["notes"] = entry.get("notes")
+            jobs.append(out)
+
+    logger.info("Returning %d assignment(s) for %s", len(jobs), student_id)
+    return {"assigned_jobs": jobs}
 
 
 @router.get("/by-school")
@@ -342,4 +421,33 @@ def create_student(payload: dict, user: dict = Depends(get_current_user)) -> dic
     main.persist_student_record(email, payload, inst, student_id)
     logger.info("Student profile created for %s", email)
     return {"message": "Student created"}
+
+
+@router.post("/upload")
+def upload_students(file: Any = None, user: dict = Depends(require_admin)) -> dict:
+    """Upload student profiles from a CSV file.
+
+    This minimal implementation reads the uploaded CSV content and stores each
+    row using :func:`main.persist_student_record`. Only the fields referenced in
+    the tests are parsed.
+    """
+
+    if file is None or not getattr(file, "file", None):
+        raise HTTPException(status_code=400, detail="file required")
+
+    import csv
+    import io
+
+    content = file.file.read().decode()
+    reader = csv.DictReader(io.StringIO(content))
+    count = 0
+    for row in reader:
+        email = row.get("email")
+        if not email:
+            continue
+        inst = row.get("institutional_code") or user.get("school_code") or "unknown"
+        sid = row.get("student_id") or str(main.redis_client.incr("student_id")) if main.redis_client else "1"
+        main.persist_student_record(email, row, inst, sid)
+        count += 1
+    return {"count": count}
 

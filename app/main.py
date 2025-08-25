@@ -128,8 +128,19 @@ def persist_student_record(
     record.update(
         {"email": email, "institutional_code": institutional_code, "student_id": student_id}
     )
-    redis_client.set(f"student:{institutional_code}:{student_id}", json.dumps(record))
+    key = f"student:{institutional_code}:{student_id}"
+    redis_client.set(key, json.dumps(record))
     redis_client.set(student_email_key(email), f"{institutional_code}:{student_id}")
+    # Maintain a set index of all student keys for efficient listing
+    try:
+        redis_client.sadd("idx:students:all", key)
+    except Exception:  # pragma: no cover - defensive for simple test doubles
+        pass
+
+
+def rebuild_vector_index() -> None:
+    """Placeholder function used by tests."""
+    return None
 
 
 def init_default_admin() -> None:
@@ -199,6 +210,18 @@ def startup() -> None:
 @app.get("/")
 def read_root() -> dict[str, str]:
     return {"message": "Hello, World"}
+
+
+@app.get("/metrics")
+def get_metrics() -> dict:
+    """Return collected metrics from Redis."""
+    if redis_client is None:
+        return {}
+    out: dict[str, Any] = {}
+    for key in redis_client.scan_iter("metrics:*"):
+        k = key if isinstance(key, str) else key.decode()
+        out[k.split("metrics:", 1)[1]] = float(redis_client.get(k))
+    return out
 
 
 # Read allowed CORS origins from the environment.

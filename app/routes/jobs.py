@@ -38,6 +38,7 @@ def create_job(job: dict, user: dict = Depends(get_current_user)) -> dict:
     data["job_code"] = code
     data.setdefault("assigned_students", [])
     data.setdefault("placed_students", [])
+    data.setdefault("posted_by", user.get("email"))
     rl = data.get("required_license")
     if isinstance(rl, str):
         rl_clean = rl.strip()

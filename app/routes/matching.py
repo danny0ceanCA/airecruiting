@@ -180,10 +180,13 @@ def queue_rematch(job_code: str) -> dict:
 
 
 @router.get("/match/{job_code}")
-def get_match_results(job_code: str) -> dict:
+def get_match_results(job_code: str, user: dict = Depends(get_current_user)) -> dict:
     """Return stored match results with job status/notes merged in."""
     logger.info("Fetching match results for job %s", job_code)
     job = _get_job(job_code)
+    if user.get("role") != "admin" and job.get("posted_by") != user.get("email"):
+        logger.warning("User %s forbidden to modify job %s", user.get("email"), job_code)
+        raise HTTPException(status_code=403, detail="Forbidden")
     raw = main.redis_client.get(f"match_results:{job_code}")
     matches = json.loads(raw) if raw else []
 
@@ -269,6 +272,9 @@ def assign_student(data: dict, user: dict = Depends(get_current_user)) -> dict:
         raise HTTPException(status_code=400, detail="Missing job_code or student_email")
 
     job = _get_job(job_code)
+    if user.get("role") != "admin" and job.get("posted_by") != user.get("email"):
+        logger.warning("User %s forbidden to modify job %s", user.get("email"), job_code)
+        raise HTTPException(status_code=403, detail="Forbidden")
     job.setdefault("assigned_students", [])
     if student_email not in job["assigned_students"]:
         job["assigned_students"].append(student_email)
@@ -294,6 +300,9 @@ def assign_student(data: dict, user: dict = Depends(get_current_user)) -> dict:
     if note:
         entry.setdefault("notes", []).append({"text": note, "posted_by": user.get("email")})
     main.redis_client.set(skey, json.dumps(student))
+    sid = student.get("student_id")
+    if sid:
+        main.redis_client.sadd(f"idx:assignments:by_student:{sid}", f"job:{job_code}")
 
     logger.info("Student %s assigned to job %s", student_email, job_code)
     return {"message": "Student assigned"}
@@ -331,6 +340,9 @@ def place_student(data: dict, _: dict = Depends(require_admin)) -> dict:
             }
         )
     main.redis_client.set(skey, json.dumps(student))
+    sid = student.get("student_id")
+    if sid:
+        main.redis_client.srem(f"idx:assignments:by_student:{sid}", f"job:{job_code}")
     logger.info("Student %s placed for job %s", student_email, job_code)
     return {"message": "Student placed"}
 
@@ -346,6 +358,9 @@ def reject_assigned(data: dict, user: dict = Depends(get_current_user)) -> dict:
         raise HTTPException(status_code=400, detail="Missing job_code or student_email")
 
     job = _get_job(job_code)
+    if user.get("role") != "admin" and job.get("posted_by") != user.get("email"):
+        logger.warning("User %s forbidden to modify job %s", user.get("email"), job_code)
+        raise HTTPException(status_code=403, detail="Forbidden")
     if student_email in job.get("assigned_students", []):
         job["assigned_students"].remove(student_email)
     job.setdefault("rejected_students", [])
@@ -373,6 +388,9 @@ def reject_assigned(data: dict, user: dict = Depends(get_current_user)) -> dict:
     if note:
         entry.setdefault("notes", []).append({"text": note, "posted_by": user.get("email")})
     main.redis_client.set(skey, json.dumps(student))
+    sid = student.get("student_id")
+    if sid:
+        main.redis_client.srem(f"idx:assignments:by_student:{sid}", f"job:{job_code}")
 
     logger.info("Assignment for %s/%s marked rejected", student_email, job_code)
     return {"message": "Assignment rejected"}

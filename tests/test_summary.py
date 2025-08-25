@@ -31,6 +31,28 @@ class DummyRedis:
             if fnmatch(k, pattern):
                 yield k
 
+    # Set operations for indexing
+    def sadd(self, key, *values):
+        s = self.store.setdefault(key, set())
+        added = 0
+        for v in values:
+            if v not in s:
+                s.add(v)
+                added += 1
+        return added
+
+    def srem(self, key, *values):
+        s = self.store.get(key, set())
+        removed = 0
+        for v in values:
+            if v in s:
+                s.remove(v)
+                removed += 1
+        return removed
+
+    def smembers(self, key):
+        return set(self.store.get(key, set()))
+
 
 
 def test_admin_weekly_summary():

@@ -43,6 +43,28 @@ class DummyRedis:
     def flushdb(self):
         self.store.clear()
 
+    # Set operations for indexing
+    def sadd(self, key, *values):
+        s = self.store.setdefault(key, set())
+        added = 0
+        for v in values:
+            if v not in s:
+                s.add(v)
+                added += 1
+        return added
+
+    def srem(self, key, *values):
+        s = self.store.get(key, set())
+        removed = 0
+        for v in values:
+            if v in s:
+                s.remove(v)
+                removed += 1
+        return removed
+
+    def smembers(self, key):
+        return set(self.store.get(key, set()))
+
 
 main_app.redis_client = DummyRedis()
 from app.main import app, init_default_admin
