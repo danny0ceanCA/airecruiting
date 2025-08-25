@@ -128,20 +128,22 @@ def list_all_students(request: Request, user: dict = Depends(require_admin)) -> 
     )
     students: list[dict[str, Any]] = []
     if main.redis_client is not None:
-        for key in main.redis_client.scan_iter("student:*:*"):
-            logger.debug("Retrieving student key %s", key)
-            raw = main.redis_client.get(key)
-            if not raw:
-                logger.debug("Skipping student key %s: empty value", key)
-                continue
-            try:
-                data = json.loads(raw)
-            except json.JSONDecodeError:
-                snippet = raw[:40] if isinstance(raw, (bytes, str)) else str(raw)[:40]
-                logger.error("Malformed JSON for student %s: %s", key, snippet)
-                continue
-            logger.debug("Loaded student %s with fields %s", key, list(data.keys()))
-            students.append(_merge_assignments(data))
+        keys = list(main.redis_client.scan_iter("student:*:*"))
+        if keys:
+            values = main.redis_client.mget(keys)
+            for key, raw in zip(keys, values):
+                logger.debug("Retrieving student key %s", key)
+                if raw is None:
+                    logger.debug("Skipping student key %s: empty value", key)
+                    continue
+                try:
+                    data = json.loads(raw)
+                except json.JSONDecodeError:
+                    snippet = raw[:40] if isinstance(raw, (bytes, str)) else str(raw)[:40]
+                    logger.error("Malformed JSON for student %s: %s", key, snippet)
+                    continue
+                logger.debug("Loaded student %s with fields %s", key, list(data.keys()))
+                students.append(_merge_assignments(data))
     else:
         logger.warning("Redis unavailable while listing students")
     logger.info("Returning %d student(s)", len(students))
@@ -174,20 +176,22 @@ def list_students_by_school(
 
     students: list[dict[str, Any]] = []
     if main.redis_client is not None:
-        for key in main.redis_client.scan_iter(f"student:{inst}:*"):
-            logger.debug("Retrieving student key %s", key)
-            raw = main.redis_client.get(key)
-            if not raw:
-                logger.debug("Skipping student key %s: empty value", key)
-                continue
-            try:
-                data = json.loads(raw)
-            except json.JSONDecodeError:
-                snippet = raw[:40] if isinstance(raw, (bytes, str)) else str(raw)[:40]
-                logger.error("Malformed JSON for student %s: %s", key, snippet)
-                continue
-            logger.debug("Loaded student %s with fields %s", key, list(data.keys()))
-            students.append(_merge_assignments(data))
+        keys = list(main.redis_client.scan_iter(f"student:{inst}:*"))
+        if keys:
+            values = main.redis_client.mget(keys)
+            for key, raw in zip(keys, values):
+                logger.debug("Retrieving student key %s", key)
+                if raw is None:
+                    logger.debug("Skipping student key %s: empty value", key)
+                    continue
+                try:
+                    data = json.loads(raw)
+                except json.JSONDecodeError:
+                    snippet = raw[:40] if isinstance(raw, (bytes, str)) else str(raw)[:40]
+                    logger.error("Malformed JSON for student %s: %s", key, snippet)
+                    continue
+                logger.debug("Loaded student %s with fields %s", key, list(data.keys()))
+                students.append(_merge_assignments(data))
     else:
         logger.warning("Redis unavailable while listing students for %s", inst)
     logger.info("Returning %d student(s) for %s", len(students), inst)
