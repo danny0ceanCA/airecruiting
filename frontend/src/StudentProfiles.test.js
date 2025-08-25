@@ -192,6 +192,7 @@ test('automatically fetches assignments for each student', async () => {
   localStorage.clear();
 });
 
+
 test('shows assignment details after automatic loading', async () => {
   const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYWRtaW4ifQ.signature';
   localStorage.setItem('token', token);
@@ -240,6 +241,7 @@ test('shows assignment details after automatic loading', async () => {
   expect(await screen.findByText('Job 1')).toBeInTheDocument();
   localStorage.clear();
 });
+
 
 test('opens notes history modal when View Notes clicked', async () => {
   const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYWRtaW4ifQ.signature';
