@@ -192,6 +192,57 @@ test('automatically fetches assignments for each student', async () => {
   localStorage.clear();
 });
 
+
+test('shows assignment details after automatic loading', async () => {
+  const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYWRtaW4ifQ.signature';
+  localStorage.setItem('token', token);
+  api.get.mockImplementation((url) => {
+    if (url === '/licenses') {
+      return Promise.resolve({ data: { licenses: [] } });
+    }
+    if (url === '/students/all') {
+      return Promise.resolve({
+        data: {
+          students: [
+            {
+              first_name: 'A',
+              last_name: 'B',
+              email: 'a@example.com',
+              city: 'City',
+              state: 'ST',
+              institutional_code: 'ABC',
+              license: '',
+              student_id: '1',
+              placed_jobs: 0
+            }
+          ]
+        }
+      });
+    }
+    if (url === '/students/1/assignments') {
+      return Promise.resolve({
+        data: {
+          assigned_jobs: [
+            { job_code: 'J1', job_title: 'Job 1', source: 'N/A' }
+          ]
+        }
+      });
+    }
+    return Promise.resolve({ data: {} });
+  });
+  render(
+    <BrowserRouter>
+      <StudentProfiles />
+    </BrowserRouter>
+  );
+  // Expand the first student row
+  fireEvent.click(await screen.findByText('+'));
+  // Job title should appear after assignments load
+  expect(await screen.findByText('Job 1')).toBeInTheDocument();
+  localStorage.clear();
+});
+
+
 test('opens notes history modal when View Notes clicked', async () => {
   const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYWRtaW4ifQ.signature';
   localStorage.setItem('token', token);

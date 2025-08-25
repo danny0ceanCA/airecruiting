@@ -215,6 +215,13 @@ function StudentProfiles() {
     } catch (err) {
       if (err.name !== 'CanceledError') {
         console.error('Failed to fetch assignments', err);
+        setSchoolStudents((prev) =>
+          Array.isArray(prev)
+            ? prev.map((s) =>
+                s.email === student.email ? { ...s, assigned_jobs: [] } : s
+              )
+            : prev
+        );
       }
     } finally {
       delete assignmentControllers.current[student.email];
