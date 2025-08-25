@@ -161,6 +161,7 @@ def test_list_jobs_includes_matches_and_assignments(monkeypatch):
     assert any(m["email"] == student["email"] for m in job_entry.get("matches", []))
 
 
+
 def test_create_job_and_match(monkeypatch):
     token = login_admin()
 

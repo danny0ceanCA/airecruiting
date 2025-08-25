@@ -39,7 +39,9 @@ def create_job(job: dict, user: dict = Depends(get_current_user)) -> dict:
     data.setdefault("assigned_students", [])
     data.setdefault("placed_students", [])
     data.setdefault("rejected_students", [])
+
     data.setdefault("uninterested_students", [])
+
     data.setdefault("student_notes", {})
     data["posted_by"] = user.get("email")
     rl = data.get("required_license")
@@ -89,6 +91,7 @@ def list_jobs(_: dict = Depends(get_current_user)) -> dict:
             job.setdefault("assigned_students", [])
             job.setdefault("placed_students", [])
             job.setdefault("rejected_students", [])
+
             job.setdefault("uninterested_students", [])
             job.setdefault("student_notes", {})
             code = job.get("job_code")
@@ -98,7 +101,8 @@ def list_jobs(_: dict = Depends(get_current_user)) -> dict:
             except json.JSONDecodeError:
                 logger.error("Malformed match results for %s", code)
                 job["matches"] = []
-            jobs.append(job)
+
+              jobs.append(job)
 
     return {"jobs": jobs}
 
