@@ -510,7 +510,7 @@ if (shouldRedirect) {
 
     try {
       const resp = await api.post(
-        '/generate-resume',
+        '/jobs/generate-resume',
         {
           student_email: email,
           job_code: jobCode,
@@ -536,7 +536,7 @@ if (shouldRedirect) {
     setPreviewingResumes((prev) => ({ ...prev, [key]: true }));
     try {
       const resp = await api.post(
-        '/generate-resume',
+        '/jobs/generate-resume',
         { student_email: email, job_code: jobCode, preview: true },
         { headers: { Authorization: `Bearer ${token}` } }
       );

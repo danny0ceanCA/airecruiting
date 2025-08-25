@@ -274,7 +274,7 @@ function StudentProfiles() {
 
   const fetchJobDescriptionStatus = async (studentEmail, jobCode) => {
     try {
-      const resp = await api.get(`/job-description/${jobCode}/${studentEmail}`, {
+      const resp = await api.get(`/jobs/job-description/${jobCode}/${studentEmail}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (resp.data.status === 'success') {
@@ -292,7 +292,7 @@ function StudentProfiles() {
     setLoadingJobDescriptions((prev) => ({ ...prev, [jobCode]: true }));
     try {
       await api.post(
-        '/generate-job-description',
+        '/jobs/generate-job-description',
         { job_code: jobCode, student_email: studentEmail },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -310,7 +310,7 @@ function StudentProfiles() {
 
   const viewJobDescription = async (jobCode, studentEmail) => {
     try {
-      const resp = await api.get(`/job-description-html/${jobCode}/${studentEmail}`, {
+      const resp = await api.get(`/jobs/job-description-html/${jobCode}/${studentEmail}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const newWindow = window.open('', '_blank');
