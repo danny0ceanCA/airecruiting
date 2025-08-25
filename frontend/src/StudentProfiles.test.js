@@ -18,6 +18,9 @@ beforeEach(() => {
     if (url === '/licenses') {
       return Promise.resolve({ data: { licenses: [] } });
     }
+    if (url.endsWith('/assignments')) {
+      return Promise.resolve({ data: { assigned_jobs: [] } });
+    }
     return Promise.resolve({ data: { students: [] } });
   });
 });
@@ -46,12 +49,51 @@ test('fetches licenses on load', async () => {
   localStorage.clear();
 });
 
+test('shows loading indicator then empty state when no students', async () => {
+  const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYWRtaW4ifQ.signature';
+  localStorage.setItem('token', token);
+  let resolveStudents;
+  api.get.mockImplementation((url) => {
+    if (url === '/licenses') {
+      return Promise.resolve({ data: { licenses: [] } });
+    }
+    if (url === '/students/all') {
+      return new Promise((resolve) => {
+        resolveStudents = () => resolve({ data: { students: [] } });
+      });
+    }
+    if (url.endsWith('/assignments')) {
+      return Promise.resolve({ data: { assigned_jobs: [] } });
+    }
+    return Promise.resolve({ data: {} });
+  });
+  render(
+    <BrowserRouter>
+      <StudentProfiles />
+    </BrowserRouter>
+  );
+  expect(screen.getByText(/Loading students/i)).toBeInTheDocument();
+  expect(
+    screen.queryByText("You haven't created any student profiles.")
+  ).not.toBeInTheDocument();
+  resolveStudents();
+  await waitFor(() => {
+    expect(
+      screen.getByText("You haven't created any student profiles.")
+    ).toBeInTheDocument();
+  });
+  localStorage.clear();
+});
+
 test('displays student count in tab bar', async () => {
   const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYWRtaW4ifQ.signature';
   localStorage.setItem('token', token);
   api.get.mockImplementation((url) => {
     if (url === '/licenses') {
       return Promise.resolve({ data: { licenses: [] } });
+    }
+    if (url.endsWith('/assignments')) {
+      return Promise.resolve({ data: { assigned_jobs: [] } });
     }
     return Promise.resolve({
       data: {
@@ -90,6 +132,112 @@ test('displays student count in tab bar', async () => {
     </BrowserRouter>
   );
   expect(await screen.findByTestId('student-count')).toHaveTextContent('Student Profiles: 2');
+  localStorage.clear();
+});
+
+test('automatically fetches assignments for each student', async () => {
+  const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYWRtaW4ifQ.signature';
+  localStorage.setItem('token', token);
+  api.get.mockImplementation((url) => {
+    if (url === '/licenses') {
+      return Promise.resolve({ data: { licenses: [] } });
+    }
+    if (url === '/students/all') {
+      return Promise.resolve({
+        data: {
+          students: [
+            {
+              first_name: 'A',
+              last_name: 'B',
+              email: 'a@example.com',
+              city: 'City',
+              state: 'ST',
+              institutional_code: 'ABC',
+              license: '',
+              student_id: '1',
+              placed_jobs: 0
+            },
+            {
+              first_name: 'C',
+              last_name: 'D',
+              email: 'c@example.com',
+              city: 'City',
+              state: 'ST',
+              institutional_code: 'ABC',
+              license: '',
+              student_id: '2',
+              placed_jobs: 0
+            }
+          ]
+        }
+      });
+    }
+    if (url === '/students/1/assignments') {
+      return Promise.resolve({ data: { assigned_jobs: [] } });
+    }
+    if (url === '/students/2/assignments') {
+      return Promise.resolve({ data: { assigned_jobs: [] } });
+    }
+    return Promise.resolve({ data: {} });
+  });
+  render(
+    <BrowserRouter>
+      <StudentProfiles />
+    </BrowserRouter>
+  );
+  await waitFor(() => {
+    expect(api.get).toHaveBeenCalledWith('/students/1/assignments', expect.any(Object));
+    expect(api.get).toHaveBeenCalledWith('/students/2/assignments', expect.any(Object));
+  });
+  localStorage.clear();
+});
+
+test('shows assignment details after automatic loading', async () => {
+  const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYWRtaW4ifQ.signature';
+  localStorage.setItem('token', token);
+  api.get.mockImplementation((url) => {
+    if (url === '/licenses') {
+      return Promise.resolve({ data: { licenses: [] } });
+    }
+    if (url === '/students/all') {
+      return Promise.resolve({
+        data: {
+          students: [
+            {
+              first_name: 'A',
+              last_name: 'B',
+              email: 'a@example.com',
+              city: 'City',
+              state: 'ST',
+              institutional_code: 'ABC',
+              license: '',
+              student_id: '1',
+              placed_jobs: 0
+            }
+          ]
+        }
+      });
+    }
+    if (url === '/students/1/assignments') {
+      return Promise.resolve({
+        data: {
+          assigned_jobs: [
+            { job_code: 'J1', job_title: 'Job 1', source: 'N/A' }
+          ]
+        }
+      });
+    }
+    return Promise.resolve({ data: {} });
+  });
+  render(
+    <BrowserRouter>
+      <StudentProfiles />
+    </BrowserRouter>
+  );
+  // Expand the first student row
+  fireEvent.click(await screen.findByText('+'));
+  // Job title should appear after assignments load
+  expect(await screen.findByText('Job 1')).toBeInTheDocument();
   localStorage.clear();
 });
 
