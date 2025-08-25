@@ -146,7 +146,8 @@ def list_all_students(request: Request, user: dict = Depends(require_admin)) -> 
                 students.append(_merge_assignments(data))
     else:
         logger.warning("Redis unavailable while listing students")
-    logger.info("Returning %d student(s)", len(students))
+    status_code = 200
+    logger.info("Returning %d student(s) (status %s)", len(students), status_code)
     return {"students": students}
 
 
@@ -172,7 +173,9 @@ def list_students_by_school(
     )
     if not inst:
         logger.warning("Institutional code missing for user %s", user.get("email"))
-        raise HTTPException(status_code=400, detail="Institutional code required")
+        status_code = 400
+        logger.info("Returning %d student(s) for %s (status %s)", 0, inst, status_code)
+        raise HTTPException(status_code=status_code, detail="Institutional code required")
 
     students: list[dict[str, Any]] = []
     if main.redis_client is not None:
@@ -194,7 +197,13 @@ def list_students_by_school(
                 students.append(_merge_assignments(data))
     else:
         logger.warning("Redis unavailable while listing students for %s", inst)
-    logger.info("Returning %d student(s) for %s", len(students), inst)
+    status_code = 200
+    logger.info(
+        "Returning %d student(s) for %s (status %s)",
+        len(students),
+        inst,
+        status_code,
+    )
     return {"students": students}
 
 
