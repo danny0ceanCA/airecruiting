@@ -37,12 +37,15 @@ from backend.app.logging_utils import (
 
 
 load_dotenv()
-
-logging.basicConfig(level=logging.INFO, format="%(levelname)s [%(request_id)s] %(message)s")
+level_name = os.getenv("LOGLEVEL", "INFO").upper()
+logging.basicConfig(
+    level=level_name, format="%(levelname)s [%(request_id)s] %(message)s"
+)
 for handler in logging.getLogger().handlers:
     handler.addFilter(RequestIdFilter())
 
 logger = get_logger(__name__)
+logger.info("Logging configured with level %s", level_name)
 
 # ---------------------------------------------------------------------------
 # Global settings used by the auth routes and tests
