@@ -68,7 +68,7 @@ function StudentProfiles() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
-  const [schoolStudents, setSchoolStudents] = useState([]);
+  const [schoolStudents, setSchoolStudents] = useState(null);
   const [firstNameFilter, setFirstNameFilter] = useState('');
   const [lastNameFilter, setLastNameFilter] = useState('');
   const [emailFilter, setEmailFilter] = useState('');
@@ -161,6 +161,7 @@ function StudentProfiles() {
         console.error('Failed to fetch students:', err);
         setToast('Failed to load students. Please try again later.');
         setTimeout(() => setToast(''), 3000);
+        setSchoolStudents([]);
       }
     } finally {
       setIsLoading(false);
@@ -196,6 +197,9 @@ function StudentProfiles() {
     fetchStudents();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const needsAssignments = (student) =>
+    !Array.isArray(student.assigned_jobs) && student.assigned_jobs !== 0;
+
   const fetchAssignments = async (student) => {
     const controller = new AbortController();
     assignmentControllers.current[student.email] = controller;
@@ -214,11 +218,28 @@ function StudentProfiles() {
     } catch (err) {
       if (err.name !== 'CanceledError') {
         console.error('Failed to fetch assignments', err);
+        setSchoolStudents((prev) =>
+          Array.isArray(prev)
+            ? prev.map((s) =>
+                s.email === student.email ? { ...s, assigned_jobs: [] } : s
+              )
+            : prev
+        );
       }
     } finally {
       delete assignmentControllers.current[student.email];
     }
   };
+
+  useEffect(() => {
+    if (!isLoading && Array.isArray(schoolStudents)) {
+      schoolStudents.forEach((student) => {
+        if (needsAssignments(student) && !assignmentControllers.current[student.email]) {
+          fetchAssignments(student);
+        }
+      });
+    }
+  }, [isLoading, schoolStudents]);
 
   const toggleRow = (student) => {
     const email = student.email;
@@ -226,7 +247,9 @@ function StudentProfiles() {
       const state = prev[email];
       const isOpen = state === 'open' || state === 'opening';
       if (!isOpen) {
-        fetchAssignments(student);
+        if (needsAssignments(student) && !assignmentControllers.current[email]) {
+          fetchAssignments(student);
+        }
         return { ...prev, [email]: 'opening' };
       } else {
         const ctrl = assignmentControllers.current[email];
@@ -260,7 +283,7 @@ function StudentProfiles() {
   }, [activeTab]);
 
   const handleEdit = (email) => {
-    const student = schoolStudents.find((s) => s.email === email);
+    const student = schoolStudents?.find((s) => s.email === email);
     if (student) {
       const editData = {
         ...student,
@@ -416,9 +439,8 @@ function StudentProfiles() {
       setIsSaving(false);
     }
   };
-
-
-  const filteredStudents = schoolStudents.filter((s) => {
+  const filteredStudents = Array.isArray(schoolStudents)
+    ? schoolStudents.filter((s) => {
     const firstMatch = s.first_name
       ?.toLowerCase()
       .includes(firstNameFilter.toLowerCase());
@@ -462,7 +484,8 @@ function StudentProfiles() {
       assignedMatch &&
       placementMatch
     );
-  });
+    })
+    : [];
 
   return (
 
@@ -527,7 +550,7 @@ function StudentProfiles() {
             New Student Profile
           </button>
         </div>
-        {!isLoading && (
+        {!isLoading && Array.isArray(schoolStudents) && (
           <div className="student-count" data-testid="student-count">
             Student Profiles: <span className="count-number">{schoolStudents.length}</span>
           </div>
@@ -557,7 +580,7 @@ function StudentProfiles() {
           }}
         >
           <div style={{ flexGrow: 1, minHeight: 0, marginTop: '0' }}>
-            {isLoading ? (
+            {isLoading || !Array.isArray(schoolStudents) ? (
               <div className="loading-container">
                 <span className="spinner" />
                 <span style={{ marginLeft: '0.5rem' }}>Loading students...</span>
@@ -668,7 +691,11 @@ function StudentProfiles() {
                 </thead>
                 <tbody>
                   {filteredStudents.map((s) => {
-                    const assigned = Array.isArray(s.assigned_jobs) ? s.assigned_jobs.length : s.assigned_jobs || 0;
+                    const assigned = Array.isArray(s.assigned_jobs)
+                      ? s.assigned_jobs.length
+                      : typeof s.assigned_jobs === 'number'
+                      ? s.assigned_jobs
+                      : null;
                     const placed = Array.isArray(s.placed_jobs) ? s.placed_jobs.length : s.placed_jobs || 0;
                     return (
                       <React.Fragment key={s.email}>
@@ -727,7 +754,9 @@ function StudentProfiles() {
                               )}
                             </div>
                           </td>
-                          <td className="assigned-col">{assigned}</td>
+                          <td className="assigned-col">
+                            {assigned === null ? 'Loading jobs...' : assigned}
+                          </td>
                           <td className="placement-status-col">{placed > 0 ? '✅' : '❌'}</td>
                           <td className="placement-controls-col">
                             {assigned > 0 && placed === 0 && userRole !== 'admin' && (
@@ -756,8 +785,9 @@ function StudentProfiles() {
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {s.assigned_jobs && s.assigned_jobs.length > 0 ? (
-                                    s.assigned_jobs.map((job, index) => (
+                                  {Array.isArray(s.assigned_jobs) ? (
+                                    s.assigned_jobs.length > 0 ? (
+                                      s.assigned_jobs.map((job, index) => (
                                       <tr key={index}>
                                         <td>{job.job_title}</td>
                                         <td>
@@ -824,9 +854,18 @@ function StudentProfiles() {
                                         </td>
                                       </tr>
                                     ))
-                                  ) : (
+                                    ) : (
+                                      <tr className="no-jobs-row">
+                                        <td colSpan="6">No jobs assigned by recruiters.</td>
+                                      </tr>
+                                    )
+                                  ) : s.assigned_jobs === 0 ? (
                                     <tr className="no-jobs-row">
                                       <td colSpan="6">No jobs assigned by recruiters.</td>
+                                    </tr>
+                                  ) : (
+                                    <tr className="no-jobs-row">
+                                      <td colSpan="6">Loading jobs...</td>
                                     </tr>
                                   )}
                                 </tbody>
