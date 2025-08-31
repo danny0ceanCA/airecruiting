@@ -1,4 +1,5 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act } from 'react';
 import StudentProfiles from './StudentProfiles';
 import { BrowserRouter } from 'react-router-dom';
 import api from './api';
@@ -123,4 +124,53 @@ test('opens notes history modal when View Notes clicked', async () => {
     expect(screen.queryByText('Test note')).not.toBeInTheDocument();
   });
   localStorage.clear();
+});
+
+test('deduplicates students from multiple payloads', async () => {
+  const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYWRtaW4ifQ.signature';
+  localStorage.setItem('token', token);
+
+  const student = {
+    first_name: 'A',
+    last_name: 'B',
+    email: 'a@example.com',
+    city: 'City',
+    state: 'ST',
+    institutional_code: 'ABC',
+    license: '',
+    assigned_jobs: [],
+    placed_jobs: []
+  };
+
+  api.get.mockImplementation((url) => {
+    if (url === '/licenses') {
+      return Promise.resolve({ data: { licenses: [] } });
+    }
+    return Promise.resolve({ data: { students: [student] } });
+  });
+
+  let eventSource;
+  window.EventSource = function () {
+    eventSource = this;
+    this.close = jest.fn();
+  };
+
+  render(
+    <BrowserRouter>
+      <StudentProfiles />
+    </BrowserRouter>
+  );
+
+  expect(await screen.findByText('a@example.com')).toBeInTheDocument();
+
+  await act(async () => {
+    eventSource.onmessage({ data: JSON.stringify(student) });
+  });
+
+  await waitFor(() => {
+    expect(screen.getAllByText('a@example.com')).toHaveLength(1);
+  });
+
+  localStorage.clear();
+  delete window.EventSource;
 });
