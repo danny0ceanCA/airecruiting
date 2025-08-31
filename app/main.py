@@ -60,7 +60,7 @@ for handler in logging.getLogger().handlers:
     handler.addFilter(RequestIdFilter())
 
 
-log = get_logger(__name__)
+logger = get_logger(__name__)
 
 
 def init_default_school_codes():
@@ -276,7 +276,7 @@ def send_email(
 ) -> None:
     """Send an email with optional attachments if SMTP configuration is available."""
     if not SMTP_HOST or not EMAIL_SENDER:
-        log.warning("[email] Skipping email to %s; SMTP not configured", recipient)
+        logger.warning("[email] Skipping email to %s; SMTP not configured", recipient)
         return
     try:
         msg = EmailMessage()
@@ -302,9 +302,9 @@ def send_email(
                 s.starttls()
                 s.login(SMTP_USER, SMTP_PASSWORD)
             s.send_message(msg)
-        log.info("[email] Sent notification to %s", recipient)
+        logger.info("[email] Sent notification to %s", recipient)
     except Exception as e:
-        log.error("[email] Failed to send email to %s: %s", recipient, e)
+        logger.error("[email] Failed to send email to %s: %s", recipient, e)
 
 async def get_driving_distance_miles(orig_lat: float, orig_lng: float, dest_lat: float, dest_lng: float) -> float:
     """Return driving distance in miles between two coordinates using Google Distance Matrix.
@@ -320,12 +320,12 @@ async def get_driving_distance_miles(orig_lat: float, orig_lng: float, dest_lat:
     if cached is not None:
         try:
             miles = float(cached)
-            log.info("Distance cache hit for %s", cache_key)
+            logger.info("Distance cache hit for %s", cache_key)
             return miles
         except ValueError:
-            log.exception("Invalid cached distance for %s", cache_key)
+            logger.exception("Invalid cached distance for %s", cache_key)
 
-    log.info("Distance cache miss for %s", cache_key)
+    logger.info("Distance cache miss for %s", cache_key)
     params = {
         "origins": f"{orig_lat},{orig_lng}",
         "destinations": f"{dest_lat},{dest_lng}",
@@ -335,14 +335,14 @@ async def get_driving_distance_miles(orig_lat: float, orig_lng: float, dest_lat:
     url = "https://maps.googleapis.com/maps/api/distancematrix/json"
     async with httpx.AsyncClient() as client:
         try:
-            log.info("Requesting %s params=%s", url, params)
+            logger.info("Requesting %s params=%s", url, params)
             resp = await client.get(url, params=params)
         except Exception:
-            log.exception("Error requesting distance matrix")
+            logger.exception("Error requesting distance matrix")
             raise
 
     if resp.status_code != 200:
-        log.warning(
+        logger.warning(
             "Distance matrix non-200 response %s: %s", resp.status_code, resp.text
         )
         resp.raise_for_status()
@@ -351,7 +351,7 @@ async def get_driving_distance_miles(orig_lat: float, orig_lng: float, dest_lat:
         data = resp.json()
         value_meters = data["rows"][0]["elements"][0]["distance"]["value"]
     except Exception:
-        log.exception("Error parsing distance matrix response")
+        logger.exception("Error parsing distance matrix response")
         raise
 
     miles = value_meters / 1609.34
@@ -377,7 +377,7 @@ async def log_requests(request, call_next):
         if user_agent:
             user_agent = user_agent.replace("\n", " ").replace("\r", " ")[:200]
 
-        log.info(
+        logger.info(
             "Incoming %s %s from %s UA %s",
             request.method,
             request.url,
@@ -406,13 +406,13 @@ async def log_requests(request, call_next):
         start = datetime.now()
         response = await call_next(request)
         duration = (datetime.now() - start).total_seconds()
-        log.info("Response %s in %.3fs", response.status_code, duration)
+        logger.info("Response %s in %.3fs", response.status_code, duration)
         log_entry["status"] = response.status_code
         log_entry["duration"] = duration
         try:
             redis_client.rpush(ACTIVITY_LOG_KEY, json.dumps(log_entry))
         except Exception as e:
-            log.error("Failed to store activity log: %s", e)
+            logger.error("Failed to store activity log: %s", e)
         return response
     finally:
         request_id_ctx_var.reset(token)
@@ -479,7 +479,7 @@ def init_default_admin():
                 }
             ),
         )
-        log.info("Default admin user created")
+        logger.info("Default admin user created")
     init_default_school_codes()
     init_default_licenses()
 
@@ -488,20 +488,20 @@ def on_startup():
     # Verify Redis connection and seed the default admin
     try:
         redis_client.ping()
-        log.info("Redis connection established")
+        logger.info("Redis connection established")
     except Exception as e:
-        log.error("Redis connection failed: %s", e)
+        logger.error("Redis connection failed: %s", e)
         raise
     if not SITE_BASE_URL:
-        log.warning("[startup] Warning: SITE_BASE_URL is empty; links in notification emails may be incorrect")
+        logger.warning("[startup] Warning: SITE_BASE_URL is empty; links in notification emails may be incorrect")
     else:
-        log.info("[startup] Using SITE_BASE_URL=%s", SITE_BASE_URL)
+        logger.info("[startup] Using SITE_BASE_URL=%s", SITE_BASE_URL)
     init_default_admin()
     init_default_school_codes()
     init_default_licenses()
     init_default_rss_feeds()
     keys = redis_client.keys("match_results:*")
-    log.info("🔎 Found %s saved match sets at startup.", len(keys))
+    logger.info("🔎 Found %s saved match sets at startup.", len(keys))
 
 # -------- Models -------- #
 class RegisterRequest(BaseModel):
@@ -609,7 +609,7 @@ def read_root():
 def register(req: RegisterRequest):
     raw_email = req.email
     email = normalize_email(raw_email)
-    log.info("POST /register attempt email=%s normalized=%s", raw_email, email)
+    logger.info("POST /register attempt email=%s normalized=%s", raw_email, email)
     existing = find_user_key(email)
     if existing:
         raise HTTPException(status_code=400, detail="User already exists")
@@ -645,30 +645,63 @@ def register(req: RegisterRequest):
             }
         ),
     )
-    log.info("POST /register success email=%s", email)
+    logger.info("POST /register success email=%s", email)
     return {"message": "Registration submitted. Awaiting admin approval"}
 
 @app.post("/login")
-def login(req: LoginRequest):
+def login(req: LoginRequest, request: Request):
     raw_email = req.email
     email = normalize_email(raw_email)
-    log.info("POST /login attempt email=%s normalized=%s", raw_email, email)
+    client_ip = request.client.host if request.client else "unknown"
+    request_id = request_id_ctx_var.get("-")
+    logger.info(
+        "POST /login attempt email=%s normalized=%s ip=%s ts=%s request_id=%s",
+        raw_email,
+        email,
+        client_ip,
+        datetime.utcnow().isoformat(),
+        request_id,
+    )
     key = find_user_key(email)
     raw = redis_client.get(key) if key else None
-    log.info("POST /login lookup email=%s found=%s", email, bool(raw))
     if not raw:
+        logger.warning(
+            "POST /login failure email=%s reason=not_found ip=%s ts=%s request_id=%s",
+            email,
+            client_ip,
+            datetime.utcnow().isoformat(),
+            request_id,
+        )
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     user = json.loads(raw)
     stored_pw = user.get("password", "").encode()
-    if bcrypt.checkpw(req.password.encode(), stored_pw):
-        log.info("POST /login password match email=%s", email)
-    else:
-        log.warning("POST /login password mismatch email=%s", email)
+    if not bcrypt.checkpw(req.password.encode(), stored_pw):
+        logger.warning(
+            "POST /login failure email=%s reason=password_mismatch ip=%s ts=%s request_id=%s",
+            email,
+            client_ip,
+            datetime.utcnow().isoformat(),
+            request_id,
+        )
         raise HTTPException(status_code=401, detail="Invalid credentials")
     if not user.get("approved"):
+        logger.warning(
+            "POST /login failure email=%s reason=not_approved ip=%s ts=%s request_id=%s",
+            email,
+            client_ip,
+            datetime.utcnow().isoformat(),
+            request_id,
+        )
         raise HTTPException(status_code=403, detail="User not approved")
     if not user.get("active", True):
+        logger.warning(
+            "POST /login failure email=%s reason=deactivated ip=%s ts=%s request_id=%s",
+            email,
+            client_ip,
+            datetime.utcnow().isoformat(),
+            request_id,
+        )
         raise HTTPException(status_code=403, detail="User deactivated")
 
     payload = {
@@ -677,7 +710,13 @@ def login(req: LoginRequest):
         "exp": datetime.utcnow() + timedelta(hours=1),
     }
     token = jwt.encode(payload, JWT_SECRET, algorithm=ALGORITHM)
-    log.info("POST /login success email=%s", email)
+    logger.info(
+        "POST /login success email=%s ip=%s ts=%s request_id=%s",
+        email,
+        client_ip,
+        datetime.utcnow().isoformat(),
+        request_id,
+    )
     try:
         redis_client.rpush(
             ACTIVITY_LOG_KEY,
@@ -690,7 +729,7 @@ def login(req: LoginRequest):
             ),
         )
     except Exception as e:
-        log.error("Failed to store login log for %s: %s", email, e)
+        logger.error("Failed to store login log for %s: %s", email, e)
     return {"token": token}
 
 @app.post("/approve")
@@ -699,7 +738,7 @@ def approve(req: ApproveRequest, current_user: dict = Depends(get_current_user))
         raise HTTPException(status_code=403, detail="Admin privileges required")
     raw_email = req.email
     email = normalize_email(raw_email)
-    log.info("POST /approve request email=%s normalized=%s", raw_email, email)
+    logger.info("POST /approve request email=%s normalized=%s", raw_email, email)
     key = find_user_key(email)
     raw = redis_client.get(key) if key else None
     if not raw:
@@ -717,7 +756,7 @@ def reject(req: RejectRequest, current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Admin privileges required")
     raw_email = req.email
     email = normalize_email(raw_email)
-    log.info("POST /reject request email=%s normalized=%s", raw_email, email)
+    logger.info("POST /reject request email=%s normalized=%s", raw_email, email)
     key = find_user_key(email)
     raw = redis_client.get(key) if key else None
     if not raw:
@@ -740,7 +779,7 @@ def pending_users(current_user: dict = Depends(get_current_user)):
             info = json.loads(raw)
         except json.JSONDecodeError as exc:
             sample = raw[:200] + ("..." if len(raw) > 200 else "")
-            log.error(
+            logger.error(
                 "Malformed JSON for Redis key %s (len=%d) sample=%r: %s",
                 key,
                 len(raw),
@@ -769,7 +808,7 @@ def list_users(current_user: dict = Depends(get_current_user)):
             data = json.loads(raw)
         except json.JSONDecodeError as exc:
             sample = raw[:200] + ("..." if len(raw) > 200 else "")
-            log.error(
+            logger.error(
                 "Malformed JSON for Redis key %s (len=%d) sample=%r: %s",
                 key,
                 len(raw),
@@ -790,7 +829,7 @@ def update_user(email: str, req: UpdateUserRequest, current_user: dict = Depends
         raise HTTPException(status_code=403, detail="Admin privileges required")
     raw_email = email
     email = normalize_email(raw_email)
-    log.info("PUT /admin/users update email=%s normalized=%s", raw_email, email)
+    logger.info("PUT /admin/users update email=%s normalized=%s", raw_email, email)
     key = find_user_key(email)
     raw = redis_client.get(key) if key else None
     if not raw:
@@ -817,7 +856,7 @@ def delete_user(email: str, current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Admin privileges required")
     raw_email = email
     email = normalize_email(raw_email)
-    log.info("DELETE /admin/users request email=%s normalized=%s", raw_email, email)
+    logger.info("DELETE /admin/users request email=%s normalized=%s", raw_email, email)
     key = find_user_key(email)
     if not key or not redis_client.exists(key):
         raise HTTPException(status_code=404, detail="User not found")
@@ -999,7 +1038,7 @@ async def create_student(request: Request, current_user: dict = Depends(get_curr
     student_data.license = license_to_code(student_data.license)
 
     owner = current_user.get("sub")
-    log.info("POST /students attempt email=%s owner=%s", student_data.email, owner)
+    logger.info("POST /students attempt email=%s owner=%s", student_data.email, owner)
 
     if current_user.get("role") == "applicant" and student_data.email != current_user.get("sub"):
         raise HTTPException(status_code=403, detail="Applicants can only create their own profile")
@@ -1007,7 +1046,7 @@ async def create_student(request: Request, current_user: dict = Depends(get_curr
     existing_key = resolve_student_key(student_data.email)
     if existing_key:
         created_by_in_db = json.loads(redis_client.get(existing_key)).get("created_by")
-        log.warning(
+        logger.warning(
             "POST /students duplicate/conflict email=%s owner=%s created_by_in_db=%s",
             student_data.email,
             owner,
@@ -1035,7 +1074,7 @@ async def create_student(request: Request, current_user: dict = Depends(get_curr
         except HTTPException:
             raise
         except Exception as e:
-            log.exception("Resume parsing failed")
+            logger.exception("Resume parsing failed")
             raise HTTPException(status_code=400, detail=f"Failed to parse resume: {e}")
 
     profile_json = None
@@ -1064,7 +1103,7 @@ async def create_student(request: Request, current_user: dict = Depends(get_curr
         resp = client.embeddings.create(input=combined, model="text-embedding-3-small")
         embedding = resp.data[0].embedding
     except Exception as e:
-        log.exception("Embedding generation failed")
+        logger.exception("Embedding generation failed")
         raise HTTPException(status_code=500, detail=f"Embedding failed: {str(e)}")
 
     u_key = user_key(current_user.get('sub'))
@@ -1092,7 +1131,7 @@ async def create_student(request: Request, current_user: dict = Depends(get_curr
     data["created_by"] = current_user.get("sub")
     data["created_at"] = datetime.now(timezone.utc).isoformat()
     persist_student_record(student_data.email, data, institution_code, student_id)
-    log.info(
+    logger.info(
         "POST /students success email=%s owner=%s",
         student_data.email,
         owner,
@@ -1274,7 +1313,7 @@ def create_job(job: JobRequest, current_user: dict = Depends(get_current_user)):
     data.setdefault("student_notes", {})
 
     redis_client.set(key, json.dumps(data))
-    log.info("Stored job at %s: %s", key, data)
+    logger.info("Stored job at %s: %s", key, data)
     return {"message": "Job stored", "job_code": generated_code}
 
 
@@ -1302,7 +1341,7 @@ def update_job(job_code: str, updated: dict, token_data: dict = Depends(get_curr
         updated["required_license"] = license_to_code(updated["required_license"])
     job.update(updated)
     redis_client.set(key, json.dumps(job))
-    log.info("✏️ Updated job %s", job_code)
+    logger.info("✏️ Updated job %s", job_code)
     return {"message": "Job updated"}
 
 @app.post("/match")
@@ -1527,7 +1566,7 @@ async def _perform_match_async(job_code: str, send_emails: bool = True, enq_time
     redis_client.set(
         f"match_results:{job_code}", json.dumps(top_matches)
     )
-    log.info("✅ Stored %s matches for job %s", len(top_matches), job_code)
+    logger.info("✅ Stored %s matches for job %s", len(top_matches), job_code)
 
     if send_emails:
         for m in top_matches:
@@ -1584,12 +1623,12 @@ def get_match_results(job_code: str, current_user: dict = Depends(get_current_us
     results_json = redis_client.get(key)
 
     if results_json is None:
-        log.warning("⚠️ No match results found for job %s", job_code)
+        logger.warning("⚠️ No match results found for job %s", job_code)
         return {"matches": []}
 
     try:
         matches = {m["email"]: m for m in json.loads(results_json)}
-        log.info("📦 Returning %s stored matches for job %s", len(matches), job_code)
+        logger.info("📦 Returning %s stored matches for job %s", len(matches), job_code)
 
         # Ensure each match has first and last name fields
         for m in matches.values():
@@ -1640,7 +1679,7 @@ def get_match_results(job_code: str, current_user: dict = Depends(get_current_us
 
         return {"matches": list(matches.values())}
     except Exception as e:
-        log.error("❌ Failed to load match results for %s: %s", job_code, e)
+        logger.error("❌ Failed to load match results for %s: %s", job_code, e)
         return {"matches": []}
 
 
@@ -1662,7 +1701,7 @@ def list_jobs(current_user: dict = Depends(get_current_user)):
             job.setdefault("rejected_students", [])
             job.setdefault("student_notes", {})
             jobs.append(job)
-    log.info("Returning %s jobs from Redis", len(jobs))
+    logger.info("Returning %s jobs from Redis", len(jobs))
     return {"jobs": jobs}
 
 
@@ -2244,7 +2283,7 @@ def notify_interest(data: dict, token_data: dict = Depends(get_current_user)):
 @app.post("/generate-resume")
 def generate_resume(req: ResumeRequest, current_user: dict = Depends(get_current_user)):
     """Generate an HTML resume using OpenAI and store it in Redis."""
-    log.info("📄 Generating resume for %s - %s", req.student_email, req.job_code)
+    logger.info("📄 Generating resume for %s - %s", req.student_email, req.job_code)
     preview = getattr(req, "preview", False)
     resume_key = f"resume:{req.job_code}:{req.student_email}"
     html_key = f"resumehtml:{req.job_code}:{req.student_email}"
@@ -2252,7 +2291,7 @@ def generate_resume(req: ResumeRequest, current_user: dict = Depends(get_current
         existing = redis_client.get(resume_key)
         if existing:
             redis_client.set(html_key, existing)
-            log.info("📄 Resume already exists for %s - %s", req.student_email, req.job_code)
+            logger.info("📄 Resume already exists for %s - %s", req.student_email, req.job_code)
             return {"status": "exists"}
 
     job_raw = redis_client.get(f"job:{req.job_code}")
@@ -2263,7 +2302,7 @@ def generate_resume(req: ResumeRequest, current_user: dict = Depends(get_current
         skey = resolve_student_key(req.student_email)
         student_raw = redis_client.get(skey) if skey else None
     if not job_raw or not student_raw:
-        log.warning("❌ Job or student not found")
+        logger.warning("❌ Job or student not found")
         raise HTTPException(status_code=404, detail="Job or student not found")
 
     job = json.loads(job_raw)
@@ -2321,7 +2360,7 @@ def generate_resume(req: ResumeRequest, current_user: dict = Depends(get_current
     if not preview:
         redis_client.set(resume_key, full_html)
         redis_client.set(html_key, full_html)
-        log.info("✅ Resume saved for %s - %s", req.student_email, req.job_code)
+        logger.info("✅ Resume saved for %s - %s", req.student_email, req.job_code)
         return {"status": "success"}
     else:
         return {"status": "preview", "html": full_html}
@@ -2330,11 +2369,11 @@ def generate_resume(req: ResumeRequest, current_user: dict = Depends(get_current
 @app.post("/generate-description")
 def generate_description(req: DescriptionRequest, current_user: dict = Depends(get_current_user)):
     """Generate a short job description tailored to a student."""
-    log.info("📝 Generating description for %s - %s", req.student_email, req.job_code)
+    logger.info("📝 Generating description for %s - %s", req.student_email, req.job_code)
     desc_key = f"description:{req.job_code}:{req.student_email}"
     existing = redis_client.get(desc_key)
     if existing:
-        log.info("📝 Description already exists")
+        logger.info("📝 Description already exists")
         return {"status": "exists", "description": existing}
 
     job_raw = redis_client.get(f"job:{req.job_code}")
@@ -2348,7 +2387,7 @@ def generate_description(req: DescriptionRequest, current_user: dict = Depends(g
 
     generated_desc = generate_description_text(client, student, job)
     redis_client.set(desc_key, generated_desc)
-    log.info("✅ Description stored")
+    logger.info("✅ Description stored")
     return {"status": "success", "description": generated_desc}
 
 
@@ -2505,7 +2544,7 @@ def get_public_job_description_html(job_code: str, student_email: str):
 def get_resume(job_code: str, student_email: str, current_user: dict = Depends(get_current_user)):
     student_email = normalize_email(student_email)
     key = f"resume:{job_code}:{student_email}"
-    log.info("📥 Download request for resume: %s - %s", job_code, student_email)
+    logger.info("📥 Download request for resume: %s - %s", job_code, student_email)
 
     job_raw = redis_client.get(f"job:{job_code}")
     if not job_raw:
@@ -2518,7 +2557,7 @@ def get_resume(job_code: str, student_email: str, current_user: dict = Depends(g
     if not resume:
         raise HTTPException(status_code=404, detail="Resume not found")
 
-    log.info("✅ Resume found and returned as plain text")
+    logger.info("✅ Resume found and returned as plain text")
     return {
         "status": "success",
         "job_code": job_code,

@@ -88,6 +88,16 @@ function StudentProfiles() {
   const [expandedRows, setExpandedRows] = useState({});
   const [modalNotes, setModalNotes] = useState(null);
 
+  const mergeStudents = (list) => {
+    const map = new Map();
+    list.forEach((s) => {
+      if (s && s.email) {
+        map.set(s.email, { ...map.get(s.email), ...s });
+      }
+    });
+    return Array.from(map.values());
+  };
+
   const handleTourCallback = (data) => {
     const { status, type } = data;
     if (status === 'finished' || status === 'skipped') {
@@ -142,7 +152,8 @@ function StudentProfiles() {
       const resp = await api.get(endpoint, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      setSchoolStudents(resp.data?.students || []);
+      const incoming = resp.data?.students || [];
+      setSchoolStudents((prev) => mergeStudents([...prev, ...incoming]));
     } catch (err) {
       if (err.response && err.response.status === 401) {
         localStorage.removeItem('token');
@@ -185,6 +196,23 @@ function StudentProfiles() {
     fetchLicenses();
     fetchStudents();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!window.EventSource) return;
+    const source = new EventSource('/students/stream');
+    source.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        const incoming = Array.isArray(data) ? data : [data];
+        setSchoolStudents((prev) => mergeStudents([...prev, ...incoming]));
+      } catch (err) {
+        console.error('Failed to parse student update:', err);
+      }
+    };
+    return () => {
+      source.close();
+    };
+  }, []);
 
   const toggleRow = (email, assignedJobs = []) => {
     setExpandedRows((prev) => {
