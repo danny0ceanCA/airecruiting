@@ -2700,6 +2700,32 @@ def reset_jobs(current_user: dict = Depends(get_current_user)):
     return {"message": f"Deleted {deleted} jobs and match data"}
 
 
+@app.delete("/admin/student-claims/{email}")
+def clear_student_claim(email: str, current_user: dict = Depends(get_current_user)):
+    """Clear the claimed_by field and related claim tokens for a student."""
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+    email = normalize_email(email)
+    key = resolve_student_key(email)
+    if not key or not redis_client.exists(key):
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    raw = redis_client.get(key)
+    student = json.loads(raw) if raw else {}
+    student.pop("claimed_by", None)
+    payload = json.dumps(student)
+    redis_client.set(key, payload)
+    redis_client.set(f"student:{email}", payload)
+
+    for token_key in redis_client.scan_iter("student_claim:*"):
+        k = token_key if isinstance(token_key, str) else token_key.decode()
+        val = redis_client.get(k)
+        if email in k or (isinstance(val, str) and normalize_email(val) == email):
+            redis_client.delete(k)
+
+    return {"message": f"Cleared claim for {email}"}
+
+
 @app.delete("/admin/delete-student/{email}")
 def delete_student(email: str, current_user: dict = Depends(get_current_user)):
     """Remove a student profile and any associated user record."""
