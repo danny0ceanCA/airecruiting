@@ -613,7 +613,7 @@ def register(req: RegisterRequest):
     existing = find_user_key(email)
     if existing:
         raise HTTPException(status_code=400, detail="User already exists")
-
+    student_key_existing = resolve_student_key(email)
     key = user_key(email)
 
     if req.role in {"career", "recruiter"} and not req.institutional_code:
@@ -645,6 +645,31 @@ def register(req: RegisterRequest):
             }
         ),
     )
+    if student_key_existing:
+        raw = redis_client.get(student_key_existing)
+        try:
+            student = json.loads(raw) if raw else {}
+        except Exception:
+            student = {}
+        student["registered_by"] = key
+        redis_client.set(student_key_existing, json.dumps(student))
+        send_email(
+            email,
+            "Student profile claimed",
+            "Your account has been linked to an existing student profile.",
+        )
+        creator = student.get("created_by")
+        if creator and creator != email:
+            send_email(
+                creator,
+                "Student profile claimed",
+                f"{email} has claimed the student profile you created.",
+            )
+        logger.info(
+            "Linked user %s to existing student profile %s",
+            email,
+            student_key_existing,
+        )
     logger.info("POST /register success email=%s", email)
     return {"message": "Registration submitted. Awaiting admin approval"}
 
@@ -1045,7 +1070,17 @@ async def create_student(request: Request, current_user: dict = Depends(get_curr
 
     existing_key = resolve_student_key(student_data.email)
     if existing_key:
-        created_by_in_db = json.loads(redis_client.get(existing_key)).get("created_by")
+        stored = json.loads(redis_client.get(existing_key))
+        created_by_in_db = stored.get("created_by")
+        registered_by_in_db = stored.get("registered_by")
+        owner_key = user_key(owner) if owner else None
+        if owner in {created_by_in_db} or owner_key == registered_by_in_db:
+            logger.info(
+                "POST /students duplicate/self email=%s owner=%s",
+                student_data.email,
+                owner,
+            )
+            return {"message": "Student already exists", "student": stored}
         logger.warning(
             "POST /students duplicate/conflict email=%s owner=%s created_by_in_db=%s",
             student_data.email,
