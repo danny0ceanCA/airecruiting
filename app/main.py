@@ -2931,6 +2931,11 @@ def student_me(current_user: dict = Depends(get_current_user)):
     except Exception:
         raise HTTPException(status_code=500, detail="Corrupted profile data")
 
+    claimed_by = student.get("claimed_by")
+    current_sub = current_user.get("sub")
+    if claimed_by and claimed_by != current_sub:
+        raise HTTPException(status_code=403, detail="Profile not claimed by current user")
+
     # gather related job info
     assigned_jobs = []
     placed = 0
