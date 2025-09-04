@@ -23,7 +23,7 @@ from fastapi import (
 )
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, EmailStr, Field, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, EmailStr, Field, ConfigDict, field_validator, model_validator, HttpUrl
 from jose import jwt, JWTError
 import bcrypt
 for _p in ["http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY"]:
@@ -39,6 +39,7 @@ from rq import Queue
 from html import unescape
 import random
 from zoneinfo import ZoneInfo
+from urllib.parse import urlparse
 from backend.app.schemas.resume import ResumeRequest
 from backend.app.schemas.description import DescriptionRequest
 from backend.app.services.resume import generate_resume_text
@@ -569,6 +570,7 @@ class JobRequest(BaseModel):
     desired_skills: list[str]
     job_code: Optional[str] = None
     source: str | None = None
+    external_apply_url: HttpUrl | None = None
     required_license: str | None = None
     min_pay: float
     max_pay: float
@@ -1381,6 +1383,9 @@ def create_job(job: JobRequest, current_user: dict = Depends(get_current_user)):
         if label:
             data["source"] = label.split("-", 1)[-1] if "-" in label else label
 
+    if data.get("external_apply_url") and not data.get("source"):
+        raise HTTPException(status_code=400, detail="Source required when external apply URL is provided")
+
     data["job_code"] = generated_code
     data["posted_by"] = user_email
     data["timestamp"] = datetime.now().isoformat()
@@ -1417,6 +1422,12 @@ def update_job(job_code: str, updated: dict, token_data: dict = Depends(get_curr
             raise HTTPException(status_code=400, detail="Invalid pay range")
     if "required_license" in updated:
         updated["required_license"] = license_to_code(updated["required_license"])
+    if "external_apply_url" in updated:
+        parsed = urlparse(updated["external_apply_url"])
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise HTTPException(status_code=400, detail="Invalid external_apply_url")
+        if not (updated.get("source") or job.get("source")):
+            raise HTTPException(status_code=400, detail="Source required when external_apply_url is provided")
     job.update(updated)
     redis_client.set(key, json.dumps(job))
     logger.info("✏️ Updated job %s", job_code)
@@ -2339,15 +2350,19 @@ def notify_interest(data: dict, token_data: dict = Depends(get_current_user)):
         if SITE_BASE_URL
         else f"/public/job-description-html/{job_code}/{student_email}"
     )
+    summary = (
+        f"Job: {job.get('job_title')} at {job.get('source', '')} in {job.get('city', '')}, {job.get('state', '')}"
+    )
+    external_url = job.get("external_apply_url")
     body = (
         f"Hello {first_name},\n\n"
-        "Your resume has been matched with a job and the recruiter has reviewed your resume.\n\n"
-        "You are receiving this email because the Recruiter would like to notify you that you are a match "
-        "and will be contacting you to discuss your resume.\n\n"
+        f"{summary}\n\n"
+        "Your resume has been matched with this job and the recruiter has reviewed your resume.\n\n"
         f"Please review the job description here: {public_url}\n\n"
-        "Good Luck!\n\n"
-        "Support Team @ TalentMatch-AI"
     )
+    if external_url:
+        body += f"You must apply using the following link: {external_url}\n\n"
+    body += "Good Luck!\n\nSupport Team @ TalentMatch-AI"
 
     send_email(
         student_email,
@@ -2532,7 +2547,14 @@ Output only valid HTML.
     if raw_content.endswith("```"):
         raw_content = raw_content.rsplit("```", 1)[0].strip()
 
-    details_html = """
+    link_html = ""
+    if job.get("external_apply_url"):
+        link_html = (
+            f"<p><strong>Click this link to apply on the employer's site:</strong> "
+            f"<a href='{job['external_apply_url']}' target='_blank' rel='noopener noreferrer'>Apply Here</a></p>"
+        )
+    details_html = (
+        """{link}
     <h2>Job Details</h2>
     <ul>
       <li><strong>Source:</strong> {source}</li>
@@ -2540,11 +2562,13 @@ Output only valid HTML.
       <li><strong>Location:</strong> {city}, {state}</li>
     </ul>
     """.format(
-        source=job.get("source", ""),
-        pay_min=job.get("min_pay", ""),
-        pay_max=job.get("max_pay", ""),
-        city=job.get("city", ""),
-        state=job.get("state", ""),
+            link=link_html,
+            source=job.get("source", ""),
+            pay_min=job.get("min_pay", ""),
+            pay_max=job.get("max_pay", ""),
+            city=job.get("city", ""),
+            state=job.get("state", ""),
+        )
     )
 
     full_html = f"""
