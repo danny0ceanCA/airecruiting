@@ -14,6 +14,7 @@ function JobPosting() {
     desired_skills: '',
     required_license: '',
     source: '',
+    external_apply_url: '',
     min_pay: '',
     max_pay: '',
     city: '',
@@ -182,12 +183,19 @@ if (shouldRedirect) {
       if (!isRecruiter) {
         payload.source = formData.source;
       }
+      if (formData.external_apply_url) {
+        payload.external_apply_url = formData.external_apply_url;
+        if (!payload.source) {
+          setMessage('Source is required when providing an external apply URL');
+          return;
+        }
+      }
       const resp = await api.post('/jobs', payload, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setMessage(`Job posted successfully! Job code: ${resp.data.job_code}`);
       setFormData({
-        job_title: '', job_description: '', desired_skills: '', required_license: '', source: '', min_pay: '', max_pay: '', city: '', state: '', lat: '', lng: ''
+        job_title: '', job_description: '', desired_skills: '', required_license: '', source: '', external_apply_url: '', min_pay: '', max_pay: '', city: '', state: '', lat: '', lng: ''
       });
       fetchJobs();
     } catch (err) {
@@ -881,6 +889,18 @@ if (shouldRedirect) {
                   />
                 </div>
               )}
+              {!isRecruiter && (
+                <div className="form-field">
+                  <label htmlFor="external_apply_url">External Apply URL</label>
+                  <input
+                    id="external_apply_url"
+                    name="external_apply_url"
+                    type="text"
+                    value={formData.external_apply_url}
+                    onChange={handleChange}
+                  />
+                </div>
+              )}
               <div className="form-field">
                 <label htmlFor="min_pay">Minimum Pay</label>
                 <input
@@ -1152,6 +1172,28 @@ if (shouldRedirect) {
                                   }
                                 />
                               </div>
+                              {userRole === 'admin' && (
+                                <div className="form-row">
+                                  <label>External Apply URL</label>
+                                  <input
+                                    type="text"
+                                    value={
+                                      editedJobs[job.job_code]?.external_apply_url ||
+                                      job.external_apply_url ||
+                                      ''
+                                    }
+                                    onChange={(e) =>
+                                      setEditedJobs((prev) => ({
+                                        ...prev,
+                                        [job.job_code]: {
+                                          ...prev[job.job_code],
+                                          external_apply_url: e.target.value,
+                                        },
+                                      }))
+                                    }
+                                  />
+                                </div>
+                              )}
                               <div className="form-row">
                                 <label>Minimum Pay</label>
                                 <input
@@ -1201,6 +1243,11 @@ if (shouldRedirect) {
                                 <p>License: {licenseLabel(job.required_license)}</p>
                               )}
                               <p>Source: {job.source}</p>
+                              {job.external_apply_url && (
+                                <p>
+                                  External Apply: <a href={job.external_apply_url} target="_blank" rel="noopener noreferrer">Apply Here</a>
+                                </p>
+                              )}
                               <p>
                                 Pay Range: {job.min_pay} - {job.max_pay}
                               </p>
