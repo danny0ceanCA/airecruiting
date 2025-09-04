@@ -518,6 +518,10 @@ class LoginRequest(BaseModel):
     email: EmailStr
     password: str
 
+
+class VerifyTokenRequest(BaseModel):
+    token: str
+
 class ApproveRequest(BaseModel):
     email: EmailStr
     role: str | None = None  # optional new role
@@ -756,6 +760,45 @@ def login(req: LoginRequest, request: Request):
     except Exception as e:
         logger.error("Failed to store login log for %s: %s", email, e)
     return {"token": token}
+
+
+@app.post("/verify-token")
+def verify_token(req: VerifyTokenRequest, current_user: dict = Depends(get_current_user)):
+    """Verify a student token and claim the profile for the current user."""
+    try:
+        payload = jwt.decode(req.token, JWT_SECRET, algorithms=[ALGORITHM])
+    except JWTError:
+        raise HTTPException(status_code=400, detail="Invalid token")
+
+    student_data = payload.get("student") or payload
+    email = normalize_email(student_data.get("email"))
+    inst = student_data.get("institutional_code")
+    sid = student_data.get("student_id")
+    if not email or not inst or not sid:
+        raise HTTPException(status_code=400, detail="Invalid token payload")
+
+    key = student_key(inst, sid)
+    raw = redis_client.get(key)
+    existing = json.loads(raw) if raw else {}
+
+    # Preserve existing created_by if present
+    created_by = existing.get("created_by") or student_data.get("created_by")
+
+    updated = existing.copy()
+    updated.update(student_data)
+    if created_by is not None:
+        updated["created_by"] = created_by
+    updated["claimed_by"] = current_user["sub"]
+
+    payload_json = json.dumps(updated)
+    redis_client.set(key, payload_json)
+    redis_client.set(f"student:{email}", payload_json)
+
+    idx_key = student_email_key(email)
+    if not redis_client.exists(idx_key):
+        redis_client.set(idx_key, f"{inst}:{sid}")
+
+    return {"student": updated}
 
 @app.post("/approve")
 def approve(req: ApproveRequest, current_user: dict = Depends(get_current_user)):
