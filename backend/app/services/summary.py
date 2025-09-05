@@ -369,7 +369,7 @@ def send_weekly_summary(user_email: str) -> bool:
         return False
 
     role = user.get("role")
-    if role not in {"career", "admin"}:
+    if role not in {"career", "admin", "junior_admin"}:
         return False
 
     display_name = f"{user.get('first_name', '')} {user.get('last_name', '')}".strip() or user_email

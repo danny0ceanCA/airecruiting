@@ -14,7 +14,7 @@ function CareerStaffInfo() {
     } catch {}
   }
 
-  if (role !== 'admin' && role !== 'career') {
+  if (role !== 'admin' && role !== 'junior_admin' && role !== 'career') {
     return <Navigate to="/dashboard" replace />;
   }
 

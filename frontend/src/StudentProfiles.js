@@ -143,12 +143,12 @@ function StudentProfiles() {
     decoded = {};
   }
   const userRole = decoded?.role;
-  const isAdmin = userRole === 'admin';
+  const isAdmin = userRole === 'admin' || userRole === 'junior_admin';
 
   const fetchStudents = async () => {
     setIsLoading(true);
     try {
-      const endpoint = userRole === 'admin' ? '/students/all' : '/students/by-school';
+      const endpoint = userRole === 'admin' || userRole === 'junior_admin' ? '/students/all' : '/students/by-school';
       const resp = await api.get(endpoint, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -415,7 +415,7 @@ function StudentProfiles() {
       .toLowerCase()
       .includes(locationFilter.toLowerCase());
     const codeMatch =
-      userRole !== 'admin'
+      userRole !== 'admin' && userRole !== 'junior_admin'
         ? true
         : (s.institutional_code || '')
             .toLowerCase()
@@ -465,7 +465,7 @@ function StudentProfiles() {
           />
         )}
         <AdminMenu>
-        {userRole === 'admin' && (
+        {isAdmin && (
           <button
             className="admin-reset-button"
             onClick={async () => {
@@ -555,7 +555,7 @@ function StudentProfiles() {
                     <th>Last Name</th>
                     <th>Email</th>
                     <th>Location</th>
-                    {userRole === 'admin' && <th>School</th>}
+                    {isAdmin && <th>School</th>}
                     <th>License</th>
                     <th className="edit-col">Edit</th>
                     <th className="assigned-col">Assigned Jobs</th>
@@ -600,7 +600,7 @@ function StudentProfiles() {
                         placeholder="Filter"
                       />
                     </th>
-                    {userRole === 'admin' && (
+                    {isAdmin && (
                       <th>
                         <input
                           className="column-filter"
@@ -675,7 +675,7 @@ function StudentProfiles() {
                           <td>{s.last_name}</td>
                           <td>{s.email}</td>
                           <td>{[s.city, s.state].filter(Boolean).join(', ')}</td>
-                          {userRole === 'admin' && <td>{s.institutional_code}</td>}
+                          {isAdmin && <td>{s.institutional_code}</td>}
                           <td>{licenseLabel(s.license)}</td>
                           <td className="edit-col">
                             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
@@ -692,7 +692,7 @@ function StudentProfiles() {
                                   ✏️
                                 </button>
                               </Tooltip>
-                              {userRole === 'admin' && (
+                              {isAdmin && (
                                 <Tooltip text="Delete Student" position="bottom">
                                   <button
                                     onClick={() => handleDelete(s.email)}
@@ -713,7 +713,7 @@ function StudentProfiles() {
                           <td className="assigned-col">{assigned}</td>
                           <td className="placement-status-col">{placed > 0 ? '✅' : '❌'}</td>
                           <td className="placement-controls-col">
-                            {assigned > 0 && placed === 0 && userRole !== 'admin' && (
+                            {assigned > 0 && placed === 0 && userRole !== 'admin' && userRole !== 'junior_admin' && (
                               <button onClick={() => handleMarkPlaced(s)}>
                                 Mark as Placed
                               </button>

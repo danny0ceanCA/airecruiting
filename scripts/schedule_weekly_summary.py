@@ -39,12 +39,12 @@ def schedule_weekly_summary() -> None:
             user = json.loads(_b2s(raw))
         except Exception:
             continue
-        if user.get("role") in {"career", "admin"}:
+        if user.get("role") in {"career", "admin", "junior_admin"}:
             email = _b2s(key).split("user:", 1)[1]
             targets.append(email)
 
     if not targets:
-        log.warning("No career/admin users found; nothing to schedule.")
+        log.warning("No career/admin/junior_admin users found; nothing to schedule.")
     else:
         log.info("Scheduling weekly summaries for %d users", len(targets))
 
