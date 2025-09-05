@@ -63,6 +63,8 @@ for handler in logging.getLogger().handlers:
 
 logger = get_logger(__name__)
 
+ADMIN_ROLES = {"admin", "junior_admin"}
+
 
 def init_default_school_codes():
     """Ensure Redis contains the default school codes with current labels."""
@@ -457,30 +459,61 @@ def school_codes():
 
 # ----- User Utilities ----- #
 
-def init_default_admin():
-    """Seed the default admin user if it does not already exist."""
-    email = os.getenv("ADMIN_EMAIL", "admin@example.com")
-    password = os.getenv("ADMIN_PASSWORD", "admin123")
-    key = f"user:{email}"
 
-    if not redis_client.exists(key):
-        hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-        redis_client.set(
-            key,
-            json.dumps(
-                {
-                    "first_name": "Admin",
-                    "last_name": "User",
-                    "institutional_code": "Admin School",
-                    "password": hashed,
-                    "active": True,
-                    "role": "admin",
-                    "approved": True,
-                    "rejected": False,
-                }
-            ),
+def _validate_admin_password(password: str) -> None:
+    """Basic validation for admin passwords."""
+    if (
+        len(password) < 8
+        or not re.search(r"[A-Za-z]", password)
+        or not re.search(r"\d", password)
+    ):
+        raise RuntimeError(
+            "Admin passwords must be at least 8 characters and include letters and numbers"
         )
-        logger.info("Default admin user created")
+
+
+def _seed_admin_user(email: str, password: str, first: str, last: str, role: str) -> None:
+    key = f"user:{email}"
+    if redis_client.exists(key):
+        return
+    hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+    redis_client.set(
+        key,
+        json.dumps(
+            {
+                "first_name": first,
+                "last_name": last,
+                "institutional_code": "Admin School",
+                "password": hashed,
+                "active": True,
+                "role": role,
+                "approved": True,
+                "rejected": False,
+            }
+        ),
+    )
+    logger.info("%s user %s created", role, email)
+
+
+def init_default_admin():
+    """Seed the default admin users if they do not already exist."""
+    email = os.getenv("ADMIN_EMAIL")
+    password = os.getenv("ADMIN_PASSWORD")
+    if not email or not password:
+        raise RuntimeError("ADMIN_EMAIL and ADMIN_PASSWORD must be set")
+    _validate_admin_password(password)
+    _seed_admin_user(email, password, "Admin", "User", "admin")
+
+    j_email = os.getenv("JUNIOR_ADMIN_EMAIL")
+    j_password = os.getenv("JUNIOR_ADMIN_PASSWORD")
+    if j_email and j_password:
+        _validate_admin_password(j_password)
+        _seed_admin_user(j_email, j_password, "Junior", "Admin", "junior_admin")
+    elif j_email or j_password:
+        raise RuntimeError(
+            "JUNIOR_ADMIN_EMAIL and JUNIOR_ADMIN_PASSWORD must both be set"
+        )
+
     init_default_school_codes()
     init_default_licenses()
 
@@ -895,7 +928,7 @@ def list_users(current_user: dict = Depends(get_current_user)):
 
 @app.put("/admin/users/{email}")
 def update_user(email: str, req: UpdateUserRequest, current_user: dict = Depends(get_current_user)):
-    if current_user.get("role") != "admin":
+    if current_user.get("role") not in ADMIN_ROLES:
         raise HTTPException(status_code=403, detail="Admin privileges required")
     raw_email = email
     email = normalize_email(raw_email)
@@ -922,7 +955,7 @@ def update_user(email: str, req: UpdateUserRequest, current_user: dict = Depends
 @app.delete("/admin/users/{email}")
 def delete_user(email: str, current_user: dict = Depends(get_current_user)):
     """Delete a user account."""
-    if current_user.get("role") != "admin":
+    if current_user.get("role") not in ADMIN_ROLES:
         raise HTTPException(status_code=403, detail="Admin privileges required")
     raw_email = email
     email = normalize_email(raw_email)
@@ -947,7 +980,7 @@ class UpdateSchoolCodeRequest(BaseModel):
 def add_school_code(
     req: SchoolCodeRequest, current_user: dict = Depends(get_current_user)
 ):
-    if current_user.get("role") != "admin":
+    if current_user.get("role") not in ADMIN_ROLES:
         raise HTTPException(status_code=403, detail="Admin privileges required")
     key = f"school_code:{req.code}"
     if redis_client.exists(key):
@@ -961,7 +994,7 @@ def update_school_code(
     code: str, req: UpdateSchoolCodeRequest, current_user: dict = Depends(get_current_user)
 ):
     """Update the label for an existing school code."""
-    if current_user.get("role") != "admin":
+    if current_user.get("role") not in ADMIN_ROLES:
         raise HTTPException(status_code=403, detail="Admin privileges required")
     key = f"school_code:{code}"
     if not redis_client.exists(key):
@@ -973,7 +1006,7 @@ def update_school_code(
 @app.delete("/admin/school-codes/{code}")
 def delete_school_code(code: str, current_user: dict = Depends(get_current_user)):
     """Delete a school code."""
-    if current_user.get("role") != "admin":
+    if current_user.get("role") not in ADMIN_ROLES:
         raise HTTPException(status_code=403, detail="Admin privileges required")
     key = f"school_code:{code}"
     if not redis_client.exists(key):
@@ -999,7 +1032,7 @@ def list_licenses():
 
 @app.post("/admin/licenses")
 def add_license(req: LicenseRequest, current_user: dict = Depends(get_current_user)):
-    if current_user.get("role") != "admin":
+    if current_user.get("role") not in ADMIN_ROLES:
         raise HTTPException(status_code=403, detail="Admin privileges required")
     key = f"license:{req.code}"
     if redis_client.exists(key):
@@ -1010,7 +1043,7 @@ def add_license(req: LicenseRequest, current_user: dict = Depends(get_current_us
 
 @app.put("/admin/licenses/{code}")
 def update_license(code: str, req: UpdateLicenseRequest, current_user: dict = Depends(get_current_user)):
-    if current_user.get("role") != "admin":
+    if current_user.get("role") not in ADMIN_ROLES:
         raise HTTPException(status_code=403, detail="Admin privileges required")
     key = f"license:{code}"
     if not redis_client.exists(key):
@@ -1021,7 +1054,7 @@ def update_license(code: str, req: UpdateLicenseRequest, current_user: dict = De
 
 @app.delete("/admin/licenses/{code}")
 def delete_license(code: str, current_user: dict = Depends(get_current_user)):
-    if current_user.get("role") != "admin":
+    if current_user.get("role") not in ADMIN_ROLES:
         raise HTTPException(status_code=403, detail="Admin privileges required")
     key = f"license:{code}"
     if not redis_client.exists(key):
@@ -1047,7 +1080,7 @@ def list_rss_feeds():
 
 @app.post("/admin/rss-feeds")
 def add_rss_feed(req: RSSFeedRequest, current_user: dict = Depends(get_current_user)):
-    if current_user.get("role") != "admin":
+    if current_user.get("role") not in ADMIN_ROLES:
         raise HTTPException(status_code=403, detail="Admin privileges required")
     key = f"rss_feed:{req.name}"
     if redis_client.exists(key):
@@ -1058,7 +1091,7 @@ def add_rss_feed(req: RSSFeedRequest, current_user: dict = Depends(get_current_u
 
 @app.put("/admin/rss-feeds/{name}")
 def update_rss_feed(name: str, req: UpdateRSSFeedRequest, current_user: dict = Depends(get_current_user)):
-    if current_user.get("role") != "admin":
+    if current_user.get("role") not in ADMIN_ROLES:
         raise HTTPException(status_code=403, detail="Admin privileges required")
     key = f"rss_feed:{name}"
     if not redis_client.exists(key):
@@ -1069,7 +1102,7 @@ def update_rss_feed(name: str, req: UpdateRSSFeedRequest, current_user: dict = D
 
 @app.delete("/admin/rss-feeds/{name}")
 def delete_rss_feed(name: str, current_user: dict = Depends(get_current_user)):
-    if current_user.get("role") != "admin":
+    if current_user.get("role") not in ADMIN_ROLES:
         raise HTTPException(status_code=403, detail="Admin privileges required")
     key = f"rss_feed:{name}"
     if not redis_client.exists(key):
@@ -1412,7 +1445,7 @@ def update_job(job_code: str, updated: dict, token_data: dict = Depends(get_curr
     except json.JSONDecodeError:
         raise HTTPException(status_code=500, detail="Malformed job record")
 
-    if token_data.get("role") != "admin" and token_data.get("sub") != job.get("posted_by"):
+    if token_data.get("role") not in ADMIN_ROLES and token_data.get("sub") != job.get("posted_by"):
         raise HTTPException(status_code=403, detail="Not authorized to edit this job")
 
     if "min_pay" in updated or "max_pay" in updated:
@@ -1928,7 +1961,7 @@ class PlacementRequest(BaseModel):
 
 @app.post("/place")
 def place_student(data: dict, token_data: dict = Depends(get_current_user)):
-    if token_data.get("role") not in {"admin", "career"}:
+    if token_data.get("role") not in {"admin", "junior_admin", "career"}:
         raise HTTPException(status_code=403, detail="Not authorized to place students")
     job_code = data["job_code"]
     student_email = normalize_email(data["student_email"])
@@ -1971,7 +2004,7 @@ def assign_student(data: dict, token_data: dict = Depends(get_current_user)):
     role = token_data.get("role")
     if role == "recruiter" and job.get("posted_by") != token_data.get("sub"):
         raise HTTPException(status_code=403, detail="Not authorized to modify this job")
-    if role not in ("admin", "recruiter"):
+    if role not in ADMIN_ROLES | {"recruiter"}:
         raise HTTPException(status_code=403, detail="Admin privileges required")
     job.setdefault("assigned_students", [])
     if student_email not in job["assigned_students"]:
@@ -2041,7 +2074,7 @@ def reject_assigned_student(data: dict, token_data: dict = Depends(get_current_u
     role = token_data.get("role")
     if role == "recruiter" and job.get("posted_by") != token_data.get("sub"):
         raise HTTPException(status_code=403, detail="Not authorized to modify this job")
-    if role not in ("admin", "recruiter"):
+    if role not in ADMIN_ROLES | {"recruiter"}:
         raise HTTPException(status_code=403, detail="Admin privileges required")
     job.setdefault("assigned_students", [])
     job.setdefault("rejected_students", [])
@@ -2114,7 +2147,7 @@ def student_note(data: dict, token_data: dict = Depends(get_current_user)):
         raise HTTPException(status_code=400, detail="Invalid student_notes format")
 
     role = token_data.get("role")
-    if role == "admin":
+    if role in ADMIN_ROLES:
         pass
     elif role == "recruiter" and (
         job.get("posted_by") == token_data.get("sub")
@@ -2162,7 +2195,7 @@ def student_note(data: dict, token_data: dict = Depends(get_current_user)):
 @app.put("/student-note")
 def update_student_note(data: dict, token_data: dict = Depends(get_current_user)):
     """Update an existing note for a student on a job."""
-    if token_data.get("role") != "admin":
+    if token_data.get("role") not in ADMIN_ROLES:
         raise HTTPException(status_code=403, detail="Admin privileges required")
     job_code = data.get("job_code")
     student_email = normalize_email(data.get("student_email"))
@@ -2233,7 +2266,7 @@ def update_student_note(data: dict, token_data: dict = Depends(get_current_user)
 @app.delete("/student-note")
 def delete_student_note(data: dict, token_data: dict = Depends(get_current_user)):
     """Delete a note for a student on a job by index."""
-    if token_data.get("role") != "admin":
+    if token_data.get("role") not in ADMIN_ROLES:
         raise HTTPException(status_code=403, detail="Admin privileges required")
     job_code = data.get("job_code")
     student_email = normalize_email(data.get("student_email"))
@@ -2696,7 +2729,7 @@ def get_resume_html(job_code: str, student_email: str, current_user: dict = Depe
 def get_placements(
     student_email: str, current_user: dict = Depends(get_current_user)
 ):
-    if current_user.get("role") != "admin":
+    if current_user.get("role") not in ADMIN_ROLES:
         raise HTTPException(status_code=403, detail="Admin privileges required")
     student_email = normalize_email(student_email)
     key = resolve_student_key(student_email)
@@ -2727,7 +2760,7 @@ def reset_jobs(current_user: dict = Depends(get_current_user)):
 @app.delete("/admin/student-claims/{email}")
 def clear_student_claim(email: str, current_user: dict = Depends(get_current_user)):
     """Clear the claimed_by field and related claim tokens for a student."""
-    if current_user.get("role") != "admin":
+    if current_user.get("role") not in ADMIN_ROLES:
         raise HTTPException(status_code=403, detail="Admin privileges required")
     email = normalize_email(email)
     key = resolve_student_key(email)
@@ -2828,7 +2861,7 @@ def _normalize_notes(value):
 
 @app.get("/students/all")
 def get_all_students(current_user: dict = Depends(get_current_user)):
-    if current_user.get("role") != "admin":
+    if current_user.get("role") not in ADMIN_ROLES:
         raise HTTPException(status_code=403, detail="Admin privileges required")
 
     # Gather all job data once
@@ -3196,7 +3229,7 @@ def check_admin():
 @app.post("/admin/test-notification")
 def admin_test_notification(current_user: dict = Depends(get_current_user)):
     """Send a sample candidate notification to the admin's email."""
-    if current_user.get("role") != "admin":
+    if current_user.get("role") not in ADMIN_ROLES:
         raise HTTPException(status_code=403, detail="Admin privileges required")
 
     admin_email = current_user.get("sub")
@@ -3223,7 +3256,7 @@ def admin_test_notification(current_user: dict = Depends(get_current_user)):
 @app.post("/admin/test-weekly-summary")
 def admin_test_weekly_summary(current_user: dict = Depends(get_current_user)):
     """Manually trigger a weekly summary email to the admin's address."""
-    if current_user.get("role") != "admin":
+    if current_user.get("role") not in ADMIN_ROLES:
         raise HTTPException(status_code=403, detail="Admin privileges required")
 
     send_weekly_summary(current_user["sub"])
@@ -3233,7 +3266,7 @@ def admin_test_weekly_summary(current_user: dict = Depends(get_current_user)):
 @app.get("/activity-log")
 def activity_log(limit: int = 100, current_user: dict = Depends(get_current_user)):
     """Return recent activity log entries."""
-    if current_user.get("role") != "admin":
+    if current_user.get("role") not in ADMIN_ROLES:
         raise HTTPException(status_code=403, detail="Admin privileges required")
 
     try:

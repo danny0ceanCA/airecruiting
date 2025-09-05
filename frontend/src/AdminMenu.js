@@ -24,7 +24,7 @@ function AdminMenu({ children }) {
       {menuOpen && (
         <div className="dropdown-menu">
           <Link to="/dashboard">Dashboard</Link>
-          {userRole === 'admin' && (
+          {(userRole === 'admin' || userRole === 'junior_admin') && (
             <>
               <Link to="/admin/pending">Pending Approvals</Link>
               <Link to="/students">Student Profiles</Link>
