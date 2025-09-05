@@ -36,7 +36,7 @@ import re
 import numpy as np
 import faiss
 from rq import Queue
-from html import unescape
+from html import unescape, escape
 import random
 from zoneinfo import ZoneInfo
 from urllib.parse import urlparse
@@ -2580,14 +2580,8 @@ Output only valid HTML.
     if raw_content.endswith("```"):
         raw_content = raw_content.rsplit("```", 1)[0].strip()
 
-    link_html = ""
-    if job.get("external_apply_url"):
-        link_html = (
-            f"<p><strong>Click this link to apply on the employer's site:</strong> "
-            f"<a href='{job['external_apply_url']}' target='_blank' rel='noopener noreferrer'>Apply Here</a></p>"
-        )
     details_html = (
-        """{link}
+        """
     <h2>Job Details</h2>
     <ul>
       <li><strong>Source:</strong> {source}</li>
@@ -2595,7 +2589,6 @@ Output only valid HTML.
       <li><strong>Location:</strong> {city}, {state}</li>
     </ul>
     """.format(
-            link=link_html,
             source=job.get("source", ""),
             pay_min=job.get("min_pay", ""),
             pay_max=job.get("max_pay", ""),
@@ -2603,6 +2596,38 @@ Output only valid HTML.
             state=job.get("state", ""),
         )
     )
+
+    apply_html = ""
+    if job.get("external_apply_url"):
+        apply_html = (
+            f"<p><strong>Click this link to apply on the employer's site:</strong> "
+            f"<a href='{job['external_apply_url']}' target='_blank' rel='noopener noreferrer'>Apply Here</a></p>"
+        )
+
+    description_html = ""
+    job_desc = job.get("job_description", "")
+    if job_desc:
+        lines = [line.strip() for line in job_desc.splitlines()]
+        formatted: list[str] = []
+        in_list = False
+        for line in lines:
+            if line.startswith(("- ", "* ", "• ")):
+                if not in_list:
+                    formatted.append("<ul>")
+                    in_list = True
+                formatted.append(f"<li>{escape(line[2:].strip())}</li>")
+            elif line:
+                if in_list:
+                    formatted.append("</ul>")
+                    in_list = False
+                formatted.append(f"<p>{escape(line)}</p>")
+            else:
+                if in_list:
+                    formatted.append("</ul>")
+                    in_list = False
+        if in_list:
+            formatted.append("</ul>")
+        description_html = "<h2>Full Job Description</h2>\n" + "\n".join(formatted)
 
     full_html = f"""
 <!DOCTYPE html>
@@ -2628,6 +2653,8 @@ Output only valid HTML.
 </head>
 <body>
 {details_html}
+{apply_html}
+{description_html}
 {raw_content}
 </body>
 </html>
