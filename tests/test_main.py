@@ -973,6 +973,8 @@ def test_notify_interest_generates_description(monkeypatch):
     assert "Good Luck" in sent.get("body")
     assert "/public/job-description-html/codei/stud@example.com" in sent.get("body")
     assert sent.get("attachments") is None
+    assert "Your resume has been matched with this job." in sent.get("body")
+    assert "recruiter has reviewed your resume" not in sent.get("body").lower()
 
 
 def test_notify_interest_multiple_times(monkeypatch):
@@ -1032,6 +1034,8 @@ def test_notify_interest_multiple_times(monkeypatch):
     assert resp1.status_code == 200
     assert resp2.status_code == 200
     assert len(bodies) == 2 and bodies[0] == bodies[1]
+    assert "Your resume has been matched with this job." in bodies[0]
+    assert "recruiter has reviewed your resume" not in bodies[0].lower()
     stored = main_app.redis_client.get("job_description:codei:stud@example.com")
     assert stored is not None and "done" in stored
 
