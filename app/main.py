@@ -1234,7 +1234,7 @@ async def create_student(request: Request, current_user: dict = Depends(get_curr
 
     student_id = generate_student_id()
 
-    data = student_data.model_dump()
+    data = student_data.model_dump(mode="json")
     data["embedding"] = embedding
     data["institution_code"] = institution_code
     data["institutional_code"] = institution_code
@@ -1291,7 +1291,7 @@ def update_student(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Embedding failed: {str(e)}")
 
-    data = updated.model_dump()
+    data = updated.model_dump(mode="json")
     data["email"] = email
     data["embedding"] = embedding
     inst_code = existing.get("institution_code") or existing.get("institutional_code") or existing.get("school_code")
@@ -1373,7 +1373,7 @@ def upload_students(file: UploadFile = File(...), current_user: dict = Depends(g
             continue
 
         student_id = generate_student_id()
-        data = student.model_dump()
+        data = student.model_dump(mode="json")
         data["embedding"] = embedding
         data["created_by"] = current_user.get("sub")
         data["created_at"] = datetime.now(timezone.utc).isoformat()
@@ -1399,7 +1399,7 @@ def create_job(job: JobRequest, current_user: dict = Depends(get_current_user)):
         generated_code = str(uuid.uuid4())[:8]
         key = f"job:{generated_code}"
 
-    data = job.model_dump()
+    data = job.model_dump(mode="json")
     data["required_license"] = license_to_code(data.get("required_license"))
     user_email = current_user.get("sub")
     user_role = current_user.get("role")
