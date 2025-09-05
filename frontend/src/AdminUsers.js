@@ -360,6 +360,7 @@ function AdminUsers() {
                         onChange={(e) => handleChange(u.email, 'role', e.target.value)}
                       >
                         <option value="admin">Admin</option>
+                        <option value="junior_admin">Junior Admin</option>
                         <option value="career">Career</option>
                         <option value="recruiter">Recruiter</option>
                         <option value="applicant">Applicant</option>

@@ -74,7 +74,7 @@ function Metrics() {
     { label: 'Matches', value: metricsData.total_matches },
   ];
 
-  if (role === 'admin') {
+  if (role === 'admin' || role === 'junior_admin') {
     highlight.push({
       label: 'Placement Rate',
       value: `${(metricsData.placement_rate * 100).toFixed(0)} %`,
@@ -114,11 +114,11 @@ function Metrics() {
           </div>
         ))}
       </div>
-      {role === 'admin' && (
+      {(role === 'admin' || role === 'junior_admin') && (
         <div className="avg-time"><strong>Average Time to Placement: {metricsData.avg_time_to_placement_days} days</strong></div>
       )}
       <div className="visual-section">
-        {role === 'admin' ? (
+        {role === 'admin' || role === 'junior_admin' ? (
           <ResponsiveContainer width={200} height={200}>
             <RadialBarChart
               innerRadius="80%"
@@ -147,7 +147,7 @@ function Metrics() {
             </div>
           </div>
         )}
-        {role === 'admin' && (
+        {(role === 'admin' || role === 'junior_admin') && (
           <ResponsiveContainer width={250} height={250}>
             <PieChart>
               <Pie dataKey="value" data={licenseData} outerRadius={80}>
@@ -161,7 +161,7 @@ function Metrics() {
           </ResponsiveContainer>
         )}
       </div>
-      {role === 'admin' && (
+      {(role === 'admin' || role === 'junior_admin') && (
         <div className="charts">
           <ResponsiveContainer width="100%" height={250}>
             <BarChart data={barData}>

@@ -2,6 +2,8 @@ import os
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 os.environ.setdefault("OPENAI_API_KEY", "test")
 os.environ.setdefault("GOOGLE_KEY", "test")
+os.environ.setdefault("ADMIN_EMAIL", "admin@example.com")
+os.environ.setdefault("ADMIN_PASSWORD", "admin123")
 
 from fastapi.testclient import TestClient
 from jose import jwt
@@ -70,6 +72,19 @@ def test_default_admin_exists():
     assert admin is not None
     assert admin["role"] == "admin"
     assert admin["approved"] is True
+
+
+def test_junior_admin_exists():
+    main_app.redis_client.flushdb()
+    os.environ["JUNIOR_ADMIN_EMAIL"] = "junior@example.com"
+    os.environ["JUNIOR_ADMIN_PASSWORD"] = "junior123"
+    init_default_admin()
+    raw = main_app.redis_client.get("user:junior@example.com")
+    junior = json.loads(raw)
+    assert junior is not None
+    assert junior["role"] == "junior_admin"
+    del os.environ["JUNIOR_ADMIN_EMAIL"]
+    del os.environ["JUNIOR_ADMIN_PASSWORD"]
 
 
 def test_applicant_registration_without_code():
