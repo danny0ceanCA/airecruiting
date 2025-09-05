@@ -55,6 +55,10 @@ function JobPosting() {
       const ac = new window.google.maps.places.Autocomplete(locationRef.current, { types: ['(cities)'] });
       ac.addListener('place_changed', () => {
         const place = ac.getPlace();
+        if (!place.geometry || !place.geometry.location) {
+          console.warn('No geometry for selected place', place);
+          return;
+        }
         const comps = place.address_components || [];
         const city = comps.find(c => c.types.includes('locality'))?.long_name || '';
         const state = comps.find(c => c.types.includes('administrative_area_level_1'))?.short_name || '';
