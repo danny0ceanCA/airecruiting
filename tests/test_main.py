@@ -877,6 +877,67 @@ def test_generate_job_description(monkeypatch):
     assert "Source:" in html_content
     assert "Pay Range:" in html_content
     assert "Location:" in html_content
+    assert "<h1>TalentMatch-AI</h1>" in html_content
+
+
+def test_generate_job_description_external(monkeypatch):
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    student = {
+        "first_name": "Stud",
+        "last_name": "S",
+        "skills": ["python"],
+        "email": "stud@example.com",
+        "institutional_code": "1001",
+        "student_id": "studext",
+    }
+    main_app.persist_student_record(
+        student["email"], student, student["institutional_code"], student["student_id"]
+    )
+    main_app.redis_client.set(
+        "job:code_ext",
+        json.dumps(
+            {
+                "job_code": "code_ext",
+                "job_title": "Dev",
+                "job_description": "desc",
+                "desired_skills": ["python"],
+                "min_pay": 5.0,
+                "max_pay": 10.0,
+                "city": "Austin",
+                "state": "TX",
+                "source": "Indeed",
+                "external_apply_url": "https://example.com/apply",
+            }
+        ),
+    )
+
+    def fake_create(*args, **kwargs):  # pragma: no cover - should not be called
+        raise AssertionError("OpenAI should not be called for external jobs")
+
+    monkeypatch.setattr(main_app.client.chat.completions, "create", fake_create)
+
+    login_resp = client.post("/login", json={"email": "admin@example.com", "password": "admin123"})
+    token = login_resp.json()["token"]
+
+    resp = client.post(
+        "/generate-job-description",
+        json={"student_email": "stud@example.com", "job_code": "code_ext"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "success"
+
+    get_resp = client.get(
+        "/job-description/code_ext/stud@example.com",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert get_resp.status_code == 200
+    html_content = get_resp.json()["description"]
+    assert "<h1>TalentMatch-AI</h1>" in html_content
+    assert "Job Summary" not in html_content
+    assert "Apply Here" in html_content
 
 
 def test_job_description_html_route():

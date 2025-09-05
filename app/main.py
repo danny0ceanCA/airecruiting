@@ -2536,8 +2536,9 @@ def generate_job_description_html(job_code: str, student_email: str) -> tuple[st
 
     job = json.loads(job_raw)
     student = json.loads(student_raw)
-
-    prompt = f"""
+    raw_content = ""
+    if not job.get("external_apply_url"):
+        prompt = f"""
 You are generating a job description document for internal career services staff. The document should first summarize the position itself, then connect it with the student's background.
 
 Use the student profile and job information below to:
@@ -2567,18 +2568,18 @@ Pay Range: {job.get('min_pay', '')} - {job.get('max_pay', '')}
 Output only valid HTML.
 """
 
-    resp = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.5,
-    )
+        resp = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.5,
+        )
 
-    raw_content = resp.choices[0].message.content.strip()
+        raw_content = resp.choices[0].message.content.strip()
 
-    if raw_content.startswith("```html"):
-        raw_content = raw_content.replace("```html", "", 1).strip()
-    if raw_content.endswith("```"):
-        raw_content = raw_content.rsplit("```", 1)[0].strip()
+        if raw_content.startswith("```html"):
+            raw_content = raw_content.replace("```html", "", 1).strip()
+        if raw_content.endswith("```"):
+            raw_content = raw_content.rsplit("```", 1)[0].strip()
 
     details_html = (
         """
@@ -2652,6 +2653,7 @@ Output only valid HTML.
   </style>
 </head>
 <body>
+<h1>TalentMatch-AI</h1>
 {details_html}
 {apply_html}
 {description_html}
