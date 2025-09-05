@@ -55,6 +55,10 @@ function JobPosting() {
       const ac = new window.google.maps.places.Autocomplete(locationRef.current, { types: ['(cities)'] });
       ac.addListener('place_changed', () => {
         const place = ac.getPlace();
+        if (!place.geometry || !place.geometry.location) {
+          console.warn('No geometry for selected place', place);
+          return;
+        }
         const comps = place.address_components || [];
         const city = comps.find(c => c.types.includes('locality'))?.long_name || '';
         const state = comps.find(c => c.types.includes('administrative_area_level_1'))?.short_name || '';
@@ -86,7 +90,7 @@ function JobPosting() {
   const userRole = decoded?.role;
 const { sub: email } = decoded;
 const isRecruiter = userRole === 'recruiter';
-const shouldRedirect = userRole !== 'admin' && userRole !== 'recruiter';
+const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && userRole !== 'recruiter';
 
 
   const fetchJobs = async () => {
@@ -1172,7 +1176,7 @@ if (shouldRedirect) {
                                   }
                                 />
                               </div>
-                              {userRole === 'admin' && (
+                              {(userRole === 'admin' || userRole === 'junior_admin') && (
                                 <div className="form-row">
                                   <label>External Apply URL</label>
                                   <input
@@ -1251,7 +1255,7 @@ if (shouldRedirect) {
                               <p>
                                 Pay Range: {job.min_pay} - {job.max_pay}
                               </p>
-                              {(userRole === 'admin' || job.posted_by === email) && (
+                              {(userRole === 'admin' || userRole === 'junior_admin' || job.posted_by === email) && (
                                 <button
                                   onClick={() =>
                                     setEditMode((prev) => ({
@@ -1274,7 +1278,7 @@ if (shouldRedirect) {
                         {activeSubtab[job.job_code] === 'matches' && renderMatches(job)}
                         {activeSubtab[job.job_code] === 'assigned' && renderAssigned(job)}
                         {activeSubtab[job.job_code] === 'placed' && renderPlaced(job)}
-                        {userRole === 'admin' && (
+                        {(userRole === 'admin' || userRole === 'junior_admin') && (
                           <div style={{ marginTop: '12px' }}>
                             <button
                               onClick={() => handleDeleteJob(job.job_code)}
@@ -1308,7 +1312,7 @@ if (shouldRedirect) {
           jobCode={modalNotes.jobCode}
           studentEmail={modalNotes.studentEmail}
           canAdd={modalNotes.canAdd}
-          isAdmin={userRole === 'admin'}
+          isAdmin={userRole === 'admin' || userRole === 'junior_admin'}
           onClose={() => setModalNotes(null)}
           onSaved={modalNotes.onSaved}
         />
