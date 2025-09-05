@@ -21,6 +21,8 @@ import AboutCareerServices from './AboutCareerServices';
 import AboutPanel from './AboutPanel';
 import RequestInstitutionCode from './RequestInstitutionCode';
 
+console.log("frontend key:", process.env.REACT_APP_GOOGLE_KEY);
+
 function App() {
   return (
     <Router>

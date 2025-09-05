@@ -34,7 +34,7 @@ function ActivityLog() {
     if (token) fetchLog();
   }, [token]);
 
-  if (role !== 'admin') {
+  if (role !== 'admin' && role !== 'junior_admin') {
     return <Navigate to="/dashboard" replace />;
   }
 

@@ -79,7 +79,9 @@ SMTP_USER=username
 SMTP_PASSWORD=secret
 EMAIL_SENDER=noreply@example.com
 ADMIN_EMAIL=admin@example.com
-ADMIN_PASSWORD=admin123
+ADMIN_PASSWORD=changeMe123
+JUNIOR_ADMIN_EMAIL=junior@example.com
+JUNIOR_ADMIN_PASSWORD=changeMe123
 SITE_BASE_URL=https://yourdomain.com
 ```
 

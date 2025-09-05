@@ -2,6 +2,8 @@ import os
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 os.environ.setdefault("OPENAI_API_KEY", "test")
 os.environ.setdefault("GOOGLE_KEY", "test")
+os.environ.setdefault("ADMIN_EMAIL", "admin@example.com")
+os.environ.setdefault("ADMIN_PASSWORD", "admin123")
 
 from fastapi.testclient import TestClient
 from jose import jwt
@@ -70,6 +72,19 @@ def test_default_admin_exists():
     assert admin is not None
     assert admin["role"] == "admin"
     assert admin["approved"] is True
+
+
+def test_junior_admin_exists():
+    main_app.redis_client.flushdb()
+    os.environ["JUNIOR_ADMIN_EMAIL"] = "junior@example.com"
+    os.environ["JUNIOR_ADMIN_PASSWORD"] = "junior123"
+    init_default_admin()
+    raw = main_app.redis_client.get("user:junior@example.com")
+    junior = json.loads(raw)
+    assert junior is not None
+    assert junior["role"] == "junior_admin"
+    del os.environ["JUNIOR_ADMIN_EMAIL"]
+    del os.environ["JUNIOR_ADMIN_PASSWORD"]
 
 
 def test_applicant_registration_without_code():
@@ -151,6 +166,34 @@ def test_registration_flow():
     payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM])
     assert payload["sub"] == user_data["email"]
     assert payload["role"] == "career"
+
+
+def test_register_links_existing_student():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    email = "stud@example.com"
+    profile = {
+        "email": email,
+        "student_id": "1",
+        "institution_code": "1001",
+        "created_by": "career@example.com",
+    }
+    main_app.persist_student_record(email, profile, "1001", "1")
+
+    user = {
+        "email": email,
+        "first_name": "Stu",
+        "last_name": "Dent",
+        "school_code": "1001",
+        "password": "pw",
+        "role": "applicant",
+    }
+    resp = client.post("/register", json=user)
+    assert resp.status_code == 200
+    skey = main_app.resolve_student_key(email)
+    stored = json.loads(main_app.redis_client.get(skey))
+    assert stored.get("registered_by") == main_app.user_key(email)
 
 
 def test_non_admin_cannot_approve():
@@ -427,6 +470,72 @@ def test_student_creation_records_metadata(monkeypatch):
     assert stored2["city"] == "NewCity"
     assert stored2["created_by"] == "admin@example.com"
     assert stored2["created_at"] == stored["created_at"]
+
+
+def test_create_student_returns_existing_for_same_user(monkeypatch):
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    email = "stud@example.com"
+    profile = {
+        "email": email,
+        "student_id": "1",
+        "institution_code": "1001",
+        "created_by": "career@example.com",
+    }
+    main_app.persist_student_record(email, profile, "1001", "1")
+
+    user = {
+        "email": email,
+        "first_name": "Stu",
+        "last_name": "Dent",
+        "password": "pw",
+        "role": "applicant",
+    }
+    client.post("/register", json=user)
+
+    key = main_app.user_key(email)
+    udata = json.loads(main_app.redis_client.get(key))
+    udata["approved"] = True
+    main_app.redis_client.set(key, json.dumps(udata))
+    login = client.post("/login", json={"email": email, "password": "pw"})
+    token = login.json()["token"]
+
+    class FakeResp:
+        def __init__(self):
+            self.data = [type("obj", (), {"embedding": [0.0, 0.1]})]
+
+    def fake_create(input, model):
+        return FakeResp()
+
+    monkeypatch.setattr(main_app.client.embeddings, "create", fake_create)
+    monkeypatch.setattr(main_app, "ensure_index", lambda dim: None)
+    monkeypatch.setattr(main_app, "rebuild_vector_index", lambda: None)
+    main_app.vector_index = None
+
+    body = {
+        "first_name": "Stu",
+        "last_name": "Dent",
+        "email": email,
+        "phone": "123",
+        "license": "lvn",
+        "skills": [],
+        "experience_summary": "",
+        "interests": "",
+        "city": "Town",
+        "state": "ST",
+        "lat": 0.0,
+        "lng": 0.0,
+        "max_travel": 10,
+    }
+    resp = client.post(
+        "/students",
+        json=body,
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    returned = resp.json()["student"]
+    assert returned["email"] == email
 
 
 def test_metrics_endpoint():

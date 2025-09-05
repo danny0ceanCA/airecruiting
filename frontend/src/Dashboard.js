@@ -27,7 +27,7 @@ function Dashboard() {
         <AdminMenu />
         <h2 className="dashboard-heading">Dashboard</h2>
         <div className="tile-grid">
-        {role === 'admin' && (
+        {(role === 'admin' || role === 'junior_admin') && (
           <>
             <Link to="/students" className="dashboard-tile">Student Profiles</Link>
             <Link to="/metrics" className="dashboard-tile">School Metrics</Link>
@@ -50,8 +50,8 @@ function Dashboard() {
           <Link to="/applicant/profile" className="dashboard-tile">Applicant Profile</Link>
         )}
 
-        {role === 'admin' || role === 'recruiter' ? (
-          <Link to={role === 'admin' ? '/admin/jobs' : '/recruiter/jobs'}>
+        {role === 'admin' || role === 'junior_admin' || role === 'recruiter' ? (
+          <Link to={role === 'admin' || role === 'junior_admin' ? '/admin/jobs' : '/recruiter/jobs'}>
             <div className="dashboard-tile">Job Matching</div>
           </Link>
         ) : null}

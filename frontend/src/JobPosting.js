@@ -14,6 +14,7 @@ function JobPosting() {
     desired_skills: '',
     required_license: '',
     source: '',
+    external_apply_url: '',
     min_pay: '',
     max_pay: '',
     city: '',
@@ -54,6 +55,10 @@ function JobPosting() {
       const ac = new window.google.maps.places.Autocomplete(locationRef.current, { types: ['(cities)'] });
       ac.addListener('place_changed', () => {
         const place = ac.getPlace();
+        if (!place.geometry || !place.geometry.location) {
+          console.warn('No geometry for selected place', place);
+          return;
+        }
         const comps = place.address_components || [];
         const city = comps.find(c => c.types.includes('locality'))?.long_name || '';
         const state = comps.find(c => c.types.includes('administrative_area_level_1'))?.short_name || '';
@@ -85,7 +90,7 @@ function JobPosting() {
   const userRole = decoded?.role;
 const { sub: email } = decoded;
 const isRecruiter = userRole === 'recruiter';
-const shouldRedirect = userRole !== 'admin' && userRole !== 'recruiter';
+const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && userRole !== 'recruiter';
 
 
   const fetchJobs = async () => {
@@ -182,12 +187,19 @@ if (shouldRedirect) {
       if (!isRecruiter) {
         payload.source = formData.source;
       }
+      if (formData.external_apply_url) {
+        payload.external_apply_url = formData.external_apply_url;
+        if (!payload.source) {
+          setMessage('Source is required when providing an external apply URL');
+          return;
+        }
+      }
       const resp = await api.post('/jobs', payload, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setMessage(`Job posted successfully! Job code: ${resp.data.job_code}`);
       setFormData({
-        job_title: '', job_description: '', desired_skills: '', required_license: '', source: '', min_pay: '', max_pay: '', city: '', state: '', lat: '', lng: ''
+        job_title: '', job_description: '', desired_skills: '', required_license: '', source: '', external_apply_url: '', min_pay: '', max_pay: '', city: '', state: '', lat: '', lng: ''
       });
       fetchJobs();
     } catch (err) {
@@ -881,6 +893,18 @@ if (shouldRedirect) {
                   />
                 </div>
               )}
+              {!isRecruiter && (
+                <div className="form-field">
+                  <label htmlFor="external_apply_url">External Apply URL</label>
+                  <input
+                    id="external_apply_url"
+                    name="external_apply_url"
+                    type="text"
+                    value={formData.external_apply_url}
+                    onChange={handleChange}
+                  />
+                </div>
+              )}
               <div className="form-field">
                 <label htmlFor="min_pay">Minimum Pay</label>
                 <input
@@ -1152,6 +1176,28 @@ if (shouldRedirect) {
                                   }
                                 />
                               </div>
+                              {(userRole === 'admin' || userRole === 'junior_admin') && (
+                                <div className="form-row">
+                                  <label>External Apply URL</label>
+                                  <input
+                                    type="text"
+                                    value={
+                                      editedJobs[job.job_code]?.external_apply_url ||
+                                      job.external_apply_url ||
+                                      ''
+                                    }
+                                    onChange={(e) =>
+                                      setEditedJobs((prev) => ({
+                                        ...prev,
+                                        [job.job_code]: {
+                                          ...prev[job.job_code],
+                                          external_apply_url: e.target.value,
+                                        },
+                                      }))
+                                    }
+                                  />
+                                </div>
+                              )}
                               <div className="form-row">
                                 <label>Minimum Pay</label>
                                 <input
@@ -1201,10 +1247,15 @@ if (shouldRedirect) {
                                 <p>License: {licenseLabel(job.required_license)}</p>
                               )}
                               <p>Source: {job.source}</p>
+                              {job.external_apply_url && (
+                                <p>
+                                  External Apply: <a href={job.external_apply_url} target="_blank" rel="noopener noreferrer">Apply Here</a>
+                                </p>
+                              )}
                               <p>
                                 Pay Range: {job.min_pay} - {job.max_pay}
                               </p>
-                              {(userRole === 'admin' || job.posted_by === email) && (
+                              {(userRole === 'admin' || userRole === 'junior_admin' || job.posted_by === email) && (
                                 <button
                                   onClick={() =>
                                     setEditMode((prev) => ({
@@ -1227,7 +1278,7 @@ if (shouldRedirect) {
                         {activeSubtab[job.job_code] === 'matches' && renderMatches(job)}
                         {activeSubtab[job.job_code] === 'assigned' && renderAssigned(job)}
                         {activeSubtab[job.job_code] === 'placed' && renderPlaced(job)}
-                        {userRole === 'admin' && (
+                        {(userRole === 'admin' || userRole === 'junior_admin') && (
                           <div style={{ marginTop: '12px' }}>
                             <button
                               onClick={() => handleDeleteJob(job.job_code)}
@@ -1261,7 +1312,7 @@ if (shouldRedirect) {
           jobCode={modalNotes.jobCode}
           studentEmail={modalNotes.studentEmail}
           canAdd={modalNotes.canAdd}
-          isAdmin={userRole === 'admin'}
+          isAdmin={userRole === 'admin' || userRole === 'junior_admin'}
           onClose={() => setModalNotes(null)}
           onSaved={modalNotes.onSaved}
         />
