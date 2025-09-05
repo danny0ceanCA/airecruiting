@@ -2390,7 +2390,7 @@ def notify_interest(data: dict, token_data: dict = Depends(get_current_user)):
     body = (
         f"Hello {first_name},\n\n"
         f"{summary}\n\n"
-        "Your resume has been matched with this job and the recruiter has reviewed your resume.\n\n"
+        "Your resume has been matched with this job.\n\n"
         f"Please review the job description here: {public_url}\n\n"
     )
     if external_url:
