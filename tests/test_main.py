@@ -2113,7 +2113,15 @@ def test_match_metrics_increment(monkeypatch):
     monkeypatch.setattr(main_app.client.embeddings, "create", lambda *a, **k: FakeResp())
     monkeypatch.setattr(main_app, "get_driving_distance_miles", lambda *a, **k: 1.0)
 
-    main_app.match_worker("abc", send_emails=False, enq_time=datetime.now().timestamp())
+    called = {}
+
+    def fake_send_email(*args, **kwargs):
+        called["count"] = called.get("count", 0) + 1
+
+    monkeypatch.setattr(main_app, "send_email", fake_send_email)
+
+    main_app.match_worker("abc", enq_time=datetime.now().timestamp())
+    assert called == {}
     process = float(main_app.redis_client.get("metrics:match_process_time") or 0)
     queue = float(main_app.redis_client.get("metrics:match_queue_time") or 0)
     assert process > 0
