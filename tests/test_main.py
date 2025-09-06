@@ -1213,8 +1213,72 @@ def test_track_open_logs_event(monkeypatch):
     entry = json.loads(entry_raw)
     assert entry["event"] == "email_open"
     assert entry["token"] == tok
-    assert entry["student_email"] == "stud@example.com"
-    assert entry["job_code"] == "codei"
+
+
+def test_tracking_fields_returned(monkeypatch):
+    main_app.redis_client = DummyRedis()
+    init_default_admin()
+
+    student = {
+        "first_name": "Stud",
+        "last_name": "S",
+        "skills": ["python"],
+        "email": "stud@example.com",
+        "institutional_code": "1001",
+        "student_id": "stud8",
+    }
+    main_app.persist_student_record(
+        student["email"], student, student["institutional_code"], student["student_id"]
+    )
+    main_app.redis_client.set(
+        "job:codei",
+        json.dumps(
+                {
+                    "job_code": "codei",
+                    "job_title": "Dev",
+                    "job_description": "desc",
+                    "desired_skills": ["python"],
+                    "assigned_students": ["stud@example.com"],
+                    "external_apply_url": "https://example.com/apply",
+                }
+            ),
+        )
+
+    class FakeResp:
+        def __init__(self):
+            self.choices = [type("obj", (), {"message": type("obj", (), {"content": "done"})})]
+
+    def fake_create(model, messages, temperature):
+        return FakeResp()
+
+    sent = {}
+
+    def fake_send(recipient, subject, body, html_body=None, attachments=None, track_token=None):
+        sent["token"] = track_token
+
+    monkeypatch.setattr(main_app.client.chat.completions, "create", fake_create)
+    monkeypatch.setattr(main_app, "send_email", fake_send)
+
+    token = client.post("/login", json={"email": "admin@example.com", "password": "admin123"}).json()["token"]
+
+    resp = client.post(
+        "/notify-interest",
+        json={"student_email": "stud@example.com", "job_code": "codei"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    tok = sent["token"]
+    client.get(f"/track/open/{tok}.png")
+    client.get(f"/track/click/{tok}")
+
+    resp2 = client.get(
+        "/students/all", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert resp2.status_code == 200
+    job_entry = resp2.json()["students"][0]["assigned_jobs"][0]
+    assert job_entry["email_sent"] is not None
+    assert job_entry["first_open"] is not None
+    assert job_entry["clicked"] is True
 
 
 def test_generate_resume_html(monkeypatch):

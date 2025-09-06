@@ -594,3 +594,23 @@
   cursor: pointer;
 }
 
+.tracking-popover {
+  position: fixed;
+  background: #fff;
+  color: #002244;
+  border: 1px solid #ccc;
+  padding: 0.5rem;
+  border-radius: 4px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  z-index: 1000;
+  font-size: 0.9rem;
+}
+
+.tracking-popover table {
+  border-collapse: collapse;
+}
+
+.tracking-popover td {
+  padding: 2px 6px;
+}
+
