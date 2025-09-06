@@ -87,6 +87,8 @@ function StudentProfiles() {
 
   const [expandedRows, setExpandedRows] = useState({});
   const [modalNotes, setModalNotes] = useState(null);
+  const [hoveredJob, setHoveredJob] = useState(null);
+  const hoverTimer = useRef(null);
 
   const mergeStudents = (list) => {
     const map = new Map();
@@ -97,6 +99,38 @@ function StudentProfiles() {
     });
     return Array.from(map.values());
   };
+
+  const showTrackingPopover = (job, event) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    setHoveredJob({ job, position: { top: rect.bottom, left: rect.left } });
+  };
+
+  const handleJobEnter = (job, event) => {
+    if ('ontouchstart' in window) return;
+    clearTimeout(hoverTimer.current);
+    hoverTimer.current = setTimeout(
+      () => showTrackingPopover(job, event),
+      3000
+    );
+  };
+
+  const handleJobLeave = () => {
+    clearTimeout(hoverTimer.current);
+    setHoveredJob(null);
+  };
+
+  const handleJobClick = (job, event) => {
+    event.stopPropagation();
+    clearTimeout(hoverTimer.current);
+    if (hoveredJob && hoveredJob.job.job_code === job.job_code) {
+      setHoveredJob(null);
+    } else {
+      showTrackingPopover(job, event);
+    }
+  };
+
+  const formatDate = (value) =>
+    value ? new Date(value).toLocaleString() : '—';
 
   const handleTourCallback = (data) => {
     const { status, type } = data;
@@ -741,7 +775,12 @@ function StudentProfiles() {
                                 <tbody>
                                   {s.assigned_jobs && s.assigned_jobs.length > 0 ? (
                                     s.assigned_jobs.map((job, index) => (
-                                      <tr key={index}>
+                                      <tr
+                                        key={index}
+                                        onMouseEnter={(e) => handleJobEnter(job, e)}
+                                        onMouseLeave={handleJobLeave}
+                                        onClick={(e) => handleJobClick(job, e)}
+                                      >
                                         <td>{job.job_title}</td>
                                         <td>
                                           {job.min_pay && job.max_pay
@@ -855,6 +894,29 @@ function StudentProfiles() {
           isAdmin={isAdmin}
           onClose={() => setModalNotes(null)}
         />
+      )}
+      {hoveredJob && (
+        <div
+          className="tracking-popover"
+          style={{ top: hoveredJob.position.top, left: hoveredJob.position.left }}
+        >
+          <table>
+            <tbody>
+              <tr>
+                <td>Email sent:</td>
+                <td>{formatDate(hoveredJob.job.email_sent)}</td>
+              </tr>
+              <tr>
+                <td>Email opened:</td>
+                <td>{formatDate(hoveredJob.job.first_open)}</td>
+              </tr>
+              <tr>
+                <td>Application link clicked:</td>
+                <td>{hoveredJob.job.clicked ? 'Yes' : 'No'}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       )}
       </div>
     </div>
