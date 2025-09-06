@@ -1478,13 +1478,13 @@ def match_job(
         get_queue().enqueue(
             match_worker,
             req.job_code,
-            True,
+            False,
             enq_time,
             meta={"request_id": request.state.request_id},
         )
         return {"message": "Match job queued"}
     else:
-        matches = match_worker(req.job_code, True, enq_time)
+        matches = match_worker(req.job_code, False, enq_time)
         return {"matches": matches}
 
 
@@ -1510,13 +1510,14 @@ def rematch_job(
         return {"matches": matches}
 
 
-async def _perform_match_async(job_code: str, send_emails: bool = True, enq_time: float | None = None):
+async def _perform_match_async(job_code: str, send_emails: bool = False, enq_time: float | None = None):
     key = f"job:{job_code}"
     raw = redis_client.get(key)
     if not raw:
         raise HTTPException(status_code=404, detail="Job not found")
     job = json.loads(raw)
     job.setdefault("uninterested_students", [])
+    was_matched_before = bool(redis_client.exists(f"match_results:{job_code}"))
 
     required_license = license_to_code(job.get("required_license"))
 
@@ -1709,10 +1710,10 @@ async def _perform_match_async(job_code: str, send_emails: bool = True, enq_time
             if matches
             else 0.0
         )
-        if send_emails:
-            redis_client.incr("metrics:total_matches")
-        else:
+        if was_matched_before:
             redis_client.incr("metrics:total_rematches")
+        else:
+            redis_client.incr("metrics:total_matches")
         redis_client.incrbyfloat("metrics:total_match_score", avg_score)
         redis_client.set(
             "metrics:last_match_timestamp", datetime.now().isoformat()
@@ -1723,12 +1724,12 @@ async def _perform_match_async(job_code: str, send_emails: bool = True, enq_time
     return top_matches
 
 
-def _perform_match(job_code: str, send_emails: bool = True, enq_time: float | None = None):
+def _perform_match(job_code: str, send_emails: bool = False, enq_time: float | None = None):
     """Synchronous wrapper for background execution."""
     return asyncio.run(_perform_match_async(job_code, send_emails, enq_time))
 
 
-def match_worker(job_code: str, send_emails: bool = True, enq_time: float | None = None):
+def match_worker(job_code: str, send_emails: bool = False, enq_time: float | None = None):
     start = datetime.now()
     if enq_time is not None:
         queue_time = start - datetime.fromtimestamp(enq_time)
@@ -2390,7 +2391,7 @@ def notify_interest(data: dict, token_data: dict = Depends(get_current_user)):
     body = (
         f"Hello {first_name},\n\n"
         f"{summary}\n\n"
-        "Your resume has been matched with this job and the recruiter has reviewed your resume.\n\n"
+        "Your resume has been matched with this job.\n\n"
         f"Please review the job description here: {public_url}\n\n"
     )
     if external_url:
@@ -2536,8 +2537,9 @@ def generate_job_description_html(job_code: str, student_email: str) -> tuple[st
 
     job = json.loads(job_raw)
     student = json.loads(student_raw)
-
-    prompt = f"""
+    raw_content = ""
+    if not job.get("external_apply_url"):
+        prompt = f"""
 You are generating a job description document for internal career services staff. The document should first summarize the position itself, then connect it with the student's background.
 
 Use the student profile and job information below to:
@@ -2567,18 +2569,18 @@ Pay Range: {job.get('min_pay', '')} - {job.get('max_pay', '')}
 Output only valid HTML.
 """
 
-    resp = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.5,
-    )
+        resp = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.5,
+        )
 
-    raw_content = resp.choices[0].message.content.strip()
+        raw_content = resp.choices[0].message.content.strip()
 
-    if raw_content.startswith("```html"):
-        raw_content = raw_content.replace("```html", "", 1).strip()
-    if raw_content.endswith("```"):
-        raw_content = raw_content.rsplit("```", 1)[0].strip()
+        if raw_content.startswith("```html"):
+            raw_content = raw_content.replace("```html", "", 1).strip()
+        if raw_content.endswith("```"):
+            raw_content = raw_content.rsplit("```", 1)[0].strip()
 
     details_html = (
         """
@@ -2652,6 +2654,7 @@ Output only valid HTML.
   </style>
 </head>
 <body>
+<h1>TalentMatch-AI</h1>
 {details_html}
 {apply_html}
 {description_html}
