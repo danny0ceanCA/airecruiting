@@ -100,16 +100,17 @@ function StudentProfiles() {
     return Array.from(map.values());
   };
 
-  const showTrackingPopover = (job, event) => {
-    const rect = event.currentTarget.getBoundingClientRect();
+  const showTrackingPopover = (job, targetEl) => {
+    const rect = targetEl.getBoundingClientRect();
     setHoveredJob({ job, position: { top: rect.bottom, left: rect.left } });
   };
 
   const handleJobEnter = (job, event) => {
     if ('ontouchstart' in window) return;
+    const targetEl = event.currentTarget;
     clearTimeout(hoverTimer.current);
     hoverTimer.current = setTimeout(
-      () => showTrackingPopover(job, event),
+      () => showTrackingPopover(job, targetEl),
       3000
     );
   };
@@ -125,7 +126,7 @@ function StudentProfiles() {
     if (hoveredJob && hoveredJob.job.job_code === job.job_code) {
       setHoveredJob(null);
     } else {
-      showTrackingPopover(job, event);
+      showTrackingPopover(job, event.currentTarget);
     }
   };
 
