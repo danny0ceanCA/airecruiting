@@ -1022,6 +1022,7 @@ def test_notify_interest_generates_description(monkeypatch):
             "job_description": "desc",
             "desired_skills": ["python"],
             "assigned_students": ["stud@example.com"],
+            "external_apply_url": "https://example.com/apply",
         })
     )
 
@@ -1057,18 +1058,36 @@ def test_notify_interest_generates_description(monkeypatch):
     )
     assert resp.status_code == 200
     stored = main_app.redis_client.get("job_description:codei:stud@example.com")
-    assert stored is not None and "done" in stored
+    assert stored is not None
+    assert "Apply Here" in stored
     assert main_app.redis_client.get("jobdesc:codei:stud@example.com") == stored
     token_val = sent.get("token")
     assert token_val
-    mapping = main_app.redis_client.hget(main_app.EMAIL_OPEN_TOKENS_KEY, token_val)
-    assert mapping is not None
+    mapping_raw = main_app.redis_client.hget(main_app.EMAIL_OPEN_TOKENS_KEY, token_val)
+    assert mapping_raw is not None
+    mapping = json.loads(mapping_raw)
+    assert mapping.get("external_url") == "https://example.com/apply"
+    click_url = f"/track/click/{token_val}"
+    if main_app.SITE_BASE_URL:
+        click_url = f"{main_app.SITE_BASE_URL}{click_url}"
+    assert click_url in sent.get("body")
+    assert "https://example.com/apply" not in sent.get("body")
     assert f"/track/open/{token_val}.png" in sent.get("final_body")
     assert "Good Luck" in sent.get("body")
     assert "/public/job-description-html/codei/stud@example.com" in sent.get("body")
     assert sent.get("attachments") is None
     assert "Your resume has been matched with this job." in sent.get("body")
     assert "recruiter has reviewed your resume" not in sent.get("body").lower()
+
+    # Verify click tracking redirects and logs
+    resp_click = client.get(f"/track/click/{token_val}", follow_redirects=False)
+    assert resp_click.status_code in (302, 307)
+    assert resp_click.headers.get("location") == "https://example.com/apply"
+    log_raw = main_app.redis_client.lindex(main_app.ACTIVITY_LOG_KEY, -2)
+    assert log_raw is not None
+    log = json.loads(log_raw)
+    assert log.get("event") == "email_click"
+    assert log.get("token") == token_val
 
 
 def test_notify_interest_multiple_times(monkeypatch):

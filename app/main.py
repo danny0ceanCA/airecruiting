@@ -21,7 +21,7 @@ from fastapi import (
     UploadFile,
     File,
 )
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, Response, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr, Field, ConfigDict, field_validator, model_validator, HttpUrl
 from jose import jwt, JWTError
@@ -491,6 +491,32 @@ def track_open(token: str):
     except Exception as e:
         logger.error("Failed to log email open: %s", e)
     return Response(content=TRANSPARENT_PNG, media_type="image/png")
+
+
+@app.get("/track/click/{token}")
+def track_click(token: str):
+    """Redirect to the external URL while logging an email click event."""
+    info_raw = redis_client.hget(EMAIL_OPEN_TOKENS_KEY, token)
+    info: dict[str, str] = {}
+    if info_raw:
+        try:
+            info = json.loads(info_raw)
+        except Exception:
+            info = {}
+    external_url = info.get("external_url")
+    if not external_url:
+        raise HTTPException(status_code=404, detail="Unknown token")
+    log_entry = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "event": "email_click",
+        "token": token,
+        **info,
+    }
+    try:
+        redis_client.rpush(ACTIVITY_LOG_KEY, json.dumps(log_entry))
+    except Exception as e:
+        logger.error("Failed to log email click: %s", e)
+    return RedirectResponse(url=external_url)
 
 @app.get("/school-codes")
 def school_codes():
@@ -2429,6 +2455,7 @@ def notify_interest(data: dict, token_data: dict = Depends(get_current_user)):
     summary = (
         f"Job: {job.get('job_title')} at {job.get('source', '')} in {job.get('city', '')}, {job.get('state', '')}"
     )
+    token = str(uuid.uuid4())
     external_url = job.get("external_apply_url")
     body = (
         f"Hello {first_name},\n\n"
@@ -2437,14 +2464,24 @@ def notify_interest(data: dict, token_data: dict = Depends(get_current_user)):
         f"Please review the job description here: {public_url}\n\n"
     )
     if external_url:
-        body += f"You must apply using the following link: {external_url}\n\n"
+        click_url = (
+            f"{SITE_BASE_URL}/track/click/{token}"
+            if SITE_BASE_URL
+            else f"/track/click/{token}"
+        )
+        body += f"You must apply using the following link: {click_url}\n\n"
     body += "Good Luck!\n\nSupport Team @ TalentMatch-AI"
-    token = str(uuid.uuid4())
     try:
         redis_client.hset(
             EMAIL_OPEN_TOKENS_KEY,
             token,
-            json.dumps({"student_email": student_email, "job_code": job_code}),
+            json.dumps(
+                {
+                    "student_email": student_email,
+                    "job_code": job_code,
+                    "external_url": external_url,
+                }
+            ),
         )
     except Exception as e:
         logger.error("Failed to store email open token: %s", e)
