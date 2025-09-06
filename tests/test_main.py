@@ -15,6 +15,8 @@ from datetime import datetime, timedelta
 class DummyRedis:
     def __init__(self):
         self.store = {}
+        self.hashes = {}
+        self.lists = {}
 
     def set(self, key, value):
         self.store[key] = value
@@ -49,6 +51,25 @@ class DummyRedis:
 
     def flushdb(self):
         self.store.clear()
+        self.hashes.clear()
+        self.lists.clear()
+
+    def hset(self, name, key, value):
+        self.hashes.setdefault(name, {})[key] = value
+
+    def hget(self, name, key):
+        return self.hashes.get(name, {}).get(key)
+
+    def rpush(self, name, value):
+        self.lists.setdefault(name, []).append(value)
+
+    def lindex(self, name, index):
+        lst = self.lists.get(name, [])
+        if index < 0:
+            index += len(lst)
+        if 0 <= index < len(lst):
+            return lst[index]
+        return None
 
 
 main_app.redis_client = DummyRedis()
@@ -877,6 +898,67 @@ def test_generate_job_description(monkeypatch):
     assert "Source:" in html_content
     assert "Pay Range:" in html_content
     assert "Location:" in html_content
+    assert "<h1>TalentMatch-AI</h1>" in html_content
+
+
+def test_generate_job_description_external(monkeypatch):
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    student = {
+        "first_name": "Stud",
+        "last_name": "S",
+        "skills": ["python"],
+        "email": "stud@example.com",
+        "institutional_code": "1001",
+        "student_id": "studext",
+    }
+    main_app.persist_student_record(
+        student["email"], student, student["institutional_code"], student["student_id"]
+    )
+    main_app.redis_client.set(
+        "job:code_ext",
+        json.dumps(
+            {
+                "job_code": "code_ext",
+                "job_title": "Dev",
+                "job_description": "desc",
+                "desired_skills": ["python"],
+                "min_pay": 5.0,
+                "max_pay": 10.0,
+                "city": "Austin",
+                "state": "TX",
+                "source": "Indeed",
+                "external_apply_url": "https://example.com/apply",
+            }
+        ),
+    )
+
+    def fake_create(*args, **kwargs):  # pragma: no cover - should not be called
+        raise AssertionError("OpenAI should not be called for external jobs")
+
+    monkeypatch.setattr(main_app.client.chat.completions, "create", fake_create)
+
+    login_resp = client.post("/login", json={"email": "admin@example.com", "password": "admin123"})
+    token = login_resp.json()["token"]
+
+    resp = client.post(
+        "/generate-job-description",
+        json={"student_email": "stud@example.com", "job_code": "code_ext"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "success"
+
+    get_resp = client.get(
+        "/job-description/code_ext/stud@example.com",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert get_resp.status_code == 200
+    html_content = get_resp.json()["description"]
+    assert "<h1>TalentMatch-AI</h1>" in html_content
+    assert "Job Summary" not in html_content
+    assert "Apply Here" in html_content
 
 
 def test_job_description_html_route():
@@ -918,7 +1000,7 @@ def test_public_job_description_html_route():
 
 
 def test_notify_interest_generates_description(monkeypatch):
-    main_app.redis_client.flushdb()
+    main_app.redis_client = DummyRedis()
     init_default_admin()
 
     student = {
@@ -940,6 +1022,7 @@ def test_notify_interest_generates_description(monkeypatch):
             "job_description": "desc",
             "desired_skills": ["python"],
             "assigned_students": ["stud@example.com"],
+            "external_apply_url": "https://example.com/apply",
         })
     )
 
@@ -952,9 +1035,16 @@ def test_notify_interest_generates_description(monkeypatch):
 
     sent = {}
 
-    def fake_send(recipient, subject, body, attachments=None):
+    def fake_send(recipient, subject, body, attachments=None, track_token=None):
         sent['body'] = body
         sent['attachments'] = attachments
+        sent['token'] = track_token
+        pixel_url = (
+            f"{main_app.SITE_BASE_URL}/track/open/{track_token}.png"
+            if main_app.SITE_BASE_URL
+            else f"/track/open/{track_token}.png"
+        )
+        sent['final_body'] = body + (f'<img src="{pixel_url}" width="1" height="1" />' if track_token else '')
 
     monkeypatch.setattr(main_app.client.chat.completions, "create", fake_create)
     monkeypatch.setattr(main_app, "send_email", fake_send)
@@ -968,15 +1058,40 @@ def test_notify_interest_generates_description(monkeypatch):
     )
     assert resp.status_code == 200
     stored = main_app.redis_client.get("job_description:codei:stud@example.com")
-    assert stored is not None and "done" in stored
+    assert stored is not None
+    assert "Apply Here" in stored
     assert main_app.redis_client.get("jobdesc:codei:stud@example.com") == stored
+    token_val = sent.get("token")
+    assert token_val
+    mapping_raw = main_app.redis_client.hget(main_app.EMAIL_OPEN_TOKENS_KEY, token_val)
+    assert mapping_raw is not None
+    mapping = json.loads(mapping_raw)
+    assert mapping.get("external_url") == "https://example.com/apply"
+    click_url = f"/track/click/{token_val}"
+    if main_app.SITE_BASE_URL:
+        click_url = f"{main_app.SITE_BASE_URL}{click_url}"
+    assert click_url in sent.get("body")
+    assert "https://example.com/apply" not in sent.get("body")
+    assert f"/track/open/{token_val}.png" in sent.get("final_body")
     assert "Good Luck" in sent.get("body")
     assert "/public/job-description-html/codei/stud@example.com" in sent.get("body")
     assert sent.get("attachments") is None
+    assert "Your resume has been matched with this job." in sent.get("body")
+    assert "recruiter has reviewed your resume" not in sent.get("body").lower()
+
+    # Verify click tracking redirects and logs
+    resp_click = client.get(f"/track/click/{token_val}", follow_redirects=False)
+    assert resp_click.status_code in (302, 307)
+    assert resp_click.headers.get("location") == "https://example.com/apply"
+    log_raw = main_app.redis_client.lindex(main_app.ACTIVITY_LOG_KEY, -2)
+    assert log_raw is not None
+    log = json.loads(log_raw)
+    assert log.get("event") == "email_click"
+    assert log.get("token") == token_val
 
 
 def test_notify_interest_multiple_times(monkeypatch):
-    main_app.redis_client.flushdb()
+    main_app.redis_client = DummyRedis()
     init_default_admin()
 
     student = {
@@ -1010,8 +1125,8 @@ def test_notify_interest_multiple_times(monkeypatch):
 
     bodies = []
 
-    def fake_send(recipient, subject, body, attachments=None):
-        bodies.append(body)
+    def fake_send(recipient, subject, body, attachments=None, track_token=None):
+        bodies.append((body, track_token))
 
     monkeypatch.setattr(main_app.client.chat.completions, "create", fake_create)
     monkeypatch.setattr(main_app, "send_email", fake_send)
@@ -1031,9 +1146,75 @@ def test_notify_interest_multiple_times(monkeypatch):
 
     assert resp1.status_code == 200
     assert resp2.status_code == 200
-    assert len(bodies) == 2 and bodies[0] == bodies[1]
+    assert len(bodies) == 2
+    assert bodies[0][0] == bodies[1][0]
+    assert bodies[0][1] != bodies[1][1]
+    assert "Your resume has been matched with this job." in bodies[0][0]
+    assert "recruiter has reviewed your resume" not in bodies[0][0].lower()
     stored = main_app.redis_client.get("job_description:codei:stud@example.com")
     assert stored is not None and "done" in stored
+
+
+def test_track_open_logs_event(monkeypatch):
+    main_app.redis_client = DummyRedis()
+    init_default_admin()
+
+    student = {
+        "first_name": "Stud",
+        "last_name": "S",
+        "skills": ["python"],
+        "email": "stud@example.com",
+        "institutional_code": "1001",
+        "student_id": "stud7",
+    }
+    main_app.persist_student_record(
+        student["email"], student, student["institutional_code"], student["student_id"]
+    )
+    main_app.redis_client.set(
+        "job:codei",
+        json.dumps({
+            "job_code": "codei",
+            "job_title": "Dev",
+            "job_description": "desc",
+            "desired_skills": ["python"],
+            "assigned_students": ["stud@example.com"],
+        }),
+    )
+
+    class FakeResp:
+        def __init__(self):
+            self.choices = [type("obj", (), {"message": type("obj", (), {"content": "done"})})]
+
+    def fake_create(model, messages, temperature):
+        return FakeResp()
+
+    sent = {}
+
+    def fake_send(recipient, subject, body, attachments=None, track_token=None):
+        sent["token"] = track_token
+
+    monkeypatch.setattr(main_app.client.chat.completions, "create", fake_create)
+    monkeypatch.setattr(main_app, "send_email", fake_send)
+
+    token = client.post("/login", json={"email": "admin@example.com", "password": "admin123"}).json()["token"]
+
+    resp = client.post(
+        "/notify-interest",
+        json={"student_email": "stud@example.com", "job_code": "codei"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    tok = sent["token"]
+    resp2 = client.get(f"/track/open/{tok}.png")
+    assert resp2.status_code == 200
+    assert resp2.headers["content-type"] == "image/png"
+    assert resp2.content == main_app.TRANSPARENT_PNG
+    entry_raw = main_app.redis_client.lindex(main_app.ACTIVITY_LOG_KEY, -2)
+    entry = json.loads(entry_raw)
+    assert entry["event"] == "email_open"
+    assert entry["token"] == tok
+    assert entry["student_email"] == "stud@example.com"
+    assert entry["job_code"] == "codei"
 
 
 def test_generate_resume_html(monkeypatch):
@@ -1910,7 +2091,7 @@ def test_admin_test_notification(monkeypatch):
 
     sent = {}
 
-    def fake_send_email(recipient, subject, body):
+    def fake_send_email(recipient, subject, body, attachments=None, track_token=None):
         sent["recipient"] = recipient
         sent["subject"] = subject
         sent["body"] = body
@@ -2048,7 +2229,15 @@ def test_match_metrics_increment(monkeypatch):
     monkeypatch.setattr(main_app.client.embeddings, "create", lambda *a, **k: FakeResp())
     monkeypatch.setattr(main_app, "get_driving_distance_miles", lambda *a, **k: 1.0)
 
-    main_app.match_worker("abc", send_emails=False, enq_time=datetime.now().timestamp())
+    called = {}
+
+    def fake_send_email(*args, **kwargs):
+        called["count"] = called.get("count", 0) + 1
+
+    monkeypatch.setattr(main_app, "send_email", fake_send_email)
+
+    main_app.match_worker("abc", enq_time=datetime.now().timestamp())
+    assert called == {}
     process = float(main_app.redis_client.get("metrics:match_process_time") or 0)
     queue = float(main_app.redis_client.get("metrics:match_queue_time") or 0)
     assert process > 0
