@@ -2501,7 +2501,7 @@ def notify_interest(data: dict, token_data: dict = Depends(get_current_user)):
         logger.error("Failed to store email open token: %s", e)
     send_email(
         student_email,
-        f"Recruiter Interest: {job.get('job_title')}",
+        f"Job Match: {job.get('job_title')}",
         body,
         html_body=html_body,
         track_token=token,
@@ -3377,7 +3377,7 @@ def admin_test_notification(current_user: dict = Depends(get_current_user)):
     )
     send_email(
         admin_email,
-        f"Recruiter Interest: {job_title}",
+        f"Job Match: {job_title}",
         (
             f"Hello,\n\nA recruiter has expressed interest in you for the job '{job_title}'. "
             "They may contact you soon."
