@@ -1478,13 +1478,13 @@ def match_job(
         get_queue().enqueue(
             match_worker,
             req.job_code,
-            True,
+            False,
             enq_time,
             meta={"request_id": request.state.request_id},
         )
         return {"message": "Match job queued"}
     else:
-        matches = match_worker(req.job_code, True, enq_time)
+        matches = match_worker(req.job_code, False, enq_time)
         return {"matches": matches}
 
 
@@ -1510,13 +1510,14 @@ def rematch_job(
         return {"matches": matches}
 
 
-async def _perform_match_async(job_code: str, send_emails: bool = True, enq_time: float | None = None):
+async def _perform_match_async(job_code: str, send_emails: bool = False, enq_time: float | None = None):
     key = f"job:{job_code}"
     raw = redis_client.get(key)
     if not raw:
         raise HTTPException(status_code=404, detail="Job not found")
     job = json.loads(raw)
     job.setdefault("uninterested_students", [])
+    was_matched_before = bool(redis_client.exists(f"match_results:{job_code}"))
 
     required_license = license_to_code(job.get("required_license"))
 
@@ -1709,10 +1710,10 @@ async def _perform_match_async(job_code: str, send_emails: bool = True, enq_time
             if matches
             else 0.0
         )
-        if send_emails:
-            redis_client.incr("metrics:total_matches")
-        else:
+        if was_matched_before:
             redis_client.incr("metrics:total_rematches")
+        else:
+            redis_client.incr("metrics:total_matches")
         redis_client.incrbyfloat("metrics:total_match_score", avg_score)
         redis_client.set(
             "metrics:last_match_timestamp", datetime.now().isoformat()
@@ -1723,12 +1724,12 @@ async def _perform_match_async(job_code: str, send_emails: bool = True, enq_time
     return top_matches
 
 
-def _perform_match(job_code: str, send_emails: bool = True, enq_time: float | None = None):
+def _perform_match(job_code: str, send_emails: bool = False, enq_time: float | None = None):
     """Synchronous wrapper for background execution."""
     return asyncio.run(_perform_match_async(job_code, send_emails, enq_time))
 
 
-def match_worker(job_code: str, send_emails: bool = True, enq_time: float | None = None):
+def match_worker(job_code: str, send_emails: bool = False, enq_time: float | None = None):
     start = datetime.now()
     if enq_time is not None:
         queue_time = start - datetime.fromtimestamp(enq_time)
