@@ -1035,7 +1035,7 @@ def test_notify_interest_generates_description(monkeypatch):
 
     sent = {}
 
-    def fake_send(recipient, subject, body, attachments=None, track_token=None):
+    def fake_send(recipient, subject, body, html_body=None, attachments=None, track_token=None):
         sent['body'] = body
         sent['attachments'] = attachments
         sent['token'] = track_token
@@ -1125,7 +1125,7 @@ def test_notify_interest_multiple_times(monkeypatch):
 
     bodies = []
 
-    def fake_send(recipient, subject, body, attachments=None, track_token=None):
+    def fake_send(recipient, subject, body, html_body=None, attachments=None, track_token=None):
         bodies.append((body, track_token))
 
     monkeypatch.setattr(main_app.client.chat.completions, "create", fake_create)
@@ -1190,7 +1190,7 @@ def test_track_open_logs_event(monkeypatch):
 
     sent = {}
 
-    def fake_send(recipient, subject, body, attachments=None, track_token=None):
+    def fake_send(recipient, subject, body, html_body=None, attachments=None, track_token=None):
         sent["token"] = track_token
 
     monkeypatch.setattr(main_app.client.chat.completions, "create", fake_create)
@@ -2091,7 +2091,7 @@ def test_admin_test_notification(monkeypatch):
 
     sent = {}
 
-    def fake_send_email(recipient, subject, body, attachments=None, track_token=None):
+    def fake_send_email(recipient, subject, body, html_body=None, attachments=None, track_token=None):
         sent["recipient"] = recipient
         sent["subject"] = subject
         sent["body"] = body

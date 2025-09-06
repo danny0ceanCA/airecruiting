@@ -282,6 +282,7 @@ def send_email(
     recipient: str,
     subject: str,
     body: str,
+    html_body: str | None = None,
     attachments: list[tuple[str, bytes | str, str]] | None = None,
     track_token: str | None = None,
 ) -> None:
@@ -295,18 +296,19 @@ def send_email(
         msg["To"] = recipient
         msg["Subject"] = subject
 
-        html_body = body
+        text_body = body
+        html_part = html_body or body
         if track_token:
             pixel_url = (
                 f"{SITE_BASE_URL}/track/open/{track_token}.png"
                 if SITE_BASE_URL
                 else f"/track/open/{track_token}.png"
             )
-            html_body += f"\n<img src=\"{pixel_url}\" width=\"1\" height=\"1\" />"
+            html_part += f"\n<img src=\"{pixel_url}\" width=\"1\" height=\"1\" />"
 
-        msg.set_content(body)
-        if html_body != body:
-            msg.add_alternative(html_body, subtype="html")
+        msg.set_content(text_body)
+        if html_part != text_body:
+            msg.add_alternative(html_part, subtype="html")
 
         if attachments:
             for filename, content, mime in attachments:
@@ -2463,6 +2465,12 @@ def notify_interest(data: dict, token_data: dict = Depends(get_current_user)):
         "Your resume has been matched with this job.\n\n"
         f"Please review the job description here: {public_url}\n\n"
     )
+    html_body = (
+        f"<p>Hello {first_name},</p>"
+        f"<p>{summary}</p>"
+        "<p>Your resume has been matched with this job.</p>"
+        f"<p>Please review the job description <a href=\"{public_url}\">here</a>.</p>"
+    )
     if external_url:
         click_url = (
             f"{SITE_BASE_URL}/track/click/{token}"
@@ -2470,7 +2478,12 @@ def notify_interest(data: dict, token_data: dict = Depends(get_current_user)):
             else f"/track/click/{token}"
         )
         body += f"You must apply using the following link: {click_url}\n\n"
+        html_body += (
+            f"<p>You must apply using the following link: "
+            f"<a href=\"{click_url}\">Apply Now</a></p>"
+        )
     body += "Good Luck!\n\nSupport Team @ TalentMatch-AI"
+    html_body += "<p>Good Luck!</p><p>Support Team @ TalentMatch-AI</p>"
     try:
         redis_client.hset(
             EMAIL_OPEN_TOKENS_KEY,
@@ -2489,6 +2502,7 @@ def notify_interest(data: dict, token_data: dict = Depends(get_current_user)):
         student_email,
         f"Recruiter Interest: {job.get('job_title')}",
         body,
+        html_body=html_body,
         track_token=token,
     )
 
