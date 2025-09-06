@@ -63,7 +63,7 @@ def test_admin_weekly_summary():
 
     sent = {}
 
-    def fake_send_email(to, subject, body, attachments=None, track_token=None):
+    def fake_send_email(to, subject, body, html_body=None, attachments=None, track_token=None):
         sent["to"] = to
         sent["subject"] = subject
         sent["body"] = body
