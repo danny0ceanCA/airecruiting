@@ -2494,6 +2494,7 @@ def notify_interest(data: dict, token_data: dict = Depends(get_current_user)):
                     "student_email": student_email,
                     "job_code": job_code,
                     "external_url": external_url,
+                    "sent": datetime.now(timezone.utc).isoformat(),
                 }
             ),
         )
@@ -2992,6 +2993,62 @@ def _normalize_notes(value):
         return value, latest
     return [], None
 
+
+def _tracking_stats(student_email: str, job_code: str) -> dict:
+    """Return email tracking info for a student/job pair."""
+    tokens: list[dict] = []
+    try:
+        if hasattr(redis_client, "hscan_iter"):
+            iterator = redis_client.hscan_iter(EMAIL_OPEN_TOKENS_KEY)
+        else:
+            iterator = redis_client.hashes.get(EMAIL_OPEN_TOKENS_KEY, {}).items()
+        for token, raw in iterator:
+            try:
+                info = json.loads(raw)
+            except Exception:
+                continue
+            if (
+                info.get("student_email") == student_email
+                and info.get("job_code") == job_code
+            ):
+                info["token"] = token
+                tokens.append(info)
+    except Exception:
+        pass
+
+    if not tokens:
+        return {"email_sent": None, "first_open": None, "clicked": False}
+
+    email_sent_values = [t.get("sent") for t in tokens if t.get("sent")]
+    email_sent = min(email_sent_values) if email_sent_values else None
+
+    token_set = {t["token"] for t in tokens}
+    first_open = None
+    clicked = False
+    try:
+        if hasattr(redis_client, "lrange"):
+            raw_entries = redis_client.lrange(ACTIVITY_LOG_KEY, 0, -1) or []
+        else:
+            raw_entries = redis_client.lists.get(ACTIVITY_LOG_KEY, [])
+        for raw in raw_entries:
+            try:
+                entry = json.loads(raw)
+            except Exception:
+                continue
+            if entry.get("token") not in token_set:
+                continue
+            event = entry.get("event")
+            ts = entry.get("timestamp")
+            if event == "email_open" and ts:
+                if first_open is None or ts < first_open:
+                    first_open = ts
+            elif event == "email_click":
+                clicked = True
+    except Exception:
+        pass
+
+    return {"email_sent": email_sent, "first_open": first_open, "clicked": clicked}
+
 @app.get("/students/all")
 def get_all_students(current_user: dict = Depends(get_current_user)):
     if current_user.get("role") not in ADMIN_ROLES:
@@ -3053,6 +3110,7 @@ def get_all_students(current_user: dict = Depends(get_current_user)):
             elif email in job.get("uninterested_students", []):
                 status = "uninterested"
             if status:
+                track = _tracking_stats(email, job.get("job_code"))
                 jobs_list.append({
                     "job_code": job.get("job_code"),
                     "job_title": job.get("job_title"),
@@ -3064,6 +3122,9 @@ def get_all_students(current_user: dict = Depends(get_current_user)):
                     "posted_by": job.get("posted_by"),
                     "notes": notes,
                     **({"note": latest_note} if latest_note is not None else {}),
+                    "email_sent": track["email_sent"],
+                    "first_open": track["first_open"],
+                    "clicked": track["clicked"],
                 })
 
         info["assigned_jobs"] = jobs_list
@@ -3154,6 +3215,7 @@ def students_by_school(current_user: dict = Depends(get_current_user)):
             elif email in job.get("uninterested_students", []):
                 status = "uninterested"
             if status:
+                track = _tracking_stats(email, job.get("job_code"))
                 jobs_list.append({
                     "job_code": job.get("job_code"),
                     "job_title": job.get("job_title"),
@@ -3165,6 +3227,9 @@ def students_by_school(current_user: dict = Depends(get_current_user)):
                     "posted_by": job.get("posted_by"),
                     "notes": notes,
                     **({"note": latest_note} if latest_note is not None else {}),
+                    "email_sent": track["email_sent"],
+                    "first_open": track["first_open"],
+                    "clicked": track["clicked"],
                 })
 
         info["assigned_jobs"] = jobs_list
