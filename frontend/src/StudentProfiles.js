@@ -100,17 +100,17 @@ function StudentProfiles() {
     return Array.from(map.values());
   };
 
-  const showTrackingPopover = (job, targetEl) => {
-    const rect = targetEl.getBoundingClientRect();
-    setHoveredJob({ job, position: { top: rect.bottom, left: rect.left } });
+  const showTrackingPopover = (job, position) => {
+    setHoveredJob({ job, position });
+
   };
 
   const handleJobEnter = (job, event) => {
     if ('ontouchstart' in window) return;
-    const targetEl = event.currentTarget;
+    const { clientX, clientY } = event;
     clearTimeout(hoverTimer.current);
     hoverTimer.current = setTimeout(
-      () => showTrackingPopover(job, targetEl),
+      () => showTrackingPopover(job, { top: clientY, left: clientX }),
       3000
     );
   };
@@ -123,10 +123,11 @@ function StudentProfiles() {
   const handleJobClick = (job, event) => {
     event.stopPropagation();
     clearTimeout(hoverTimer.current);
+    const { clientX, clientY } = event;
     if (hoveredJob && hoveredJob.job.job_code === job.job_code) {
       setHoveredJob(null);
     } else {
-      showTrackingPopover(job, event.currentTarget);
+      showTrackingPopover(job, { top: clientY, left: clientX });
     }
   };
 
