@@ -111,7 +111,7 @@ function StudentProfiles() {
     clearTimeout(hoverTimer.current);
     hoverTimer.current = setTimeout(
       () => showTrackingPopover(job, { top: clientY, left: clientX }),
-      3000
+      2000
     );
   };
 
