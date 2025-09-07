@@ -102,6 +102,7 @@ function StudentProfiles() {
 
   const showTrackingPopover = (job, position) => {
     setHoveredJob({ job, position });
+
   };
 
   const handleJobEnter = (job, event) => {
