@@ -762,18 +762,20 @@ function StudentProfiles() {
                             <td colSpan="100%">
                               <div className="job-subrow-content">
                                 <table className="job-subtable">
-                                <thead>
-                                  <tr>
-                                    <th>Job Title</th>
-                                    <th>Rate</th>
-                                    <th>Source</th>
-                                    <th>Job Description</th>
-                                    <th>Status</th>
-                                    <th>Recruiter Note</th>
-                                  </tr>
-                                </thead>
+                                {s.assigned_jobs?.length > 0 && (
+                                  <thead>
+                                    <tr>
+                                      <th>Job Title</th>
+                                      <th>Rate</th>
+                                      <th>Source</th>
+                                      <th>Job Description</th>
+                                      <th>Status</th>
+                                      <th>Recruiter Note</th>
+                                    </tr>
+                                  </thead>
+                                )}
                                 <tbody>
-                                  {s.assigned_jobs && s.assigned_jobs.length > 0 ? (
+                                  {s.assigned_jobs?.length > 0 ? (
                                     s.assigned_jobs.map((job, index) => (
                                       <tr
                                         key={index}
@@ -848,7 +850,7 @@ function StudentProfiles() {
                                     ))
                                   ) : (
                                     <tr className="no-jobs-row">
-                                      <td colSpan="6">No jobs assigned by recruiters.</td>
+                                      <td colSpan="100%">No jobs assigned by recruiters.</td>
                                     </tr>
                                   )}
                                 </tbody>
