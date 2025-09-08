@@ -211,6 +211,39 @@ def generate_student_id() -> str:
     return str(redis_client.incr("student_id"))
 
 
+def _sadd(key: str, member: str) -> None:
+    if hasattr(redis_client, "sadd"):
+        redis_client.sadd(key, member)
+    else:
+        redis_client.store.setdefault(key, set()).add(member)
+
+
+def _srem(key: str, member: str) -> None:
+    if hasattr(redis_client, "srem"):
+        redis_client.srem(key, member)
+    else:
+        redis_client.store.setdefault(key, set()).discard(member)
+
+
+def _hset(name: str, key: str, value: str) -> None:
+    if hasattr(redis_client, "hset"):
+        redis_client.hset(name, key, value)
+    else:
+        redis_client.store.setdefault(name, {})[key] = value
+
+
+def _hget(name: str, key: str):
+    if hasattr(redis_client, "hget"):
+        return redis_client.hget(name, key)
+    return redis_client.store.get(name, {}).get(key)
+
+
+def _hgetall(name: str) -> dict:
+    if hasattr(redis_client, "hgetall"):
+        return redis_client.hgetall(name)
+    return redis_client.store.get(name, {}).copy()
+
+
 def persist_student_record(email: str, data: dict, institution_code: str, student_id: str) -> None:
     """Persist the student record under canonical, legacy, and index keys."""
     payload = json.dumps(data)
@@ -223,6 +256,9 @@ def persist_student_record(email: str, data: dict, institution_code: str, studen
     else:
         redis_client.set(student_email_key(email), f"{institution_code}:{student_id}")
         redis_client.set(f"student:{email}", payload)
+    # index students by school for efficient pagination
+    if institution_code:
+        _sadd(f"school_students:{institution_code}", key)
 
 
 def find_user_key(email: str) -> str | None:
@@ -1325,9 +1361,16 @@ async def create_student(request: Request, current_user: dict = Depends(get_curr
         vector_emails.append(student_data.email)
 
     if profile_json is not None:
-        return {"message": "Resume parsed by GPT successfully.", "profile": profile_json}
+        return {
+            "message": "Resume parsed by GPT successfully.",
+            "profile": profile_json,
+            "student": data,
+        }
     else:
-        return {"message": "Student profile submitted without GPT parsing."}
+        return {
+            "message": "Student profile submitted without GPT parsing.",
+            "student": data,
+        }
 
 
 @app.put("/students/{email}")
@@ -1386,7 +1429,7 @@ def update_student(
         redis_client.delete(key)
     persist_student_record(email, data, inst_code, student_id)
     rebuild_vector_index()
-    return {"message": "Student updated successfully"}
+    return {"message": "Student updated successfully", "student": data}
 
 @app.post("/students/upload")
 def upload_students(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
@@ -2051,6 +2094,28 @@ def place_student(data: dict, token_data: dict = Depends(get_current_user)):
         job["assigned_students"].remove(student_email)
 
     redis_client.set(key, json.dumps(job))
+    # record student-job status
+    existing_info = _hget(f"student_jobs:{student_email}", job_code)
+    if existing_info:
+        try:
+            payload = json.loads(existing_info)
+        except Exception:
+            payload = {}
+    else:
+        payload = {
+            "job_code": job_code,
+            "job_title": job.get("job_title"),
+            "source": job.get("source"),
+            "min_pay": job.get("min_pay"),
+            "max_pay": job.get("max_pay"),
+            "posted_by": job.get("posted_by"),
+            "notes": [],
+        }
+    payload.setdefault("notes", [])
+    payload["status"] = "placed"
+    _hset(
+        f"student_jobs:{student_email}", job_code, json.dumps(payload)
+    )
     return {"message": f"Placed {student_email}"}
 
 @app.post("/assign")
@@ -2081,6 +2146,17 @@ def assign_student(data: dict, token_data: dict = Depends(get_current_user)):
     if student_email not in job["assigned_students"]:
         job["assigned_students"].append(student_email)
 
+    info = {
+        "job_code": job_code,
+        "job_title": job.get("job_title"),
+        "source": job.get("source"),
+        "min_pay": job.get("min_pay"),
+        "max_pay": job.get("max_pay"),
+        "status": "assigned",
+        "posted_by": job.get("posted_by"),
+        "notes": [],
+    }
+
     if note is not None:
         note_obj = {
             "text": note,
@@ -2108,12 +2184,16 @@ def assign_student(data: dict, token_data: dict = Depends(get_current_user)):
         existing.append(note_obj)
         notes_map[student_email] = existing
         job["student_notes"] = notes_map
+        info["notes"] = notes_map[student_email]
 
     try:
         redis_client.set(key, json.dumps(job))
     except redis.exceptions.RedisError:
         raise HTTPException(status_code=503, detail="Storage unavailable")
-    resp = {"message": f"Assigned {student_email}"}
+    _hset(
+        f"student_jobs:{student_email}", job_code, json.dumps(info)
+    )
+    resp = {"message": f"Assigned {student_email}", "job": info}
     if note is not None:
         resp["notes"] = job["student_notes"][student_email]
     return resp
@@ -2155,6 +2235,23 @@ def reject_assigned_student(data: dict, token_data: dict = Depends(get_current_u
     if student_email not in job["rejected_students"]:
         job["rejected_students"].append(student_email)
 
+    info = _hget(f"student_jobs:{student_email}", job_code)
+    if info:
+        try:
+            payload = json.loads(info)
+        except Exception:
+            payload = {}
+    else:
+        payload = {
+            "job_code": job_code,
+            "job_title": job.get("job_title"),
+            "source": job.get("source"),
+            "min_pay": job.get("min_pay"),
+            "max_pay": job.get("max_pay"),
+            "posted_by": job.get("posted_by"),
+            "notes": [],
+        }
+
     if note is not None:
         note_obj = {
             "text": note,
@@ -2182,12 +2279,18 @@ def reject_assigned_student(data: dict, token_data: dict = Depends(get_current_u
         existing.append(note_obj)
         notes_map[student_email] = existing
         job["student_notes"] = notes_map
+        payload["notes"] = notes_map[student_email]
 
     try:
         redis_client.set(key, json.dumps(job))
     except redis.exceptions.RedisError:
         raise HTTPException(status_code=503, detail="Storage unavailable")
-    resp = {"message": "Student rejected"}
+    payload.setdefault("notes", [])
+    payload["status"] = "rejected"
+    _hset(
+        f"student_jobs:{student_email}", job_code, json.dumps(payload)
+    )
+    resp = {"message": "Student rejected", "job": payload}
     if note is not None:
         resp["notes"] = job["student_notes"][student_email]
     return resp
@@ -2260,6 +2363,25 @@ def student_note(data: dict, token_data: dict = Depends(get_current_user)):
         redis_client.set(key, json.dumps(job))
     except redis.exceptions.RedisError:
         raise HTTPException(status_code=503, detail="Storage unavailable")
+    info = _hget(f"student_jobs:{student_email}", job_code)
+    if info:
+        try:
+            payload = json.loads(info)
+        except Exception:
+            payload = {}
+    else:
+        payload = {
+            "job_code": job_code,
+            "job_title": job.get("job_title"),
+            "source": job.get("source"),
+            "min_pay": job.get("min_pay"),
+            "max_pay": job.get("max_pay"),
+            "posted_by": job.get("posted_by"),
+            "status": "assigned",
+            "notes": [],
+        }
+    payload["notes"] = notes_map[student_email]
+    _hset(f"student_jobs:{student_email}", job_code, json.dumps(payload))
     return {"email": student_email, "notes": notes_map[student_email]}
 
 
@@ -2331,6 +2453,25 @@ def update_student_note(data: dict, token_data: dict = Depends(get_current_user)
         redis_client.set(key, json.dumps(job))
     except redis.exceptions.RedisError:
         raise HTTPException(status_code=503, detail="Storage unavailable")
+    info = _hget(f"student_jobs:{student_email}", job_code)
+    if info:
+        try:
+            payload = json.loads(info)
+        except Exception:
+            payload = {}
+    else:
+        payload = {
+            "job_code": job_code,
+            "job_title": job.get("job_title"),
+            "source": job.get("source"),
+            "min_pay": job.get("min_pay"),
+            "max_pay": job.get("max_pay"),
+            "posted_by": job.get("posted_by"),
+            "status": "assigned",
+            "notes": [],
+        }
+    payload["notes"] = notes_map[student_email]
+    _hset(f"student_jobs:{student_email}", job_code, json.dumps(payload))
     return {"email": student_email, "notes": notes_map[student_email]}
 
 
@@ -2395,6 +2536,25 @@ def delete_student_note(data: dict, token_data: dict = Depends(get_current_user)
         redis_client.set(key, json.dumps(job))
     except redis.exceptions.RedisError:
         raise HTTPException(status_code=503, detail="Storage unavailable")
+    info = _hget(f"student_jobs:{student_email}", job_code)
+    if info:
+        try:
+            payload = json.loads(info)
+        except Exception:
+            payload = {}
+    else:
+        payload = {
+            "job_code": job_code,
+            "job_title": job.get("job_title"),
+            "source": job.get("source"),
+            "min_pay": job.get("min_pay"),
+            "max_pay": job.get("max_pay"),
+            "posted_by": job.get("posted_by"),
+            "status": "assigned",
+            "notes": [],
+        }
+    payload["notes"] = notes_map.get(student_email, [])
+    _hset(f"student_jobs:{student_email}", job_code, json.dumps(payload))
     return {"email": student_email, "notes": notes_map.get(student_email, [])}
 
 
@@ -2417,7 +2577,28 @@ def mark_not_interested(data: dict, token_data: dict = Depends(get_current_user)
         job["uninterested_students"].append(student_email)
 
     redis_client.set(key, json.dumps(job))
-    return {"message": "Not interested recorded"}
+    info = _hget(f"student_jobs:{student_email}", job_code)
+    if info:
+        try:
+            payload = json.loads(info)
+        except Exception:
+            payload = {}
+    else:
+        payload = {
+            "job_code": job_code,
+            "job_title": job.get("job_title"),
+            "source": job.get("source"),
+            "min_pay": job.get("min_pay"),
+            "max_pay": job.get("max_pay"),
+            "posted_by": job.get("posted_by"),
+            "notes": [],
+        }
+    payload.setdefault("notes", [])
+    payload["status"] = "uninterested"
+    _hset(
+        f"student_jobs:{student_email}", job_code, json.dumps(payload)
+    )
+    return {"message": "Not interested recorded", "job": payload}
 
 
 @app.post("/notify-interest")
@@ -2926,6 +3107,17 @@ def delete_student(email: str, current_user: dict = Depends(get_current_user)):
     if not skey or not redis_client.exists(skey):
         raise HTTPException(status_code=404, detail="Student not found")
 
+    raw_student = redis_client.get(skey)
+    inst = None
+    if raw_student:
+        try:
+            student_obj = json.loads(raw_student)
+            inst = student_obj.get("institutional_code") or student_obj.get("school_code")
+        except Exception:
+            inst = None
+    if inst:
+        _srem(f"school_students:{inst}", skey)
+    redis_client.delete(f"student_jobs:{email}")
     # Delete student profile
     redis_client.delete(skey)
     redis_client.delete(student_email_key(email))
@@ -3049,24 +3241,26 @@ def _tracking_stats(student_email: str, job_code: str) -> dict:
     return {"email_sent": email_sent, "first_open": first_open, "clicked": clicked}
 
 @app.get("/students/all")
-def get_all_students(current_user: dict = Depends(get_current_user)):
+def get_all_students(
+    limit: int = 100,
+    cursor: str | None = None,
+    current_user: dict = Depends(get_current_user),
+):
     if current_user.get("role") not in ADMIN_ROLES:
         raise HTTPException(status_code=403, detail="Admin privileges required")
 
-    # Gather all job data once
-    all_jobs = []
-    for job_key in redis_client.scan_iter("job:*"):
-        job_raw = redis_client.get(job_key)
-        if not job_raw:
-            continue
-        try:
-            job = json.loads(job_raw)
-        except Exception:
-            continue
-        all_jobs.append(job)
+    cur = int(cursor) if cursor else 0
+    if hasattr(redis_client, "scan"):
+        next_cursor, keys = redis_client.scan(cur, match="student:*:*", count=limit)
+    else:
+        all_keys = [k for k in redis_client.store.keys() if k.startswith("student:") and ":" in k]
+        keys = all_keys[cur : cur + limit]
+        next_cursor = cur + len(keys)
+        if next_cursor >= len(all_keys):
+            next_cursor = 0
 
-    students = []
-    for key in redis_client.scan_iter("student:*"):
+    students: list[dict] = []
+    for key in keys:
         raw = redis_client.get(key)
         if not raw:
             continue
@@ -3094,53 +3288,68 @@ def get_all_students(current_user: dict = Depends(get_current_user)):
             "assigned_job_code": None,
         }
 
-        # Add optional match data
-        jobs_list = []
-        for job in all_jobs:
-            status = None
-            notes_raw = job.get("student_notes", {}).get(email, [])
-            notes, latest_note = _normalize_notes(notes_raw)
-            if email in job.get("placed_students", []):
-                status = "placed"
-            elif email in job.get("assigned_students", []):
-                status = "assigned"
-            elif email in job.get("rejected_students", []):
-                status = "rejected"
-            elif email in job.get("uninterested_students", []):
-                status = "uninterested"
-            if status:
-                track = _tracking_stats(email, job.get("job_code"))
-                jobs_list.append({
-                    "job_code": job.get("job_code"),
-                    "job_title": job.get("job_title"),
-                    "source": job.get("source"),
-                    "min_pay": job.get("min_pay"),
-                    "max_pay": job.get("max_pay"),
-                    "job_description": job.get("job_description"),
-                    "status": status,
-                    "posted_by": job.get("posted_by"),
-                    "notes": notes,
-                    **({"note": latest_note} if latest_note is not None else {}),
-                    "email_sent": track["email_sent"],
-                    "first_open": track["first_open"],
-                    "clicked": track["clicked"],
-                })
+        jobs_hash = _hgetall(f"student_jobs:{email}")
+        jobs_list: list[dict] = []
+        for val in jobs_hash.values():
+            try:
+                j = json.loads(val)
+            except Exception:
+                continue
+            jobs_list.append(j)
 
         info["assigned_jobs"] = jobs_list
-        info["placed_jobs"] = sum(1 for j in jobs_list if j["status"] == "placed")
-        info["assigned_job_code"] = next((j["job_code"] for j in jobs_list if j["status"] == "assigned"), None)
+        info["placed_jobs"] = sum(1 for j in jobs_list if j.get("status") == "placed")
+        info["assigned_job_code"] = next(
+            (j.get("job_code") for j in jobs_list if j.get("status") == "assigned"),
+            None,
+        )
 
         students.append(info)
 
-    return {"students": students}
+    return {
+        "students": students,
+        "next": str(next_cursor) if next_cursor != 0 else None,
+    }
+
+
+@app.get("/students/{email}/jobs/{job_code}")
+def student_job_detail(
+    email: str,
+    job_code: str,
+    current_user: dict = Depends(get_current_user),
+):
+    email = normalize_email(email)
+    key = f"job:{job_code}"
+    raw = redis_client.get(key)
+    if not raw:
+        raise HTTPException(status_code=404, detail="Job not found")
+    try:
+        job = json.loads(raw)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Corrupted job data")
+    notes_raw = job.get("student_notes", {}).get(email, [])
+    notes, latest_note = _normalize_notes(notes_raw)
+    track = _tracking_stats(email, job_code)
+    return {
+        "job_description": job.get("job_description"),
+        "notes": notes,
+        **({"note": latest_note} if latest_note is not None else {}),
+        "email_sent": track["email_sent"],
+        "first_open": track["first_open"],
+        "clicked": track["clicked"],
+    }
 
 @app.get("/students/by-school")
-def students_by_school(current_user: dict = Depends(get_current_user)):
+def students_by_school(
+    limit: int = 100,
+    cursor: str | None = None,
+    current_user: dict = Depends(get_current_user),
+):
     """Return student profiles for the current user's school.
 
     Career service users only see profiles they created themselves.
     """
-    u_key = user_key(current_user.get('sub'))
+    u_key = user_key(current_user.get("sub"))
     raw_user = redis_client.get(u_key)
     if not raw_user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -3154,30 +3363,29 @@ def students_by_school(current_user: dict = Depends(get_current_user)):
     if not institutional_code:
         raise HTTPException(status_code=400, detail="Institutional code required")
 
-    # Gather all job data once
-    all_jobs = []
-    for job_key in redis_client.scan_iter("job:*"):
-        job_raw = redis_client.get(job_key)
-        if not job_raw:
-            continue
-        try:
-            job = json.loads(job_raw)
-        except Exception:
-            continue
-        all_jobs.append(job)
+    cur = int(cursor) if cursor else 0
+    if hasattr(redis_client, "sscan"):
+        next_cursor, skeys = redis_client.sscan(
+            f"school_students:{institutional_code}", cur, count=limit
+        )
+    else:
+        all_members = list(
+            redis_client.store.get(f"school_students:{institutional_code}", set())
+        )
+        skeys = all_members[cur : cur + limit]
+        next_cursor = cur + len(skeys)
+        if next_cursor >= len(all_members):
+            next_cursor = 0
 
-    students = []
+    students: list[dict] = []
 
-    for key in redis_client.scan_iter("student:*"):
+    for key in skeys:
         raw = redis_client.get(key)
         if not raw:
             continue
         try:
             student = json.loads(raw)
         except Exception:
-            continue
-
-        if (student.get("institutional_code") or student.get("school_code")) != institutional_code:
             continue
 
         if current_user.get("role") == "career" and student.get("created_by") != current_user.get("sub"):
@@ -3200,44 +3408,28 @@ def students_by_school(current_user: dict = Depends(get_current_user)):
             "assigned_job_code": None,
         }
 
-        jobs_list = []
-        for job in all_jobs:
-            status = None
-            notes_raw = job.get("student_notes", {}).get(email, [])
-            notes, latest_note = _normalize_notes(notes_raw)
-            if email in job.get("placed_students", []):
-                status = "placed"
-            elif email in job.get("assigned_students", []):
-                status = "assigned"
-            elif email in job.get("rejected_students", []):
-                status = "rejected"
-            elif email in job.get("uninterested_students", []):
-                status = "uninterested"
-            if status:
-                track = _tracking_stats(email, job.get("job_code"))
-                jobs_list.append({
-                    "job_code": job.get("job_code"),
-                    "job_title": job.get("job_title"),
-                    "source": job.get("source"),
-                    "min_pay": job.get("min_pay"),
-                    "max_pay": job.get("max_pay"),
-                    "job_description": job.get("job_description"),
-                    "status": status,
-                    "posted_by": job.get("posted_by"),
-                    "notes": notes,
-                    **({"note": latest_note} if latest_note is not None else {}),
-                    "email_sent": track["email_sent"],
-                    "first_open": track["first_open"],
-                    "clicked": track["clicked"],
-                })
+        jobs_hash = _hgetall(f"student_jobs:{email}")
+        jobs_list: list[dict] = []
+        for val in jobs_hash.values():
+            try:
+                j = json.loads(val)
+            except Exception:
+                continue
+            jobs_list.append(j)
 
         info["assigned_jobs"] = jobs_list
-        info["placed_jobs"] = sum(1 for j in jobs_list if j["status"] == "placed")
-        info["assigned_job_code"] = next((j["job_code"] for j in jobs_list if j["status"] == "assigned"), None)
+        info["placed_jobs"] = sum(1 for j in jobs_list if j.get("status") == "placed")
+        info["assigned_job_code"] = next(
+            (j.get("job_code") for j in jobs_list if j.get("status") == "assigned"),
+            None,
+        )
 
         students.append(info)
 
-    return {"students": students}
+    return {
+        "students": students,
+        "next": str(next_cursor) if next_cursor != 0 else None,
+    }
 
 
 @app.get("/students/me")

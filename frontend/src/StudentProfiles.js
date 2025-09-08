@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { FixedSizeList as List } from 'react-window';
 import Joyride from 'react-joyride';
 import api from './api';
 import { useNavigate } from 'react-router-dom';
@@ -67,6 +68,8 @@ function StudentProfiles() {
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+
+  const [nextCursor, setNextCursor] = useState(null);
 
   const [schoolStudents, setSchoolStudents] = useState([]);
   const [firstNameFilter, setFirstNameFilter] = useState('');
@@ -144,6 +147,7 @@ function StudentProfiles() {
 
   const tableWrapperRef = useRef(null);
   const headerRowRef = useRef(null);
+  const listRef = useRef(null);
 
   useEffect(() => {
     const wrapper = tableWrapperRef.current;
@@ -181,15 +185,17 @@ function StudentProfiles() {
   const userRole = decoded?.role;
   const isAdmin = userRole === 'admin' || userRole === 'junior_admin';
 
-  const fetchStudents = async () => {
+  const fetchStudents = async (cursor) => {
     setIsLoading(true);
     try {
       const endpoint = userRole === 'admin' || userRole === 'junior_admin' ? '/students/all' : '/students/by-school';
       const resp = await api.get(endpoint, {
         headers: { Authorization: `Bearer ${token}` },
+        params: { cursor, limit: 50 },
       });
       const incoming = resp.data?.students || [];
-      setSchoolStudents((prev) => mergeStudents([...prev, ...incoming]));
+      setSchoolStudents((prev) => mergeStudents(cursor ? [...prev, ...incoming] : incoming));
+      setNextCursor(resp.data?.next || null);
     } catch (err) {
       if (err.response && err.response.status === 401) {
         localStorage.removeItem('token');
@@ -257,6 +263,7 @@ function StudentProfiles() {
       if (!isOpen) {
         for (const job of assignedJobs) {
           fetchJobDescriptionStatus(email, job.job_code);
+          fetchJobDetails(email, job.job_code);
         }
         return { ...prev, [email]: 'opening' };
       } else {
@@ -309,7 +316,7 @@ function StudentProfiles() {
         headers: { Authorization: `Bearer ${token}` },
       });
       alert(`Deleted ${email}`);
-      fetchStudents(); // Refresh table
+      setSchoolStudents((prev) => prev.filter((s) => s.email !== email));
     } catch (err) {
       console.error("Delete failed:", err);
       alert("Failed to delete student.");
@@ -328,7 +335,20 @@ function StudentProfiles() {
       );
       setToast('\u2705 Marked as Placed');
       setTimeout(() => setToast(''), 3000);
-      fetchStudents();
+      setSchoolStudents((prev) =>
+        prev.map((s) => {
+          if (s.email !== student.email) return s;
+          const updatedJobs = (s.assigned_jobs || []).map((j) =>
+            j.job_code === student.assigned_job_code ? { ...j, status: 'placed' } : j
+          );
+          return {
+            ...s,
+            assigned_jobs: updatedJobs,
+            placed_jobs: updatedJobs.filter((j) => j.status === 'placed').length,
+            assigned_job_code: null,
+          };
+        })
+      );
     } catch (err) {
       console.error('Placement failed:', err);
     }
@@ -349,6 +369,27 @@ function StudentProfiles() {
       }
     } catch (err) {
       // leave undefined if not found
+    }
+  };
+
+  const fetchJobDetails = async (studentEmail, jobCode) => {
+    try {
+      const resp = await api.get(`/students/${studentEmail}/jobs/${jobCode}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setSchoolStudents((prev) =>
+        prev.map((s) => {
+          if (s.email !== studentEmail) return s;
+          return {
+            ...s,
+            assigned_jobs: (s.assigned_jobs || []).map((j) =>
+              j.job_code === jobCode ? { ...j, ...resp.data } : j
+            ),
+          };
+        })
+      );
+    } catch (err) {
+      console.error('Failed to load job details:', err);
     }
   };
 
@@ -392,15 +433,18 @@ function StudentProfiles() {
   const handleCreate = async (data) => {
     setIsSaving(true);
     try {
-      await api.post('/students', data, {
+      const resp = await api.post('/students', data, {
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
       });
+      const newStudent = resp.data?.student;
+      if (newStudent) {
+        setSchoolStudents((prev) => mergeStudents([newStudent, ...prev]));
+      }
       setToast('Student profile submitted!');
       setTimeout(() => setToast(''), 3000);
-      fetchStudents();
       return true;
     } catch (err) {
       console.error('Submission failed:', err);
@@ -415,15 +459,20 @@ function StudentProfiles() {
   const handleUpdate = async (data) => {
     setIsSaving(true);
     try {
-      await api.put(`/students/${editingEmail}`, data, {
+      const resp = await api.put(`/students/${editingEmail}`, data, {
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
       });
+      const updatedStudent = resp.data?.student;
+      if (updatedStudent) {
+        setSchoolStudents((prev) =>
+          prev.map((s) => (s.email === editingEmail ? { ...s, ...updatedStudent } : s))
+        );
+      }
       setToast('Student profile updated!');
       setTimeout(() => setToast(''), 3000);
-      fetchStudents();
       closeDrawer();
       return true;
     } catch (err) {
@@ -584,7 +633,7 @@ function StudentProfiles() {
             ) : schoolStudents.length > 0 ? (
               <div className="table-wrapper" ref={tableWrapperRef}>
                 <table className="school-table">
-                  <thead>
+                <thead>
                   <tr ref={headerRowRef}>
                     <th></th>
                     <th>First Name</th>
@@ -685,185 +734,195 @@ function StudentProfiles() {
                     <th></th>
                   </tr>
                 </thead>
-                <tbody>
-                  {filteredStudents.map((s) => {
+                </table>
+                <List
+                  height={600}
+                  itemCount={filteredStudents.length}
+                  itemSize={180}
+                  width={'100%'}
+                >
+                  {({ index, style }) => {
+                    const s = filteredStudents[index];
                     const assigned = Array.isArray(s.assigned_jobs) ? s.assigned_jobs.length : s.assigned_jobs || 0;
                     const placed = Array.isArray(s.placed_jobs) ? s.placed_jobs.length : s.placed_jobs || 0;
                     return (
-                      <React.Fragment key={s.email}>
-                        <tr>
-                          <td>
-                            <Tooltip
-                              text={expandedRows[s.email] ? 'Collapse' : 'Expand'}
-                              position="bottom"
-                            >
-                              <button
-                                className="expand-toggle"
-                                onClick={() => toggleRow(s.email, s.assigned_jobs)}
-                                type="button"
-                                title={expandedRows[s.email] ? 'Collapse' : 'Expand'}
-                              >
-                                {expandedRows[s.email] ? '–' : '+'}
-                              </button>
-                            </Tooltip>
-                          </td>
-                          <td>{s.first_name}</td>
-                          <td>{s.last_name}</td>
-                          <td>{s.email}</td>
-                          <td>{[s.city, s.state].filter(Boolean).join(', ')}</td>
-                          {isAdmin && <td>{s.institutional_code}</td>}
-                          <td>{licenseLabel(s.license)}</td>
-                          <td className="edit-col">
-                            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                              <Tooltip text="Edit" position="bottom">
-                                <button
-                                  onClick={() => handleEdit(s.email)}
-                                  style={{
-                                    background: 'none',
-                                    border: 'none',
-                                    cursor: 'pointer',
-                                    fontSize: '1.2rem',
-                                  }}
+                      <div style={style} key={s.email}>
+                        <table className="school-table">
+                          <tbody>
+                            <tr>
+                              <td>
+                                <Tooltip
+                                  text={expandedRows[s.email] ? 'Collapse' : 'Expand'}
+                                  position="bottom"
                                 >
-                                  ✏️
-                                </button>
-                              </Tooltip>
-                              {isAdmin && (
-                                <Tooltip text="Delete Student" position="bottom">
                                   <button
-                                    onClick={() => handleDelete(s.email)}
-                                    style={{
-                                      background: 'none',
-                                      border: 'none',
-                                      cursor: 'pointer',
-                                      fontSize: '1.2rem',
-                                      color: 'red',
-                                    }}
+                                    className="expand-toggle"
+                                    onClick={() => toggleRow(s.email, s.assigned_jobs)}
+                                    type="button"
+                                    title={expandedRows[s.email] ? 'Collapse' : 'Expand'}
                                   >
-                                    🗑️
+                                    {expandedRows[s.email] ? '–' : '+'}
                                   </button>
                                 </Tooltip>
-                              )}
-                            </div>
-                          </td>
-                          <td className="assigned-col">{assigned}</td>
-                          <td className="placement-status-col">{placed > 0 ? '✅' : '❌'}</td>
-                          <td className="placement-controls-col">
-                            {assigned > 0 && placed === 0 && userRole !== 'admin' && userRole !== 'junior_admin' && (
-                              <button onClick={() => handleMarkPlaced(s)}>
-                                Mark as Placed
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                        {expandedRows[s.email] && (
-                          <tr
-                            className={`job-subrow ${expandedRows[s.email]}`}
-                            key={`${s.email}-jobs`}
-                          >
-                            <td colSpan="100%">
-                              <div className="job-subrow-content">
-                                <table className="job-subtable">
-                                <thead>
-                                  <tr>
-                                    <th>Job Title</th>
-                                    <th>Rate</th>
-                                    <th>Source</th>
-                                    <th>Job Description</th>
-                                    <th>Status</th>
-                                    <th>Recruiter Note</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {s.assigned_jobs && s.assigned_jobs.length > 0 ? (
-                                    s.assigned_jobs.map((job, index) => (
-                                      <tr
-                                        key={index}
-                                        onMouseEnter={(e) => handleJobEnter(job, e)}
-                                        onMouseLeave={handleJobLeave}
-                                        onClick={(e) => handleJobClick(job, e)}
+                              </td>
+                              <td>{s.first_name}</td>
+                              <td>{s.last_name}</td>
+                              <td>{s.email}</td>
+                              <td>{[s.city, s.state].filter(Boolean).join(', ')}</td>
+                              {isAdmin && <td>{s.institutional_code}</td>}
+                              <td>{licenseLabel(s.license)}</td>
+                              <td className="edit-col">
+                                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                  <Tooltip text="Edit" position="bottom">
+                                    <button
+                                      onClick={() => handleEdit(s.email)}
+                                      style={{
+                                        background: 'none',
+                                        border: 'none',
+                                        cursor: 'pointer',
+                                        fontSize: '1.2rem',
+                                      }}
+                                    >
+                                      ✏️
+                                    </button>
+                                  </Tooltip>
+                                  {isAdmin && (
+                                    <Tooltip text="Delete Student" position="bottom">
+                                      <button
+                                        onClick={() => handleDelete(s.email)}
+                                        style={{
+                                          background: 'none',
+                                          border: 'none',
+                                          cursor: 'pointer',
+                                          fontSize: '1.2rem',
+                                          color: 'red',
+                                        }}
                                       >
-                                        <td>{job.job_title}</td>
-                                        <td>
-                                          {job.min_pay && job.max_pay
-                                            ? `${job.min_pay} - ${job.max_pay}`
-                                            : 'N/A'}
-                                        </td>
-                                        <td>{job.source || 'N/A'}</td>
-                                        <td style={{ textAlign: 'center' }}>
-                                          {loadingJobDescriptions[job.job_code] ? (
-                                            <span>Generating...</span>
-                                          ) : jobDescriptionStatus[job.job_code] === 'ready' ? (
-                                            <button
-                                              style={{
-                                                padding: '4px 10px',
-                                                fontSize: '14px',
-                                                border: '1px solid #ccc',
-                                                borderRadius: '4px',
-                                                backgroundColor: '#f5f5f5',
-                                                cursor: 'pointer'
-                                              }}
-                                              onClick={() => viewJobDescription(job.job_code, s.email)}
-                                              className="view-btn"
-                                            >
-                                              View Job Description
-                                            </button>
-                                          ) : (
-                                            <button
-                                              style={{
-                                                padding: '4px 10px',
-                                                fontSize: '14px',
-                                                border: '1px solid #ccc',
-                                                borderRadius: '4px',
-                                                backgroundColor: '#f5f5f5',
-                                                cursor: 'pointer'
-                                              }}
-                                              onClick={() => handleGenerateJobDescription(job.job_code, s.email)}
-                                            >
-                                              Load Job Description
-                                            </button>
-                                          )}
-                                        </td>
-                                        <td>{job.status}</td>
-                                        <td>
-                                          <button
-                                            className="view-notes-btn"
-                                            onClick={() =>
-                                              setModalNotes({
-                                                notes: job.notes || [],
-                                                jobCode: job.job_code,
-                                                studentEmail: s.email,
-                                                canAdd:
-                                                  isAdmin ||
-                                                  (userRole === 'recruiter' &&
-                                                    job.posted_by === decoded.sub &&
-                                                    job.status === 'assigned'),
-                                              })
-                                            }
-                                            type="button"
-                                          >
-                                            View Notes
-                                            {job.notes && ` (${job.notes.length})`}
-                                          </button>
-                                        </td>
-                                      </tr>
-                                    ))
-                                  ) : (
-                                    <tr className="no-jobs-row">
-                                      <td colSpan="6">No jobs assigned by recruiters.</td>
-                                    </tr>
+                                        🗑️
+                                      </button>
+                                    </Tooltip>
                                   )}
-                                </tbody>
-                              </table>
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                      </React.Fragment>
+                                </div>
+                              </td>
+                              <td className="assigned-col">{assigned}</td>
+                              <td className="placement-status-col">{placed > 0 ? '✅' : '❌'}</td>
+                              <td className="placement-controls-col">
+                                {assigned > 0 && placed === 0 && userRole !== 'admin' && userRole !== 'junior_admin' && (
+                                  <button onClick={() => handleMarkPlaced(s)}>
+                                    Mark as Placed
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                            {expandedRows[s.email] && (
+                              <tr className={`job-subrow ${expandedRows[s.email]}`} key={`${s.email}-jobs`}>
+                                <td colSpan="100%">
+                                  <div className="job-subrow-content">
+                                    <table className="job-subtable">
+                                      <thead>
+                                        <tr>
+                                          <th>Job Title</th>
+                                          <th>Rate</th>
+                                          <th>Source</th>
+                                          <th>Job Description</th>
+                                          <th>Status</th>
+                                          <th>Recruiter Note</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {s.assigned_jobs && s.assigned_jobs.length > 0 ? (
+                                          s.assigned_jobs.map((job, index) => (
+                                            <tr
+                                              key={index}
+                                              onMouseEnter={(e) => handleJobEnter(job, e)}
+                                              onMouseLeave={handleJobLeave}
+                                              onClick={(e) => handleJobClick(job, e)}
+                                            >
+                                              <td>{job.job_title}</td>
+                                              <td>
+                                                {job.min_pay && job.max_pay ? `${job.min_pay} - ${job.max_pay}` : 'N/A'}
+                                              </td>
+                                              <td>{job.source || 'N/A'}</td>
+                                              <td style={{ textAlign: 'center' }}>
+                                                {loadingJobDescriptions[job.job_code] ? (
+                                                  <span>Generating...</span>
+                                                ) : jobDescriptionStatus[job.job_code] === 'ready' ? (
+                                                  <button
+                                                    style={{
+                                                      padding: '4px 10px',
+                                                      fontSize: '14px',
+                                                      border: '1px solid #ccc',
+                                                      borderRadius: '4px',
+                                                      backgroundColor: '#f5f5f5',
+                                                      cursor: 'pointer',
+                                                    }}
+                                                    onClick={() => viewJobDescription(job.job_code, s.email)}
+                                                    className="view-btn"
+                                                  >
+                                                    View Job Description
+                                                  </button>
+                                                ) : (
+                                                  <button
+                                                    style={{
+                                                      padding: '4px 10px',
+                                                      fontSize: '14px',
+                                                      border: '1px solid #ccc',
+                                                      borderRadius: '4px',
+                                                      backgroundColor: '#f5f5f5',
+                                                      cursor: 'pointer',
+                                                    }}
+                                                    onClick={() => handleGenerateJobDescription(job.job_code, s.email)}
+                                                  >
+                                                    Load Job Description
+                                                  </button>
+                                                )}
+                                              </td>
+                                              <td>{job.status}</td>
+                                              <td>
+                                                <button
+                                                  className="view-notes-btn"
+                                                  onClick={() =>
+                                                    setModalNotes({
+                                                      notes: job.notes || [],
+                                                      jobCode: job.job_code,
+                                                      studentEmail: s.email,
+                                                      canAdd:
+                                                        isAdmin ||
+                                                        (userRole === 'recruiter' &&
+                                                          job.posted_by === decoded.sub &&
+                                                          job.status === 'assigned'),
+                                                    })
+                                                  }
+                                                  type="button"
+                                                >
+                                                  View Notes
+                                                  {job.notes && ` (${job.notes.length})`}
+                                                </button>
+                                              </td>
+                                            </tr>
+                                          ))
+                                        ) : (
+                                          <tr className="no-jobs-row">
+                                            <td colSpan="6">No jobs assigned by recruiters.</td>
+                                          </tr>
+                                        )}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
                     );
-                  })}
-                </tbody>
-                </table>
+                  }}
+                </List>
+                {nextCursor && (
+                  <div className="loading-container">
+                    <button onClick={() => fetchStudents(nextCursor)}>Load More</button>
+                  </div>
+                )}
               </div>
             ) : (
               <p>You haven't created any student profiles.</p>
