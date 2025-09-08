@@ -71,6 +71,12 @@ class DummyRedis:
             return lst[index]
         return None
 
+    def hgetall(self, name):
+        return dict(self.hashes.get(name, {}))
+
+    def setex(self, key, ttl, value):
+        self.set(key, value)
+
 
 main_app.redis_client = DummyRedis()
 from app.main import app, JWT_SECRET, ALGORITHM, init_default_admin
@@ -1233,16 +1239,17 @@ def test_tracking_fields_returned(monkeypatch):
     main_app.redis_client.set(
         "job:codei",
         json.dumps(
-                {
-                    "job_code": "codei",
-                    "job_title": "Dev",
-                    "job_description": "desc",
-                    "desired_skills": ["python"],
-                    "assigned_students": ["stud@example.com"],
-                    "external_apply_url": "https://example.com/apply",
-                }
-            ),
-        )
+            {
+                "job_code": "codei",
+                "job_title": "Dev",
+                "job_description": "desc",
+                "desired_skills": ["python"],
+                "assigned_students": ["stud@example.com"],
+                "external_apply_url": "https://example.com/apply",
+            }
+        ),
+    )
+    main_app.redis_client.hset("student_jobs:stud@example.com", "codei", "assigned")
 
     class FakeResp:
         def __init__(self):
@@ -2412,6 +2419,7 @@ def test_student_endpoints_handle_string_notes():
         "assigned_students": ["student@example.com"],
     }
     main_app.redis_client.set("job:J1", json.dumps(job))
+    main_app.redis_client.hset("student_jobs:student@example.com", "J1", "assigned")
 
     login_resp = client.post(
         "/login", json={"email": "admin@example.com", "password": "admin123"}
