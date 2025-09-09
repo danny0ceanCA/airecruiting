@@ -273,6 +273,8 @@ def rebuild_vector_index() -> None:
 ACTIVITY_LOG_KEY = "activity_logs"
 # Mapping of email tracking tokens to metadata
 EMAIL_OPEN_TOKENS_KEY = "email_open_tokens"
+# List key for student load time metrics
+STUDENT_LOAD_TIME_KEY = "metrics:student_load_time"
 # 1x1 transparent PNG
 TRANSPARENT_PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMBAc8o/QkAAAAASUVORK5CYII="
@@ -1913,6 +1915,27 @@ def delete_job(job_code: str, token_data: dict = Depends(get_current_user)):
     redis_client.delete(match_key)
 
     return {"message": f"Job {job_code} deleted successfully"}
+
+
+class StudentLoadTimeMetric(BaseModel):
+    role: str
+    duration: float
+
+
+@app.post("/metrics/student-load-time")
+def record_student_load_time(
+    metric: StudentLoadTimeMetric, current_user: dict = Depends(get_current_user)
+):
+    entry = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "role": metric.role,
+        "duration": metric.duration,
+    }
+    try:
+        redis_client.rpush(STUDENT_LOAD_TIME_KEY, json.dumps(entry))
+    except Exception as e:
+        logger.error("Failed to record student load time metric: %s", e)
+    return {"status": "ok"}
 
 
 @app.get("/metrics")
