@@ -734,10 +734,16 @@ if (shouldRedirect) {
                 <span className="badge assigned inline">Assigned</span>
               </td>
               <td>
-                {isRecruiter && (
-                  <button onClick={() => notifyInterest(job.job_code, row.email)}>Notify Candidate</button>
-                )}
-                {!isRecruiter && (
+                {isRecruiter ? (
+                  <>
+                    <button onClick={() => notifyInterest(job.job_code, row.email)}>
+                      Notify Candidate
+                    </button>
+                    <button onClick={() => notifyInterest(job.job_code, row.email)}>
+                      Resend Job Description
+                    </button>
+                  </>
+                ) : (
                   <button onClick={() => handlePlace(job, row)}>Place</button>
                 )}
                 <button onClick={() => rejectAssigned(job.job_code, row.email)}>
