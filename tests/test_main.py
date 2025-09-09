@@ -838,7 +838,21 @@ def test_generate_description(monkeypatch):
 
     class FakeResp:
         def __init__(self):
-            self.choices = [type("obj", (), {"message": type("obj", (), {"content": "done"})})]
+            self.choices = [
+                type(
+                    "obj",
+                    (),
+                    {
+                        "message": type(
+                            "obj",
+                            (),
+                            {
+                                "content": "<h2>Job Summary</h2><p>done</p><h2>Interview Preparation Tips</h2><p>tips</p>"
+                            },
+                        )
+                    },
+                )
+            ]
 
     def fake_create(model, messages, temperature):
         return FakeResp()
@@ -889,7 +903,21 @@ def test_generate_job_description(monkeypatch):
 
     class FakeResp:
         def __init__(self):
-            self.choices = [type("obj", (), {"message": type("obj", (), {"content": "done"})})]
+            self.choices = [
+                type(
+                    "obj",
+                    (),
+                    {
+                        "message": type(
+                            "obj",
+                            (),
+                            {
+                                "content": "<h2>Job Summary</h2><p>done</p><h2>Interview Preparation Tips</h2><p>tips</p>"
+                            },
+                        )
+                    },
+                )
+            ]
 
     captured = {}
 
@@ -921,6 +949,7 @@ def test_generate_job_description(monkeypatch):
     html_content = get_resp.json()["description"]
     assert html_content.lstrip().startswith("<!DOCTYPE html>")
     assert "done" in html_content
+    assert "Interview Preparation Tips" in html_content
     assert "Source:" in html_content
     assert "Pay Range:" in html_content
     assert "Location:" in html_content
@@ -960,8 +989,29 @@ def test_generate_job_description_external(monkeypatch):
         ),
     )
 
-    def fake_create(*args, **kwargs):  # pragma: no cover - should not be called
-        raise AssertionError("OpenAI should not be called for external jobs")
+    class FakeResp:
+        def __init__(self):
+            self.choices = [
+                type(
+                    "obj",
+                    (),
+                    {
+                        "message": type(
+                            "obj",
+                            (),
+                            {
+                                "content": "<h2>Job Summary</h2><p>done</p><h2>Interview Preparation Tips</h2><p>tips</p>"
+                            },
+                        )
+                    },
+                )
+            ]
+
+    captured = {}
+
+    def fake_create(model, messages, temperature):
+        captured["called"] = True
+        return FakeResp()
 
     monkeypatch.setattr(main_app.client.chat.completions, "create", fake_create)
 
@@ -982,9 +1032,11 @@ def test_generate_job_description_external(monkeypatch):
     )
     assert get_resp.status_code == 200
     html_content = get_resp.json()["description"]
+    assert captured.get("called")
     assert "<h1>TalentMatch-AI</h1>" in html_content
-    assert "Job Summary" not in html_content
+    assert "Interview Preparation Tips" in html_content
     assert "Apply Here" in html_content
+    assert "https://example.com/apply" in html_content
 
 
 def test_job_description_html_route():

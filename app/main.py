@@ -2663,17 +2663,17 @@ def generate_job_description_html(job_code: str, student_email: str) -> tuple[st
 
     job = json.loads(job_raw)
     student = json.loads(student_raw)
-    raw_content = ""
-    if not job.get("external_apply_url"):
-        prompt = f"""
+
+    prompt = f"""
 You are generating a job description document for internal career services staff. The document should first summarize the position itself, then connect it with the student's background.
 
 Use the student profile and job information below to:
 
-- Provide a **Job Summary** that comprehensively covers the job description **without referencing the applicant's experience**
-- Describe **key responsibilities** they might undertake as noted in the job description
-- List **areas of strength** with plenty of details to reinforce existing experience and how it connects with the job description and potential **areas for growth** with plenty of insightful and targeted recommendations for training that will improve the probability of success
-- Mention **school affiliation** and any relevant compliance or readiness info
+- Provide an **AI-Generated Job Summary** that paraphrases the job description to avoid copying text verbatim.
+- Describe **key responsibilities** they might undertake as noted in the job description.
+- List **areas of strength** with plenty of details to reinforce existing experience and how it connects with the job description, and potential **areas for growth** with plenty of insightful and targeted recommendations for training that will improve the probability of success.
+- Mention **school affiliation** and any relevant compliance or readiness info.
+- Offer **Interview Preparation Tips** with real, actionable advice for succeeding in an interview for this role.
 
 Format this as a printable HTML document titled "TalentMatch AI", styled professionally but without producing binary output.
 
@@ -2695,18 +2695,18 @@ Pay Range: {job.get('min_pay', '')} - {job.get('max_pay', '')}
 Output only valid HTML.
 """
 
-        resp = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.5,
-        )
+    resp = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.5,
+    )
 
-        raw_content = resp.choices[0].message.content.strip()
+    raw_content = resp.choices[0].message.content.strip()
 
-        if raw_content.startswith("```html"):
-            raw_content = raw_content.replace("```html", "", 1).strip()
-        if raw_content.endswith("```"):
-            raw_content = raw_content.rsplit("```", 1)[0].strip()
+    if raw_content.startswith("```html"):
+        raw_content = raw_content.replace("```html", "", 1).strip()
+    if raw_content.endswith("```"):
+        raw_content = raw_content.rsplit("```", 1)[0].strip()
 
     details_html = (
         """
