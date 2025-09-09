@@ -618,6 +618,32 @@ def test_metrics_endpoint():
     assert data["rematch_rate"] == 0.5
 
 
+def test_student_load_time_metric():
+    main_app.redis_client = DummyRedis()
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    login_resp = client.post(
+        "/login", json={"email": "admin@example.com", "password": "admin123"}
+    )
+    token = login_resp.json()["token"]
+
+    resp = client.post(
+        "/metrics/student-load-time",
+        json={"role": "admin", "duration": 123.4},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    if hasattr(main_app.redis_client, "lrange"):
+        entries = main_app.redis_client.lrange("metrics:student_load_time", 0, -1) or []
+    else:
+        entries = main_app.redis_client.lists.get("metrics:student_load_time", [])
+    assert len(entries) == 1
+    record = json.loads(entries[0])
+    assert record["role"] == "admin"
+    assert record["duration"] == 123.4
+
+
 def test_admin_reset_jobs():
     main_app.redis_client.flushdb()
     init_default_admin()
