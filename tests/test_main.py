@@ -1155,6 +1155,75 @@ def test_notify_interest_multiple_times(monkeypatch):
     assert stored is not None and "done" in stored
 
 
+def test_career_notify_interest(monkeypatch):
+    main_app.redis_client = DummyRedis()
+    init_default_admin()
+
+    # create career user
+    career = {
+        "email": "career@example.com",
+        "first_name": "Car",
+        "last_name": "Eer",
+        "school_code": "1001",
+        "password": "pw",
+        "role": "career",
+    }
+    client.post("/register", json=career)
+    ck = f"user:{career['email']}"
+    cdata = json.loads(main_app.redis_client.get(ck))
+    cdata["approved"] = True
+    main_app.redis_client.set(ck, json.dumps(cdata))
+    token = client.post(
+        "/login", json={"email": career["email"], "password": career["password"]}
+    ).json()["token"]
+
+    student = {
+        "first_name": "Stud",
+        "last_name": "S",
+        "skills": ["python"],
+        "email": "stud@example.com",
+        "institutional_code": "1001",
+        "student_id": "studc",
+    }
+    main_app.persist_student_record(
+        student["email"], student, student["institutional_code"], student["student_id"]
+    )
+    main_app.redis_client.set(
+        "job:codei",
+        json.dumps(
+            {
+                "job_code": "codei",
+                "job_title": "Dev",
+                "job_description": "desc",
+                "desired_skills": ["python"],
+                "assigned_students": ["stud@example.com"],
+            }
+        ),
+    )
+
+    class FakeResp:
+        def __init__(self):
+            self.choices = [
+                type("obj", (), {"message": type("obj", (), {"content": "done"})})
+            ]
+
+    def fake_create(model, messages, temperature):
+        return FakeResp()
+
+    monkeypatch.setattr(main_app.client.chat.completions, "create", fake_create)
+    monkeypatch.setattr(main_app, "send_email", lambda *a, **k: None)
+
+    resp = client.post(
+        "/notify-interest",
+        json={"student_email": "stud@example.com", "job_code": "codei"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    assert (
+        main_app.redis_client.get("job_description:codei:stud@example.com")
+        is not None
+    )
+
 def test_track_open_logs_event(monkeypatch):
     main_app.redis_client = DummyRedis()
     init_default_admin()
