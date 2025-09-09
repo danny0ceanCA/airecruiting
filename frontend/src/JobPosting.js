@@ -744,7 +744,12 @@ if (shouldRedirect) {
                     </button>
                   </>
                 ) : (
-                  <button onClick={() => handlePlace(job, row)}>Place</button>
+                  <>
+                    <button onClick={() => handlePlace(job, row)}>Place</button>
+                    <button onClick={() => notifyInterest(job.job_code, row.email)}>
+                      Resend Job Description
+                    </button>
+                  </>
                 )}
                 <button onClick={() => rejectAssigned(job.job_code, row.email)}>
                   Not Interested
