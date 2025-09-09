@@ -388,6 +388,19 @@ function StudentProfiles() {
     }
   };
 
+  const resendJobDescription = async (jobCode, studentEmail) => {
+    try {
+      await api.post(
+        '/notify-interest',
+        { job_code: jobCode, student_email: studentEmail },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      alert('Job description resent');
+    } catch (err) {
+      console.error('Notification failed', err);
+    }
+  };
+
 
   const handleCreate = async (data) => {
     setIsSaving(true);
@@ -793,35 +806,53 @@ function StudentProfiles() {
                                         <td style={{ textAlign: 'center' }}>
                                           {loadingJobDescriptions[job.job_code] ? (
                                             <span>Generating...</span>
-                                          ) : jobDescriptionStatus[job.job_code] === 'ready' ? (
-                                            <button
-                                              style={{
-                                                padding: '4px 10px',
-                                                fontSize: '14px',
-                                                border: '1px solid #ccc',
-                                                borderRadius: '4px',
-                                                backgroundColor: '#f5f5f5',
-                                                cursor: 'pointer'
-                                              }}
-                                              onClick={() => viewJobDescription(job.job_code, s.email)}
-                                              className="view-btn"
-                                            >
-                                              View Job Description
-                                            </button>
                                           ) : (
-                                            <button
-                                              style={{
-                                                padding: '4px 10px',
-                                                fontSize: '14px',
-                                                border: '1px solid #ccc',
-                                                borderRadius: '4px',
-                                                backgroundColor: '#f5f5f5',
-                                                cursor: 'pointer'
-                                              }}
-                                              onClick={() => handleGenerateJobDescription(job.job_code, s.email)}
-                                            >
-                                              Load Job Description
-                                            </button>
+                                            <>
+                                              {jobDescriptionStatus[job.job_code] === 'ready' ? (
+                                                <button
+                                                  style={{
+                                                    padding: '4px 10px',
+                                                    fontSize: '14px',
+                                                    border: '1px solid #ccc',
+                                                    borderRadius: '4px',
+                                                    backgroundColor: '#f5f5f5',
+                                                    cursor: 'pointer'
+                                                  }}
+                                                  onClick={() => viewJobDescription(job.job_code, s.email)}
+                                                  className="view-btn"
+                                                >
+                                                  View Job Description
+                                                </button>
+                                              ) : (
+                                                <button
+                                                  style={{
+                                                    padding: '4px 10px',
+                                                    fontSize: '14px',
+                                                    border: '1px solid #ccc',
+                                                    borderRadius: '4px',
+                                                    backgroundColor: '#f5f5f5',
+                                                    cursor: 'pointer'
+                                                  }}
+                                                  onClick={() => handleGenerateJobDescription(job.job_code, s.email)}
+                                                >
+                                                  Load Job Description
+                                                </button>
+                                              )}
+                                              <button
+                                                style={{
+                                                  padding: '4px 10px',
+                                                  fontSize: '14px',
+                                                  border: '1px solid #ccc',
+                                                  borderRadius: '4px',
+                                                  backgroundColor: '#f5f5f5',
+                                                  cursor: 'pointer',
+                                                  marginLeft: '8px'
+                                                }}
+                                                onClick={() => resendJobDescription(job.job_code, s.email)}
+                                              >
+                                                Resend Job Description
+                                              </button>
+                                            </>
                                           )}
                                         </td>
                                         <td>{job.status}</td>
