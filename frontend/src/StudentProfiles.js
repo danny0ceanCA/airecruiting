@@ -183,8 +183,12 @@ function StudentProfiles() {
 
   const fetchStudents = async () => {
     setIsLoading(true);
+    const start = performance.now();
     try {
-      const endpoint = userRole === 'admin' || userRole === 'junior_admin' ? '/students/all' : '/students/by-school';
+      const endpoint =
+        userRole === 'admin' || userRole === 'junior_admin'
+          ? '/students/all'
+          : '/students/by-school';
       const resp = await api.get(endpoint, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -200,6 +204,16 @@ function StudentProfiles() {
         setTimeout(() => setToast(''), 3000);
       }
     } finally {
+      const duration = performance.now() - start;
+      try {
+        await api.post(
+          '/metrics/student-load-time',
+          { role: decoded.role, duration },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+      } catch (e) {
+        console.error('Failed to record student load time', e);
+      }
       setIsLoading(false);
     }
   };

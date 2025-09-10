@@ -273,6 +273,8 @@ def rebuild_vector_index() -> None:
 ACTIVITY_LOG_KEY = "activity_logs"
 # Mapping of email tracking tokens to metadata
 EMAIL_OPEN_TOKENS_KEY = "email_open_tokens"
+# List key for student load time metrics
+STUDENT_LOAD_TIME_KEY = "metrics:student_load_time"
 # 1x1 transparent PNG
 TRANSPARENT_PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMBAc8o/QkAAAAASUVORK5CYII="
@@ -1915,6 +1917,27 @@ def delete_job(job_code: str, token_data: dict = Depends(get_current_user)):
     return {"message": f"Job {job_code} deleted successfully"}
 
 
+class StudentLoadTimeMetric(BaseModel):
+    role: str
+    duration: float
+
+
+@app.post("/metrics/student-load-time")
+def record_student_load_time(
+    metric: StudentLoadTimeMetric, current_user: dict = Depends(get_current_user)
+):
+    entry = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "role": metric.role,
+        "duration": metric.duration,
+    }
+    try:
+        redis_client.rpush(STUDENT_LOAD_TIME_KEY, json.dumps(entry))
+    except Exception as e:
+        logger.error("Failed to record student load time metric: %s", e)
+    return {"status": "ok"}
+
+
 @app.get("/metrics")
 def get_metrics(current_user: dict = Depends(get_current_user)):
     """Return various application metrics."""
@@ -2622,6 +2645,46 @@ def generate_description(req: DescriptionRequest, current_user: dict = Depends(g
     return {"status": "success", "description": generated_desc}
 
 
+def extract_benefits(job_desc: str) -> tuple[list[str], str]:
+    """Split an Indeed-style description into benefits and the remaining text.
+
+    Returns a tuple of (benefits_list, remaining_description).
+    If no benefits section is detected, the first element is an empty list and
+    the original description is returned unchanged.
+    """
+
+    lines = [line.strip() for line in job_desc.splitlines()]
+    if not lines:
+        return [], ""
+
+    idx = 0
+    # Look for the "Benefits" heading at the very start
+    if lines[idx].lower() != "benefits":
+        return [], job_desc.strip()
+
+    idx += 1
+    if idx < len(lines) and lines[idx].lower().startswith("pulled from"):
+        idx += 1
+
+    benefits: list[str] = []
+    while idx < len(lines):
+        line = lines[idx].strip()
+        low = line.lower()
+        if not line or low.startswith("full job description"):
+            break
+        benefits.append(line)
+        idx += 1
+
+    # Skip to the actual description after the "Full job description" marker
+    while idx < len(lines) and not lines[idx].strip():
+        idx += 1
+    if idx < len(lines) and lines[idx].lower().startswith("full job description"):
+        idx += 1
+
+    remaining = "\n".join(lines[idx:]).strip()
+    return benefits, remaining
+
+
 def generate_job_description_html(job_code: str, student_email: str) -> tuple[str, bool]:
     """Create or fetch an HTML job description for a student."""
     student_email = normalize_email(student_email)
@@ -2641,17 +2704,17 @@ def generate_job_description_html(job_code: str, student_email: str) -> tuple[st
 
     job = json.loads(job_raw)
     student = json.loads(student_raw)
-    raw_content = ""
-    if not job.get("external_apply_url"):
-        prompt = f"""
+
+    prompt = f"""
 You are generating a job description document for internal career services staff. The document should first summarize the position itself, then connect it with the student's background.
 
 Use the student profile and job information below to:
 
-- Provide a **Job Summary** that comprehensively covers the job description **without referencing the applicant's experience**
-- Describe **key responsibilities** they might undertake as noted in the job description
-- List **areas of strength** with plenty of details to reinforce existing experience and how it connects with the job description and potential **areas for growth** with plenty of insightful and targeted recommendations for training that will improve the probability of success
-- Mention **school affiliation** and any relevant compliance or readiness info
+- Provide an **AI-Generated Job Summary** that paraphrases the job description to avoid copying text verbatim.
+- Describe **key responsibilities** they might undertake as noted in the job description.
+- List **areas of strength** with plenty of details to reinforce existing experience and how it connects with the job description, and potential **areas for growth** with plenty of insightful and targeted recommendations for training that will improve the probability of success.
+- Mention **school affiliation** and any relevant compliance or readiness info.
+- Offer **Interview Preparation Tips** with real, actionable advice for succeeding in an interview for this role.
 
 Format this as a printable HTML document titled "TalentMatch AI", styled professionally but without producing binary output.
 
@@ -2673,18 +2736,18 @@ Pay Range: {job.get('min_pay', '')} - {job.get('max_pay', '')}
 Output only valid HTML.
 """
 
-        resp = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.5,
-        )
+    resp = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.5,
+    )
 
-        raw_content = resp.choices[0].message.content.strip()
+    raw_content = resp.choices[0].message.content.strip()
 
-        if raw_content.startswith("```html"):
-            raw_content = raw_content.replace("```html", "", 1).strip()
-        if raw_content.endswith("```"):
-            raw_content = raw_content.rsplit("```", 1)[0].strip()
+    if raw_content.startswith("```html"):
+        raw_content = raw_content.replace("```html", "", 1).strip()
+    if raw_content.endswith("```"):
+        raw_content = raw_content.rsplit("```", 1)[0].strip()
 
     details_html = (
         """
@@ -2710,10 +2773,20 @@ Output only valid HTML.
             f"<a href='{job['external_apply_url']}' target='_blank' rel='noopener noreferrer'>Apply Here</a></p>"
         )
 
+    benefits_html = ""
     description_html = ""
     job_desc = job.get("job_description", "")
     if job_desc:
-        lines = [line.strip() for line in job_desc.splitlines()]
+        benefits, desc_text = extract_benefits(job_desc)
+        if benefits:
+            items = "\n".join(f"<li>{escape(b)}</li>" for b in benefits)
+            benefits_html = (
+                "<h2>Benefits</h2>\n"
+                "<p>Pulled from the full job description</p>\n"
+                f"<ul>\n{items}\n</ul>"
+            )
+
+        lines = [line.strip() for line in desc_text.splitlines()]
         formatted: list[str] = []
         in_list = False
         for line in lines:
@@ -2761,6 +2834,7 @@ Output only valid HTML.
 <h1>TalentMatch-AI</h1>
 {details_html}
 {apply_html}
+{benefits_html}
 {description_html}
 {raw_content}
 </body>

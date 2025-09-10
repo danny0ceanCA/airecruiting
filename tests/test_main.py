@@ -618,6 +618,32 @@ def test_metrics_endpoint():
     assert data["rematch_rate"] == 0.5
 
 
+def test_student_load_time_metric():
+    main_app.redis_client = DummyRedis()
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    login_resp = client.post(
+        "/login", json={"email": "admin@example.com", "password": "admin123"}
+    )
+    token = login_resp.json()["token"]
+
+    resp = client.post(
+        "/metrics/student-load-time",
+        json={"role": "admin", "duration": 123.4},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    if hasattr(main_app.redis_client, "lrange"):
+        entries = main_app.redis_client.lrange("metrics:student_load_time", 0, -1) or []
+    else:
+        entries = main_app.redis_client.lists.get("metrics:student_load_time", [])
+    assert len(entries) == 1
+    record = json.loads(entries[0])
+    assert record["role"] == "admin"
+    assert record["duration"] == 123.4
+
+
 def test_admin_reset_jobs():
     main_app.redis_client.flushdb()
     init_default_admin()
@@ -812,7 +838,21 @@ def test_generate_description(monkeypatch):
 
     class FakeResp:
         def __init__(self):
-            self.choices = [type("obj", (), {"message": type("obj", (), {"content": "done"})})]
+            self.choices = [
+                type(
+                    "obj",
+                    (),
+                    {
+                        "message": type(
+                            "obj",
+                            (),
+                            {
+                                "content": "<h2>Job Summary</h2><p>done</p><h2>Interview Preparation Tips</h2><p>tips</p>"
+                            },
+                        )
+                    },
+                )
+            ]
 
     def fake_create(model, messages, temperature):
         return FakeResp()
@@ -863,7 +903,21 @@ def test_generate_job_description(monkeypatch):
 
     class FakeResp:
         def __init__(self):
-            self.choices = [type("obj", (), {"message": type("obj", (), {"content": "done"})})]
+            self.choices = [
+                type(
+                    "obj",
+                    (),
+                    {
+                        "message": type(
+                            "obj",
+                            (),
+                            {
+                                "content": "<h2>Job Summary</h2><p>done</p><h2>Interview Preparation Tips</h2><p>tips</p>"
+                            },
+                        )
+                    },
+                )
+            ]
 
     captured = {}
 
@@ -895,10 +949,88 @@ def test_generate_job_description(monkeypatch):
     html_content = get_resp.json()["description"]
     assert html_content.lstrip().startswith("<!DOCTYPE html>")
     assert "done" in html_content
+    assert "Interview Preparation Tips" in html_content
     assert "Source:" in html_content
     assert "Pay Range:" in html_content
     assert "Location:" in html_content
     assert "<h1>TalentMatch-AI</h1>" in html_content
+
+
+def test_generate_job_description_with_benefits(monkeypatch):
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    student = {
+        "first_name": "Stud",
+        "last_name": "S",
+        "skills": ["python"],
+        "email": "stud@example.com",
+        "institutional_code": "1001",
+        "student_id": "stud4",
+    }
+    main_app.persist_student_record(
+        student["email"], student, student["institutional_code"], student["student_id"]
+    )
+
+    job_desc = (
+        "Benefits\nPulled from the full job description\nReferral program\n403(b)\n\n"
+        "Full job description\nHIRING NOW!"
+    )
+    main_app.redis_client.set(
+        "job:code3",
+        json.dumps(
+            {
+                "job_code": "code3",
+                "job_title": "Dev",
+                "job_description": job_desc,
+                "desired_skills": ["python"],
+                "min_pay": 5.0,
+                "max_pay": 10.0,
+                "city": "Austin",
+                "state": "TX",
+                "source": "Indeed",
+            }
+        ),
+    )
+
+    class FakeResp:
+        def __init__(self):
+            self.choices = [
+                type(
+                    "obj",
+                    (),
+                    {
+                        "message": type(
+                            "obj",
+                            (),
+                            {
+                                "content": "<h2>Job Summary</h2><p>done</p><h2>Interview Preparation Tips</h2><p>tips</p>",
+                            },
+                        )
+                    },
+                )
+            ]
+
+    def fake_create(model, messages, temperature):
+        return FakeResp()
+
+    monkeypatch.setattr(main_app.client.chat.completions, "create", fake_create)
+
+    login_resp = client.post("/login", json={"email": "admin@example.com", "password": "admin123"})
+    token = login_resp.json()["token"]
+
+    resp = client.post(
+        "/generate-job-description",
+        json={"student_email": "stud@example.com", "job_code": "code3"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "success"
+
+    html = main_app.redis_client.get("jobdesc:code3:stud@example.com")
+    assert "<h2>Benefits</h2>" in html
+    assert "Referral program" in html
+    assert "<h2>Full Job Description</h2>" in html
 
 
 def test_generate_job_description_external(monkeypatch):
@@ -934,8 +1066,29 @@ def test_generate_job_description_external(monkeypatch):
         ),
     )
 
-    def fake_create(*args, **kwargs):  # pragma: no cover - should not be called
-        raise AssertionError("OpenAI should not be called for external jobs")
+    class FakeResp:
+        def __init__(self):
+            self.choices = [
+                type(
+                    "obj",
+                    (),
+                    {
+                        "message": type(
+                            "obj",
+                            (),
+                            {
+                                "content": "<h2>Job Summary</h2><p>done</p><h2>Interview Preparation Tips</h2><p>tips</p>"
+                            },
+                        )
+                    },
+                )
+            ]
+
+    captured = {}
+
+    def fake_create(model, messages, temperature):
+        captured["called"] = True
+        return FakeResp()
 
     monkeypatch.setattr(main_app.client.chat.completions, "create", fake_create)
 
@@ -956,9 +1109,11 @@ def test_generate_job_description_external(monkeypatch):
     )
     assert get_resp.status_code == 200
     html_content = get_resp.json()["description"]
+    assert captured.get("called")
     assert "<h1>TalentMatch-AI</h1>" in html_content
-    assert "Job Summary" not in html_content
+    assert "Interview Preparation Tips" in html_content
     assert "Apply Here" in html_content
+    assert "https://example.com/apply" in html_content
 
 
 def test_job_description_html_route():
