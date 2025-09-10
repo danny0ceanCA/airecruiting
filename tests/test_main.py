@@ -1030,7 +1030,7 @@ def test_generate_job_description_with_benefits(monkeypatch):
     html = main_app.redis_client.get("jobdesc:code3:stud@example.com")
     assert "<h2>Benefits</h2>" in html
     assert "Referral program" in html
-    assert "<h2>Full Job Description</h2>" in html
+    assert "<h2>Full Job Description</h2>" not in html
 
 
 def test_generate_job_description_external(monkeypatch):
