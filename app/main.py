@@ -2644,6 +2644,46 @@ def generate_description(req: DescriptionRequest, current_user: dict = Depends(g
     return {"status": "success", "description": generated_desc}
 
 
+def extract_benefits(job_desc: str) -> tuple[list[str], str]:
+    """Split an Indeed-style description into benefits and the remaining text.
+
+    Returns a tuple of (benefits_list, remaining_description).
+    If no benefits section is detected, the first element is an empty list and
+    the original description is returned unchanged.
+    """
+
+    lines = [line.strip() for line in job_desc.splitlines()]
+    if not lines:
+        return [], ""
+
+    idx = 0
+    # Look for the "Benefits" heading at the very start
+    if lines[idx].lower() != "benefits":
+        return [], job_desc.strip()
+
+    idx += 1
+    if idx < len(lines) and lines[idx].lower().startswith("pulled from"):
+        idx += 1
+
+    benefits: list[str] = []
+    while idx < len(lines):
+        line = lines[idx].strip()
+        low = line.lower()
+        if not line or low.startswith("full job description"):
+            break
+        benefits.append(line)
+        idx += 1
+
+    # Skip to the actual description after the "Full job description" marker
+    while idx < len(lines) and not lines[idx].strip():
+        idx += 1
+    if idx < len(lines) and lines[idx].lower().startswith("full job description"):
+        idx += 1
+
+    remaining = "\n".join(lines[idx:]).strip()
+    return benefits, remaining
+
+
 def generate_job_description_html(job_code: str, student_email: str) -> tuple[str, bool]:
     """Create or fetch an HTML job description for a student."""
     student_email = normalize_email(student_email)
@@ -2732,10 +2772,20 @@ Output only valid HTML.
             f"<a href='{job['external_apply_url']}' target='_blank' rel='noopener noreferrer'>Apply Here</a></p>"
         )
 
+    benefits_html = ""
     description_html = ""
     job_desc = job.get("job_description", "")
     if job_desc:
-        lines = [line.strip() for line in job_desc.splitlines()]
+        benefits, desc_text = extract_benefits(job_desc)
+        if benefits:
+            items = "\n".join(f"<li>{escape(b)}</li>" for b in benefits)
+            benefits_html = (
+                "<h2>Benefits</h2>\n"
+                "<p>Pulled from the full job description</p>\n"
+                f"<ul>\n{items}\n</ul>"
+            )
+
+        lines = [line.strip() for line in desc_text.splitlines()]
         formatted: list[str] = []
         in_list = False
         for line in lines:
@@ -2783,6 +2833,7 @@ Output only valid HTML.
 <h1>TalentMatch-AI</h1>
 {details_html}
 {apply_html}
+{benefits_html}
 {description_html}
 {raw_content}
 </body>
