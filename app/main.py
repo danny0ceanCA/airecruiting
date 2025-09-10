@@ -2710,11 +2710,11 @@ You are generating a job description document for internal career services staff
 
 Use the student profile and job information below to:
 
-- Provide an **AI-Generated Job Summary** that paraphrases the job description to avoid copying text verbatim.
+- Provide a **Job Summary** that summarizes the job description to avoid copying it verbatim.
 - Describe **key responsibilities** they might undertake as noted in the job description.
 - List **areas of strength** with plenty of details to reinforce existing experience and how it connects with the job description, and potential **areas for growth** with plenty of insightful and targeted recommendations for training that will improve the probability of success.
 - Mention **school affiliation** and any relevant compliance or readiness info.
-- Offer **Interview Preparation Tips** with real, actionable advice for succeeding in an interview for this role.
+- Offer **Interview Preparation Tips** with real, actionable advice for succeeding in an interview for this role. Include guidance for new graduates on addressing questions when they lack the required experience, such as drawing on academic projects, internships, or other relevant experiences.
 
 Format this as a printable HTML document titled "TalentMatch AI", styled professionally but without producing binary output.
 
@@ -2774,39 +2774,15 @@ Output only valid HTML.
         )
 
     benefits_html = ""
-    description_html = ""
     job_desc = job.get("job_description", "")
     if job_desc:
-        benefits, desc_text = extract_benefits(job_desc)
+        benefits, _ = extract_benefits(job_desc)
         if benefits:
             items = "\n".join(f"<li>{escape(b)}</li>" for b in benefits)
             benefits_html = (
                 "<h2>Benefits</h2>\n"
-                "<p>Pulled from the full job description</p>\n"
                 f"<ul>\n{items}\n</ul>"
             )
-
-        lines = [line.strip() for line in desc_text.splitlines()]
-        formatted: list[str] = []
-        in_list = False
-        for line in lines:
-            if line.startswith(("- ", "* ", "• ")):
-                if not in_list:
-                    formatted.append("<ul>")
-                    in_list = True
-                formatted.append(f"<li>{escape(line[2:].strip())}</li>")
-            elif line:
-                if in_list:
-                    formatted.append("</ul>")
-                    in_list = False
-                formatted.append(f"<p>{escape(line)}</p>")
-            else:
-                if in_list:
-                    formatted.append("</ul>")
-                    in_list = False
-        if in_list:
-            formatted.append("</ul>")
-        description_html = "<h2>Full Job Description</h2>\n" + "\n".join(formatted)
 
     full_html = f"""
 <!DOCTYPE html>
@@ -2835,7 +2811,6 @@ Output only valid HTML.
 {details_html}
 {apply_html}
 {benefits_html}
-{description_html}
 {raw_content}
 </body>
 </html>
