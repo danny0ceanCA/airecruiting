@@ -258,6 +258,15 @@
   width: 100%;
   border-collapse: collapse;
   margin-top: 0.5rem;
+  table-layout: fixed;
+}
+
+.job-subtable th:first-child,
+.job-subtable td:first-child {
+  max-width: 220px;
+  white-space: normal;
+  word-break: break-word;
+  text-align: left;
 }
 
 /* Smooth slide animation for job rows */
