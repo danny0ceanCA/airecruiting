@@ -258,6 +258,28 @@
   width: 100%;
   border-collapse: collapse;
   margin-top: 0.5rem;
+  table-layout: fixed;
+}
+
+.job-subtable th:first-child,
+.job-subtable td:first-child {
+  max-width: 220px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+}
+
+.job-subtable th:nth-child(2),
+.job-subtable td:nth-child(2) {
+  width: 100px;
+  white-space: nowrap;
+}
+
+.job-subtable th:nth-child(5),
+.job-subtable td:nth-child(5) {
+  width: 100px;
+  white-space: nowrap;
 }
 
 /* Smooth slide animation for job rows */
@@ -284,7 +306,7 @@
 }
 
 .job-subrow.open .job-subrow-content {
-  max-height: 500px;
+  max-height: none;
   opacity: 1;
 }
 
@@ -350,6 +372,29 @@
   background-color: white;
   color: black;
   text-align: center;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.job-action-group {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.job-action-btn {
+  flex: 1;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background-color: #f5f5f5;
+  cursor: pointer;
+  box-sizing: border-box;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .no-jobs-row td {
@@ -371,16 +416,6 @@
 .desc-button:hover {
   background-color: #005fa3;
 }
-
-.view-btn {
-  background: white;
-  border: 1px solid #ccc;
-  padding: 6px 10px;
-  cursor: pointer;
-  border-radius: 4px;
-  font-size: 0.85rem;
-}
-
 
 /* Ensure the students table sits directly under the tab bar */
 .students-panel {

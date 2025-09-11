@@ -817,56 +817,39 @@ function StudentProfiles() {
                                             : 'N/A'}
                                         </td>
                                         <td>{job.source || 'N/A'}</td>
-                                        <td style={{ textAlign: 'center' }}>
+                                        <td>
                                           {loadingJobDescriptions[job.job_code] ? (
                                             <span>Generating...</span>
                                           ) : (
-                                            <>
-                                              {jobDescriptionStatus[job.job_code] === 'ready' ? (
-                                                <button
-                                                  style={{
-                                                    padding: '4px 10px',
-                                                    fontSize: '14px',
-                                                    border: '1px solid #ccc',
-                                                    borderRadius: '4px',
-                                                    backgroundColor: '#f5f5f5',
-                                                    cursor: 'pointer'
-                                                  }}
-                                                  onClick={() => viewJobDescription(job.job_code, s.email)}
-                                                  className="view-btn"
-                                                >
-                                                  View Job Description
-                                                </button>
-                                              ) : (
-                                                <button
-                                                  style={{
-                                                    padding: '4px 10px',
-                                                    fontSize: '14px',
-                                                    border: '1px solid #ccc',
-                                                    borderRadius: '4px',
-                                                    backgroundColor: '#f5f5f5',
-                                                    cursor: 'pointer'
-                                                  }}
-                                                  onClick={() => handleGenerateJobDescription(job.job_code, s.email)}
-                                                >
-                                                  Load Job Description
-                                                </button>
-                                              )}
+                                            <div className="job-action-group">
                                               <button
-                                                style={{
-                                                  padding: '4px 10px',
-                                                  fontSize: '14px',
-                                                  border: '1px solid #ccc',
-                                                  borderRadius: '4px',
-                                                  backgroundColor: '#f5f5f5',
-                                                  cursor: 'pointer',
-                                                  marginLeft: '8px'
-                                                }}
-                                                onClick={() => resendJobDescription(job.job_code, s.email)}
+                                                onClick={() =>
+                                                  jobDescriptionStatus[job.job_code] === 'ready'
+                                                    ? viewJobDescription(
+                                                        job.job_code,
+                                                        s.email
+                                                      )
+                                                    : handleGenerateJobDescription(
+                                                        job.job_code,
+                                                        s.email
+                                                      )
+                                                }
+                                                className="job-action-btn"
                                               >
-                                                Resend Job Description
+                                                View JD
                                               </button>
-                                            </>
+                                              <button
+                                                onClick={() =>
+                                                  resendJobDescription(
+                                                    job.job_code,
+                                                    s.email
+                                                  )
+                                                }
+                                                className="job-action-btn"
+                                              >
+                                                Resend
+                                              </button>
+                                            </div>
                                           )}
                                         </td>
                                         <td>{job.status}</td>
