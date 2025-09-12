@@ -3298,17 +3298,6 @@ def students_by_school(
             st_license = student.get("license") or student.get("education_level")
             if license and (st_license or "").lower() != license.lower():
                 continue
-            assigned_codes = redis_client.smembers(
-                _student_job_key(email, "assigned")
-            )
-            placed_count = redis_client.scard(_student_job_key(email, "placed"))
-            rejected_count = redis_client.scard(
-                _student_job_key(email, "rejected")
-            )
-            uninterested_count = redis_client.scard(
-                _student_job_key(email, "uninterested")
-            )
-
             info = {
                 "first_name": student.get("first_name"),
                 "last_name": student.get("last_name"),
@@ -3320,12 +3309,8 @@ def students_by_school(
                 "skills": student.get("skills"),
                 "experience_summary": student.get("experience_summary"),
                 "interests": student.get("interests"),
-                "assigned_job_count": len(assigned_codes)
-                + placed_count
-                + rejected_count
-                + uninterested_count,
-                "placed_jobs": placed_count,
-                "assigned_job_code": next(iter(assigned_codes), None),
+                "institutional_code": student.get("institutional_code")
+                or student.get("school_code"),
             }
             students.append(info)
             if len(students) >= limit:
@@ -3335,6 +3320,39 @@ def students_by_school(
 
     next_cursor = None if cur == 0 else str(cur)
     return {"students": students, "next_cursor": next_cursor}
+
+
+@app.get("/students/{email}/job-stats")
+def student_job_stats(email: str, current_user: dict = Depends(get_current_user)):
+    """Return job status sets for a given student."""
+    norm = normalize_email(email)
+    key = resolve_student_key(norm)
+    raw = redis_client.get(key) if key else None
+    if not raw:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    if current_user.get("role") not in ADMIN_ROLES:
+        try:
+            student = json.loads(raw)
+        except Exception:
+            raise HTTPException(status_code=500, detail="Corrupted profile data")
+        user_raw = redis_client.get(user_key(current_user.get("sub")))
+        user = json.loads(user_raw) if user_raw else {}
+        st_code = student.get("institutional_code") or student.get("school_code")
+        u_code = user.get("institutional_code") or user.get("school_code")
+        if st_code != u_code:
+            raise HTTPException(status_code=403, detail="Not authorized")
+        if current_user.get("role") == "career" and student.get("created_by") != current_user.get("sub"):
+            raise HTTPException(status_code=403, detail="Not authorized")
+
+    return {
+        "assigned": list(redis_client.smembers(_student_job_key(norm, "assigned"))),
+        "placed": list(redis_client.smembers(_student_job_key(norm, "placed"))),
+        "rejected": list(redis_client.smembers(_student_job_key(norm, "rejected"))),
+        "uninterested": list(
+            redis_client.smembers(_student_job_key(norm, "uninterested"))
+        ),
+    }
 
 
 @app.get("/students/{email}/jobs")
