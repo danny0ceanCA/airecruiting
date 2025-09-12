@@ -739,6 +739,66 @@ def test_students_all_forbidden_for_non_admin():
     assert resp.status_code == 403
 
 
+def test_students_all_job_mapping(monkeypatch):
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    # Seed students
+    s1 = {
+        "first_name": "Alpha",
+        "last_name": "A",
+        "email": "a@example.com",
+        "institutional_code": "1001",
+        "student_id": "a1",
+    }
+    s2 = {
+        "first_name": "Beta",
+        "last_name": "B",
+        "email": "b@example.com",
+        "institutional_code": "1001",
+        "student_id": "b1",
+    }
+    main_app.persist_student_record(
+        s1["email"], s1, s1["institutional_code"], s1["student_id"]
+    )
+    main_app.persist_student_record(
+        s2["email"], s2, s2["institutional_code"], s2["student_id"]
+    )
+
+    # Seed jobs referencing students
+    jobs = [
+        {"job_code": "J1", "assigned_students": [s1["email"]]},
+        {"job_code": "J2", "assigned_students": [s2["email"]]},
+        {"job_code": "J3", "assigned_students": [s1["email"], s2["email"]]},
+        {"job_code": "J4"},  # unrelated job
+    ]
+    for job in jobs:
+        main_app.redis_client.set(f"job:{job['job_code']}", json.dumps(job))
+
+    calls = []
+
+    def fake_track(email, code):
+        calls.append((email, code))
+        return {"email_sent": None, "first_open": None, "clicked": False}
+
+    monkeypatch.setattr(main_app, "_tracking_stats", fake_track)
+
+    token = client.post("/login", json={"email": "admin@example.com", "password": "admin123"}).json()["token"]
+
+    resp = client.get("/students/all", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200
+    data = {s["email"]: s for s in resp.json()["students"]}
+    assert {"J1", "J3"} == {j["job_code"] for j in data[s1["email"]]["assigned_jobs"]}
+    assert {"J2", "J3"} == {j["job_code"] for j in data[s2["email"]]["assigned_jobs"]}
+    # Ensure tracking stats were only computed for relevant pairs
+    assert set(calls) == {
+        (s1["email"], "J1"),
+        (s1["email"], "J3"),
+        (s2["email"], "J2"),
+        (s2["email"], "J3"),
+    }
+
+
 def test_update_student(monkeypatch):
     main_app.redis_client.flushdb()
     init_default_admin()

@@ -3102,8 +3102,8 @@ def get_all_students(current_user: dict = Depends(get_current_user)):
     if current_user.get("role") not in ADMIN_ROLES:
         raise HTTPException(status_code=403, detail="Admin privileges required")
 
-    # Gather all job data once
-    all_jobs = []
+    # Gather job data, mapping each student email to the jobs that reference them
+    jobs_by_student: dict[str, dict[str, dict]] = {}
     for job_key in redis_client.scan_iter("job:*"):
         job_raw = redis_client.get(job_key)
         if not job_raw:
@@ -3112,7 +3112,17 @@ def get_all_students(current_user: dict = Depends(get_current_user)):
             job = json.loads(job_raw)
         except Exception:
             continue
-        all_jobs.append(job)
+        job_code = job.get("job_code")
+        if not job_code:
+            continue
+        for field in (
+            "assigned_students",
+            "placed_students",
+            "rejected_students",
+            "uninterested_students",
+        ):
+            for email in job.get(field, []):
+                jobs_by_student.setdefault(email, {})[job_code] = job
 
     students = []
     for key in redis_client.scan_iter("student:*"):
@@ -3145,7 +3155,7 @@ def get_all_students(current_user: dict = Depends(get_current_user)):
 
         # Add optional match data
         jobs_list = []
-        for job in all_jobs:
+        for job in jobs_by_student.get(email, {}).values():
             status = None
             notes_raw = job.get("student_notes", {}).get(email, [])
             notes, latest_note = _normalize_notes(notes_raw)
