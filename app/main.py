@@ -194,6 +194,11 @@ def student_email_key(email: str) -> str:
     return f"student_email:{normalize_email(email)}"
 
 
+def tracking_key(student_email: str, job_code: str) -> str:
+    """Return the base redis key for tracking tokens and activity."""
+    return f"tracking:{normalize_email(student_email)}:{job_code}"
+
+
 def resolve_student_key(email: str) -> str | None:
     """Resolve a student's canonical key from their email."""
     idx = redis_client.get(student_email_key(email))
@@ -477,21 +482,28 @@ async def preflight_handler(rest_of_path: str):
 @app.get("/track/open/{token}.png")
 def track_open(token: str):
     """Log an email open event and return a 1x1 transparent PNG."""
-    info_raw = redis_client.hget(EMAIL_OPEN_TOKENS_KEY, token)
+    base = redis_client.get(f"token_index:{token}")
+    info_raw = redis_client.hget(base, token) if base else None
     info: dict[str, str] = {}
     if info_raw:
         try:
             info = json.loads(info_raw)
         except Exception:
             info = {}
+    email = job = None
+    if base:
+        _, email, job = base.split(":", 2)
     log_entry = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "event": "email_open",
         "token": token,
+        "student_email": email,
+        "job_code": job,
         **info,
     }
     try:
-        redis_client.rpush(ACTIVITY_LOG_KEY, json.dumps(log_entry))
+        if base:
+            redis_client.rpush(f"{base}:activity", json.dumps(log_entry))
     except Exception as e:
         logger.error("Failed to log email open: %s", e)
     return Response(content=TRANSPARENT_PNG, media_type="image/png")
@@ -500,7 +512,8 @@ def track_open(token: str):
 @app.get("/track/click/{token}")
 def track_click(token: str):
     """Redirect to the external URL while logging an email click event."""
-    info_raw = redis_client.hget(EMAIL_OPEN_TOKENS_KEY, token)
+    base = redis_client.get(f"token_index:{token}")
+    info_raw = redis_client.hget(base, token) if base else None
     info: dict[str, str] = {}
     if info_raw:
         try:
@@ -510,14 +523,20 @@ def track_click(token: str):
     external_url = info.get("external_url")
     if not external_url:
         raise HTTPException(status_code=404, detail="Unknown token")
+    email = job = None
+    if base:
+        _, email, job = base.split(":", 2)
     log_entry = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "event": "email_click",
         "token": token,
+        "student_email": email,
+        "job_code": job,
         **info,
     }
     try:
-        redis_client.rpush(ACTIVITY_LOG_KEY, json.dumps(log_entry))
+        if base:
+            redis_client.rpush(f"{base}:activity", json.dumps(log_entry))
     except Exception as e:
         logger.error("Failed to log email click: %s", e)
     return RedirectResponse(url=external_url)
@@ -2507,19 +2526,19 @@ def notify_interest(data: dict, token_data: dict = Depends(get_current_user)):
         )
     body += "Good Luck!\n\nSupport Team @ TalentMatch-AI"
     html_body += "<p>Good Luck!</p><p>Support Team @ TalentMatch-AI</p>"
+    base = tracking_key(student_email, job_code)
     try:
         redis_client.hset(
-            EMAIL_OPEN_TOKENS_KEY,
+            base,
             token,
             json.dumps(
                 {
-                    "student_email": student_email,
-                    "job_code": job_code,
                     "external_url": external_url,
                     "sent": datetime.now(timezone.utc).isoformat(),
                 }
             ),
         )
+        redis_client.set(f"token_index:{token}", base)
     except Exception as e:
         logger.error("Failed to store email open token: %s", e)
     send_email(
@@ -3044,23 +3063,27 @@ def _normalize_notes(value):
 
 def _tracking_stats(student_email: str, job_code: str) -> dict:
     """Return email tracking info for a student/job pair."""
+    base = tracking_key(student_email, job_code)
     tokens: list[dict] = []
     try:
-        if hasattr(redis_client, "hscan_iter"):
-            iterator = redis_client.hscan_iter(EMAIL_OPEN_TOKENS_KEY)
+        if hasattr(redis_client, "hkeys"):
+            fields = redis_client.hkeys(base) or []
         else:
-            iterator = redis_client.hashes.get(EMAIL_OPEN_TOKENS_KEY, {}).items()
-        for token, raw in iterator:
+            fields = list(redis_client.hashes.get(base, {}).keys())
+        for token in fields:
+            raw = (
+                redis_client.hget(base, token)
+                if hasattr(redis_client, "hget")
+                else redis_client.hashes.get(base, {}).get(token)
+            )
+            if not raw:
+                continue
             try:
                 info = json.loads(raw)
             except Exception:
                 continue
-            if (
-                info.get("student_email") == student_email
-                and info.get("job_code") == job_code
-            ):
-                info["token"] = token
-                tokens.append(info)
+            info["token"] = token
+            tokens.append(info)
     except Exception:
         pass
 
@@ -3073,12 +3096,18 @@ def _tracking_stats(student_email: str, job_code: str) -> dict:
     token_set = {t["token"] for t in tokens}
     first_open = None
     clicked = False
+    activity_key = f"{base}:activity"
     try:
-        if hasattr(redis_client, "lrange"):
-            raw_entries = redis_client.lrange(ACTIVITY_LOG_KEY, 0, -1) or []
+        if hasattr(redis_client, "llen"):
+            length = redis_client.llen(activity_key)
         else:
-            raw_entries = redis_client.lists.get(ACTIVITY_LOG_KEY, [])
-        for raw in raw_entries:
+            length = len(redis_client.lists.get(activity_key, []))
+        for idx in range(length):
+            raw = (
+                redis_client.lindex(activity_key, idx)
+                if hasattr(redis_client, "lindex")
+                else redis_client.lists.get(activity_key, [])[idx]
+            )
             try:
                 entry = json.loads(raw)
             except Exception:
