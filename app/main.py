@@ -2072,6 +2072,11 @@ def place_student(data: dict, token_data: dict = Depends(get_current_user)):
         job["placed_students"].append(student_email)
     if student_email in job["assigned_students"]:
         job["assigned_students"].remove(student_email)
+        _remove_student_job(student_email, job_code, "assigned")
+
+    _remove_student_job(student_email, job_code, "rejected")
+    _remove_student_job(student_email, job_code, "uninterested")
+    _add_student_job(student_email, job_code, "placed")
 
     redis_client.set(key, json.dumps(job))
     return {"message": f"Placed {student_email}"}
@@ -2103,6 +2108,9 @@ def assign_student(data: dict, token_data: dict = Depends(get_current_user)):
     job.setdefault("assigned_students", [])
     if student_email not in job["assigned_students"]:
         job["assigned_students"].append(student_email)
+        _add_student_job(student_email, job_code, "assigned")
+        _remove_student_job(student_email, job_code, "rejected")
+        _remove_student_job(student_email, job_code, "uninterested")
 
     if note is not None:
         note_obj = {
@@ -2175,8 +2183,12 @@ def reject_assigned_student(data: dict, token_data: dict = Depends(get_current_u
 
     if student_email in job["assigned_students"]:
         job["assigned_students"].remove(student_email)
+        _remove_student_job(student_email, job_code, "assigned")
     if student_email not in job["rejected_students"]:
         job["rejected_students"].append(student_email)
+        _add_student_job(student_email, job_code, "rejected")
+    _remove_student_job(student_email, job_code, "placed")
+    _remove_student_job(student_email, job_code, "uninterested")
 
     if note is not None:
         note_obj = {
@@ -2438,6 +2450,7 @@ def mark_not_interested(data: dict, token_data: dict = Depends(get_current_user)
     job.setdefault("uninterested_students", [])
     if student_email not in job["uninterested_students"]:
         job["uninterested_students"].append(student_email)
+        _add_student_job(student_email, job_code, "uninterested")
 
     redis_client.set(key, json.dumps(job))
     return {"message": "Not interested recorded"}
@@ -3098,94 +3111,146 @@ def _tracking_stats(student_email: str, job_code: str) -> dict:
 
     return {"email_sent": email_sent, "first_open": first_open, "clicked": clicked}
 
-@app.get("/students/all")
-def get_all_students(current_user: dict = Depends(get_current_user)):
-    if current_user.get("role") not in ADMIN_ROLES:
-        raise HTTPException(status_code=403, detail="Admin privileges required")
 
-    # Gather all job data once
-    all_jobs = []
-    for job_key in redis_client.scan_iter("job:*"):
-        job_raw = redis_client.get(job_key)
-        if not job_raw:
-            continue
-        try:
-            job = json.loads(job_raw)
-        except Exception:
-            continue
-        all_jobs.append(job)
+def _student_job_key(email: str, status: str) -> str:
+    """Return the Redis key for a student's job status set."""
+    return f"student_jobs:{normalize_email(email)}:{status}"
 
-    students = []
-    for key in redis_client.scan_iter("student:*"):
-        raw = redis_client.get(key)
+
+def _add_student_job(email: str, job_code: str, status: str) -> None:
+    """Add a job reference for a student under the given status."""
+    try:
+        redis_client.sadd(_student_job_key(email, status), job_code)
+    except Exception:
+        pass
+
+
+def _remove_student_job(email: str, job_code: str, status: str) -> None:
+    """Remove a job reference for a student under the given status."""
+    try:
+        redis_client.srem(_student_job_key(email, status), job_code)
+    except Exception:
+        pass
+
+
+def _fetch_student_jobs(email: str) -> list[dict]:
+    """Return job info for a student using direct job reference sets."""
+    statuses = {
+        "placed": redis_client.smembers(_student_job_key(email, "placed")),
+        "assigned": redis_client.smembers(_student_job_key(email, "assigned")),
+        "rejected": redis_client.smembers(_student_job_key(email, "rejected")),
+        "uninterested": redis_client.smembers(_student_job_key(email, "uninterested")),
+    }
+    all_codes: set[str] = set().union(*statuses.values())
+    jobs_list: list[dict] = []
+    for code in all_codes:
+        raw = redis_client.get(f"job:{code}")
         if not raw:
             continue
         try:
-            student = json.loads(raw)
+            job = json.loads(raw)
         except Exception:
             continue
-
-        email = student.get("email")
-        info = {
-            "first_name": student.get("first_name"),
-            "last_name": student.get("last_name"),
-            "email": email,
-            "phone": student.get("phone"),
-            "city": student.get("city"),
-            "state": student.get("state"),
-            "license": student.get("license") or student.get("education_level"),
-            "skills": student.get("skills"),
-            "experience_summary": student.get("experience_summary"),
-            "interests": student.get("interests"),
-            "institutional_code": student.get("institutional_code")
-            or student.get("school_code"),
-            "assigned_jobs": [],
-            "placed_jobs": 0,
-            "assigned_job_code": None,
-        }
-
-        # Add optional match data
-        jobs_list = []
-        for job in all_jobs:
+        if code in statuses["placed"]:
+            status = "placed"
+        elif code in statuses["assigned"]:
+            status = "assigned"
+        elif code in statuses["rejected"]:
+            status = "rejected"
+        elif code in statuses["uninterested"]:
+            status = "uninterested"
+        else:
             status = None
-            notes_raw = job.get("student_notes", {}).get(email, [])
-            notes, latest_note = _normalize_notes(notes_raw)
-            if email in job.get("placed_students", []):
-                status = "placed"
-            elif email in job.get("assigned_students", []):
-                status = "assigned"
-            elif email in job.get("rejected_students", []):
-                status = "rejected"
-            elif email in job.get("uninterested_students", []):
-                status = "uninterested"
-            if status:
-                track = _tracking_stats(email, job.get("job_code"))
-                jobs_list.append({
-                    "job_code": job.get("job_code"),
-                    "job_title": job.get("job_title"),
-                    "source": job.get("source"),
-                    "min_pay": job.get("min_pay"),
-                    "max_pay": job.get("max_pay"),
-                    "job_description": job.get("job_description"),
-                    "status": status,
-                    "posted_by": job.get("posted_by"),
-                    "notes": notes,
-                    **({"note": latest_note} if latest_note is not None else {}),
-                    "email_sent": track["email_sent"],
-                    "first_open": track["first_open"],
-                    "clicked": track["clicked"],
-                })
+        notes_raw = job.get("student_notes", {}).get(email, [])
+        notes, latest_note = _normalize_notes(notes_raw)
+        track = _tracking_stats(email, job.get("job_code"))
+        jobs_list.append(
+            {
+                "job_code": job.get("job_code"),
+                "job_title": job.get("job_title"),
+                "source": job.get("source"),
+                "min_pay": job.get("min_pay"),
+                "max_pay": job.get("max_pay"),
+                "job_description": job.get("job_description"),
+                "status": status,
+                "posted_by": job.get("posted_by"),
+                "notes": notes,
+                **({"note": latest_note} if latest_note is not None else {}),
+                "email_sent": track["email_sent"],
+                "first_open": track["first_open"],
+                "clicked": track["clicked"],
+            }
+        )
+    return jobs_list
 
-        info["assigned_jobs"] = jobs_list
-        info["placed_jobs"] = sum(1 for j in jobs_list if j["status"] == "placed")
-        info["assigned_job_code"] = next((j["job_code"] for j in jobs_list if j["status"] == "assigned"), None)
+@app.get("/students/all")
+def get_all_students(
+    limit: int = 50,
+    cursor: Optional[str] = None,
+    license: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
+):
+    if current_user.get("role") not in ADMIN_ROLES:
+        raise HTTPException(status_code=403, detail="Admin privileges required")
 
-        students.append(info)
+    cur = int(cursor or 0)
+    students: list[dict] = []
+    while len(students) < limit:
+        cur, keys = redis_client.scan(cur, match="student:*", count=limit)
+        for key in keys:
+            raw = redis_client.get(key)
+            if not raw:
+                continue
+            try:
+                student = json.loads(raw)
+            except Exception:
+                continue
 
-    return {"students": students}
+            email = student.get("email")
+            st_license = student.get("license") or student.get("education_level")
+            if license and (st_license or "").lower() != license.lower():
+                continue
+
+            info = {
+                "first_name": student.get("first_name"),
+                "last_name": student.get("last_name"),
+                "email": email,
+                "phone": student.get("phone"),
+                "city": student.get("city"),
+                "state": student.get("state"),
+                "license": st_license,
+                "skills": student.get("skills"),
+                "experience_summary": student.get("experience_summary"),
+                "interests": student.get("interests"),
+                "institutional_code": student.get("institutional_code")
+                or student.get("school_code"),
+                "assigned_jobs": _fetch_student_jobs(email),
+                "placed_jobs": 0,
+                "assigned_job_code": None,
+            }
+
+            jobs_list = info["assigned_jobs"]
+            info["placed_jobs"] = sum(1 for j in jobs_list if j["status"] == "placed")
+            info["assigned_job_code"] = next(
+                (j["job_code"] for j in jobs_list if j["status"] == "assigned"),
+                None,
+            )
+            students.append(info)
+            if len(students) >= limit:
+                break
+        if cur == 0:
+            break
+
+    next_cursor = None if cur == 0 else str(cur)
+    return {"students": students, "next_cursor": next_cursor}
 
 @app.get("/students/by-school")
-def students_by_school(current_user: dict = Depends(get_current_user)):
+def students_by_school(
+    limit: int = 50,
+    cursor: Optional[str] = None,
+    license: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
+):
     """Return student profiles for the current user's school.
 
     Career service users only see profiles they created themselves.
@@ -3204,90 +3269,59 @@ def students_by_school(current_user: dict = Depends(get_current_user)):
     if not institutional_code:
         raise HTTPException(status_code=400, detail="Institutional code required")
 
-    # Gather all job data once
-    all_jobs = []
-    for job_key in redis_client.scan_iter("job:*"):
-        job_raw = redis_client.get(job_key)
-        if not job_raw:
-            continue
-        try:
-            job = json.loads(job_raw)
-        except Exception:
-            continue
-        all_jobs.append(job)
+    cur = int(cursor or 0)
+    students: list[dict] = []
+    while len(students) < limit:
+        cur, keys = redis_client.scan(cur, match="student:*", count=limit)
+        for key in keys:
+            raw = redis_client.get(key)
+            if not raw:
+                continue
+            try:
+                student = json.loads(raw)
+            except Exception:
+                continue
 
-    students = []
+            if (student.get("institutional_code") or student.get("school_code")) != institutional_code:
+                continue
 
-    for key in redis_client.scan_iter("student:*"):
-        raw = redis_client.get(key)
-        if not raw:
-            continue
-        try:
-            student = json.loads(raw)
-        except Exception:
-            continue
+            if current_user.get("role") == "career" and student.get("created_by") != current_user.get("sub"):
+                continue
 
-        if (student.get("institutional_code") or student.get("school_code")) != institutional_code:
-            continue
+            email = student.get("email")
+            st_license = student.get("license") or student.get("education_level")
+            if license and (st_license or "").lower() != license.lower():
+                continue
+            info = {
+                "first_name": student.get("first_name"),
+                "last_name": student.get("last_name"),
+                "email": email,
+                "phone": student.get("phone"),
+                "city": student.get("city"),
+                "state": student.get("state"),
+                "license": st_license,
+                "skills": student.get("skills"),
+                "experience_summary": student.get("experience_summary"),
+                "interests": student.get("interests"),
+                "assigned_jobs": _fetch_student_jobs(email),
+                "placed_jobs": 0,
+                "assigned_job_code": None,
+            }
 
-        if current_user.get("role") == "career" and student.get("created_by") != current_user.get("sub"):
-            continue
+            jobs_list = info["assigned_jobs"]
+            info["placed_jobs"] = sum(1 for j in jobs_list if j["status"] == "placed")
+            info["assigned_job_code"] = next(
+                (j["job_code"] for j in jobs_list if j["status"] == "assigned"),
+                None,
+            )
+            students.append(info)
+            if len(students) >= limit:
+                break
+        if cur == 0:
+            break
 
-        email = student.get("email")
-        info = {
-            "first_name": student.get("first_name"),
-            "last_name": student.get("last_name"),
-            "email": email,
-            "phone": student.get("phone"),
-            "city": student.get("city"),
-            "state": student.get("state"),
-            "license": student.get("license") or student.get("education_level"),
-            "skills": student.get("skills"),
-            "experience_summary": student.get("experience_summary"),
-            "interests": student.get("interests"),
-            "assigned_jobs": [],
-            "placed_jobs": 0,
-            "assigned_job_code": None,
-        }
-
-        jobs_list = []
-        for job in all_jobs:
-            status = None
-            notes_raw = job.get("student_notes", {}).get(email, [])
-            notes, latest_note = _normalize_notes(notes_raw)
-            if email in job.get("placed_students", []):
-                status = "placed"
-            elif email in job.get("assigned_students", []):
-                status = "assigned"
-            elif email in job.get("rejected_students", []):
-                status = "rejected"
-            elif email in job.get("uninterested_students", []):
-                status = "uninterested"
-            if status:
-                track = _tracking_stats(email, job.get("job_code"))
-                jobs_list.append({
-                    "job_code": job.get("job_code"),
-                    "job_title": job.get("job_title"),
-                    "source": job.get("source"),
-                    "min_pay": job.get("min_pay"),
-                    "max_pay": job.get("max_pay"),
-                    "job_description": job.get("job_description"),
-                    "status": status,
-                    "posted_by": job.get("posted_by"),
-                    "notes": notes,
-                    **({"note": latest_note} if latest_note is not None else {}),
-                    "email_sent": track["email_sent"],
-                    "first_open": track["first_open"],
-                    "clicked": track["clicked"],
-                })
-
-        info["assigned_jobs"] = jobs_list
-        info["placed_jobs"] = sum(1 for j in jobs_list if j["status"] == "placed")
-        info["assigned_job_code"] = next((j["job_code"] for j in jobs_list if j["status"] == "assigned"), None)
-
-        students.append(info)
-
-    return {"students": students}
+    next_cursor = None if cur == 0 else str(cur)
+    return {"students": students, "next_cursor": next_cursor}
 
 
 @app.get("/students/me")
