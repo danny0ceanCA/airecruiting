@@ -2722,6 +2722,10 @@ def test_student_endpoints_handle_string_notes():
     assert entry["note"] == "legacy"
     assert "posted_by" in entry
 
+    main_app.redis_client.set(
+        "user:student@example.com",
+        json.dumps({"role": "applicant", "institutional_code": "001"}),
+    )
     token_student = jwt.encode(
         {
             "sub": "student@example.com",
@@ -2737,7 +2741,12 @@ def test_student_endpoints_handle_string_notes():
     me_entry = resp_me.json()
     assert me_entry["city"] == "City"
     assert me_entry["state"] == "ST"
-    entry = me_entry["assigned_jobs"][0]
+    assert "assigned_jobs" not in me_entry
+    jobs_self = client.get(
+        f"/students/{student['email']}/jobs",
+        headers={"Authorization": f"Bearer {token_student}"},
+    )
+    entry = jobs_self.json()["jobs"][0]
     assert entry["notes"] == [{"text": "legacy"}]
     assert entry["note"] == "legacy"
     assert "posted_by" in entry
