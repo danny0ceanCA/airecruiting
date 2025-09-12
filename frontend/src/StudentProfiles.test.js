@@ -51,8 +51,8 @@ test('displays student count in tab bar', async () => {
             state: 'ST',
             institutional_code: 'ABC',
             license: '',
-            assigned_jobs: [],
-            placed_jobs: []
+            assigned_job_count: 0,
+            placed_jobs: 0
           },
           {
             first_name: 'C',
@@ -62,8 +62,8 @@ test('displays student count in tab bar', async () => {
             state: 'ST',
             institutional_code: 'ABC',
             license: '',
-            assigned_jobs: [],
-            placed_jobs: []
+            assigned_job_count: 0,
+            placed_jobs: 0
           }
         ]
       }
@@ -85,6 +85,20 @@ test('opens notes history modal when View Notes clicked', async () => {
     if (url === '/licenses') {
       return Promise.resolve({ data: { licenses: [] } });
     }
+    if (url === '/students/s@example.com/jobs') {
+      return Promise.resolve({
+        data: {
+          jobs: [
+            {
+              job_code: 'J1',
+              job_title: 'Job 1',
+              status: 'open',
+              notes: [{ text: 'Test note' }]
+            }
+          ]
+        }
+      });
+    }
     return Promise.resolve({
       data: {
         students: [
@@ -95,15 +109,9 @@ test('opens notes history modal when View Notes clicked', async () => {
             city: 'City',
             state: 'ST',
             institutional_code: 'ABC',
-            assigned_jobs: [
-              {
-                job_code: 'J1',
-                job_title: 'Job 1',
-                status: 'open',
-                notes: [{ text: 'Test note' }]
-              }
-            ],
-            placed_jobs: []
+            assigned_job_count: 1,
+            placed_jobs: 0,
+            assigned_job_code: 'J1'
           }
         ]
       }
@@ -126,6 +134,48 @@ test('opens notes history modal when View Notes clicked', async () => {
   localStorage.clear();
 });
 
+test('loads jobs on demand when expanding a student', async () => {
+  const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYWRtaW4ifQ.signature';
+  localStorage.setItem('token', token);
+  api.get.mockImplementation((url) => {
+    if (url === '/licenses') {
+      return Promise.resolve({ data: { licenses: [] } });
+    }
+    if (url === '/students/s@example.com/jobs') {
+      return Promise.resolve({
+        data: { jobs: [{ job_code: 'J1', job_title: 'Job 1', status: 'open' }] }
+      });
+    }
+    return Promise.resolve({
+      data: {
+        students: [
+          {
+            first_name: 'F',
+            last_name: 'L',
+            email: 's@example.com',
+            city: 'City',
+            state: 'ST',
+            institutional_code: 'ABC',
+            assigned_job_count: 1,
+            placed_jobs: 0,
+            assigned_job_code: 'J1'
+          }
+        ]
+      }
+    });
+  });
+  render(
+    <BrowserRouter>
+      <StudentProfiles />
+    </BrowserRouter>
+  );
+  expect(screen.queryByText('Job 1')).not.toBeInTheDocument();
+  const expand = await screen.findByTitle('Expand');
+  fireEvent.click(expand);
+  expect(await screen.findByText('Job 1')).toBeInTheDocument();
+  localStorage.clear();
+});
+
 test('deduplicates students from multiple payloads', async () => {
   const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYWRtaW4ifQ.signature';
   localStorage.setItem('token', token);
@@ -138,8 +188,8 @@ test('deduplicates students from multiple payloads', async () => {
     state: 'ST',
     institutional_code: 'ABC',
     license: '',
-    assigned_jobs: [],
-    placed_jobs: []
+    assigned_job_count: 0,
+    placed_jobs: 0
   };
 
   api.get.mockImplementation((url) => {

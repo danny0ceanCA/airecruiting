@@ -8,6 +8,7 @@ class DummyRedis:
     def __init__(self):
         self.store = {}
         self.lists = {}
+        self.sets = {}
 
     def set(self, key, value):
         self.store[key] = value
@@ -30,6 +31,24 @@ class DummyRedis:
         for k in list(self.store.keys()) + list(self.lists.keys()):
             if fnmatch(k, pattern):
                 yield k
+
+    def scan(self, cursor=0, match=None, count=None):
+        from fnmatch import fnmatch
+        keys = [k for k in list(self.store.keys()) if not match or fnmatch(k, match)]
+        return 0, keys
+
+    def smembers(self, key):
+        return self.sets.get(key, set())
+
+    def scard(self, key):
+        return len(self.smembers(key))
+
+    def sadd(self, key, value):
+        self.sets.setdefault(key, set()).add(value)
+
+    def srem(self, key, value):
+        if key in self.sets:
+            self.sets[key].discard(value)
 
 
 
