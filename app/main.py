@@ -3247,7 +3247,6 @@ def get_all_students(
                 break
         if cur == 0:
             break
-
     next_cursor = None if cur == 0 else str(cur)
     return {"students": students, "next_cursor": next_cursor}
 
@@ -3362,7 +3361,6 @@ def student_jobs(email: str, current_user: dict = Depends(get_current_user)):
             raise HTTPException(status_code=403, detail="Not authorized")
 
     return {"jobs": _fetch_student_jobs(norm)}
-
 
 @app.get("/students/me")
 def student_me(current_user: dict = Depends(get_current_user)):
