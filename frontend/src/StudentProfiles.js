@@ -1,5 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
-import Joyride from 'react-joyride';
+import React, { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react';
 import api from './api';
 import { useNavigate } from 'react-router-dom';
 
@@ -7,9 +6,11 @@ import AdminMenu from './AdminMenu';
 import jwt_decode from 'jwt-decode';
 import './StudentProfiles.css';
 import './Tour.css';
-import NotesHistoryModal from './NotesHistoryModal';
 import Tooltip from './components/Tooltip';
-import StudentForm from './StudentForm';
+
+const Joyride = lazy(() => import('react-joyride'));
+const NotesHistoryModal = lazy(() => import('./NotesHistoryModal'));
+const StudentForm = lazy(() => import('./StudentForm'));
 
 function StudentProfiles() {
   const [licenses, setLicenses] = useState([]);
@@ -69,6 +70,7 @@ function StudentProfiles() {
   const [isSaving, setIsSaving] = useState(false);
 
   const [schoolStudents, setSchoolStudents] = useState([]);
+  const [nextCursor, setNextCursor] = useState(null);
   const [firstNameFilter, setFirstNameFilter] = useState('');
   const [lastNameFilter, setLastNameFilter] = useState('');
   const [emailFilter, setEmailFilter] = useState('');
@@ -89,6 +91,9 @@ function StudentProfiles() {
   const [modalNotes, setModalNotes] = useState(null);
   const [hoveredJob, setHoveredJob] = useState(null);
   const hoverTimer = useRef(null);
+  const [jobsByEmail, setJobsByEmail] = useState({});
+  const [loadingJobs, setLoadingJobs] = useState({});
+  const [jobStatsByEmail, setJobStatsByEmail] = useState({});
 
   const mergeStudents = (list) => {
     const map = new Map();
@@ -181,7 +186,7 @@ function StudentProfiles() {
   const userRole = decoded?.role;
   const isAdmin = userRole === 'admin' || userRole === 'junior_admin';
 
-  const fetchStudents = async () => {
+  const fetchStudents = async (cursor = null) => {
     setIsLoading(true);
     const start = performance.now();
     try {
@@ -190,10 +195,12 @@ function StudentProfiles() {
           ? '/students/all'
           : '/students/by-school';
       const resp = await api.get(endpoint, {
+        params: { limit: 50, cursor },
         headers: { Authorization: `Bearer ${token}` },
       });
       const incoming = resp.data?.students || [];
       setSchoolStudents((prev) => mergeStudents([...prev, ...incoming]));
+      setNextCursor(resp.data?.next_cursor || null);
     } catch (err) {
       if (err.response && err.response.status === 401) {
         localStorage.removeItem('token');
@@ -205,16 +212,19 @@ function StudentProfiles() {
       }
     } finally {
       const duration = performance.now() - start;
-      try {
-        await api.post(
-          '/metrics/student-load-time',
-          { role: decoded.role, duration },
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-      } catch (e) {
-        console.error('Failed to record student load time', e);
-      }
       setIsLoading(false);
+      setTimeout(() => {
+        try {
+          const p = api.post(
+            '/metrics/student-load-time',
+            { role: decoded.role, duration },
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          if (p && p.catch) p.catch(() => {});
+        } catch (e) {
+          /* ignore */
+        }
+      }, 0);
     }
   };
 
@@ -264,13 +274,40 @@ function StudentProfiles() {
     };
   }, []);
 
-  const toggleRow = (email, assignedJobs = []) => {
+  const toggleRow = (email) => {
     setExpandedRows((prev) => {
       const state = prev[email];
       const isOpen = state === 'open' || state === 'opening';
       if (!isOpen) {
-        for (const job of assignedJobs) {
-          fetchJobDescriptionStatus(email, job.job_code);
+        if (!jobStatsByEmail[email]) {
+          api
+            .get(`/students/${email}/job-stats`, {
+              headers: { Authorization: `Bearer ${token}` },
+            })
+            .then((resp) =>
+              setJobStatsByEmail((p) => ({ ...p, [email]: resp.data || {} }))
+            )
+            .catch((err) => console.error('Failed to fetch job stats', err));
+        }
+        if (!jobsByEmail[email]) {
+          setLoadingJobs((l) => ({ ...l, [email]: true }));
+          api
+            .get(`/students/${email}/jobs`, {
+              headers: { Authorization: `Bearer ${token}` },
+            })
+            .then((resp) => {
+              const jobs = resp.data?.jobs || [];
+              setJobsByEmail((p) => ({ ...p, [email]: jobs }));
+              jobs.forEach((job) => fetchJobDescriptionStatus(email, job.job_code));
+            })
+            .catch((err) => console.error('Failed to fetch jobs', err))
+            .finally(() =>
+              setLoadingJobs((l) => ({ ...l, [email]: false }))
+            );
+        } else {
+          jobsByEmail[email].forEach((job) =>
+            fetchJobDescriptionStatus(email, job.job_code)
+          );
         }
         return { ...prev, [email]: 'opening' };
       } else {
@@ -464,51 +501,71 @@ function StudentProfiles() {
   };
 
 
-  const filteredStudents = schoolStudents.filter((s) => {
-    const firstMatch = s.first_name
-      ?.toLowerCase()
-      .includes(firstNameFilter.toLowerCase());
-    const lastMatch = s.last_name
-      ?.toLowerCase()
-      .includes(lastNameFilter.toLowerCase());
-    const emailMatch = s.email
-      ?.toLowerCase()
-      .includes(emailFilter.toLowerCase());
-    const locationMatch = `${s.city || ''} ${s.state || ''}`
-      .toLowerCase()
-      .includes(locationFilter.toLowerCase());
-    const codeMatch =
-      userRole !== 'admin' && userRole !== 'junior_admin'
-        ? true
-        : (s.institutional_code || '')
-            .toLowerCase()
-            .includes(codeFilter.toLowerCase());
-    const licenseMatch =
-      !licenseFilter || (s.license || '').toLowerCase() === licenseFilter.toLowerCase();
-    const assignedCount = Array.isArray(s.assigned_jobs)
-      ? s.assigned_jobs.length
-      : s.assigned_jobs || 0;
-    const assignedMatch =
-      assignedFilter === ''
-        ? true
-        : assignedCount.toString().includes(assignedFilter.toString());
-    const placed = Array.isArray(s.placed_jobs)
-      ? s.placed_jobs.length
-      : s.placed_jobs || 0;
-    let placementMatch = true;
-    if (placementFilter === '✅') placementMatch = placed > 0;
-    if (placementFilter === '❌') placementMatch = placed === 0;
-    return (
-      firstMatch &&
-      lastMatch &&
-      emailMatch &&
-      locationMatch &&
-      codeMatch &&
-      licenseMatch &&
-      assignedMatch &&
-      placementMatch
-    );
-  });
+  const filteredStudents = useMemo(() => {
+    return schoolStudents.filter((s) => {
+      const firstMatch = s.first_name
+        ?.toLowerCase()
+        .includes(firstNameFilter.toLowerCase());
+      const lastMatch = s.last_name
+        ?.toLowerCase()
+        .includes(lastNameFilter.toLowerCase());
+      const emailMatch = s.email
+        ?.toLowerCase()
+        .includes(emailFilter.toLowerCase());
+      const locationMatch = `${s.city || ''} ${s.state || ''}`
+        .toLowerCase()
+        .includes(locationFilter.toLowerCase());
+      const codeMatch =
+        userRole !== 'admin' && userRole !== 'junior_admin'
+          ? true
+          : (s.institutional_code || '')
+              .toLowerCase()
+              .includes(codeFilter.toLowerCase());
+      const licenseMatch =
+        !licenseFilter || (s.license || '').toLowerCase() === licenseFilter.toLowerCase();
+      const stats = jobStatsByEmail[s.email];
+      const assignedCount = stats
+        ? (stats.assigned?.length || 0) +
+          (stats.placed?.length || 0) +
+          (stats.rejected?.length || 0) +
+          (stats.uninterested?.length || 0)
+        : 0;
+      const assignedMatch =
+        assignedFilter === ''
+          ? true
+          : assignedCount.toString().includes(assignedFilter.toString());
+      const placed = stats
+        ? stats.placed?.length || 0
+        : Array.isArray(s.placed_jobs)
+        ? s.placed_jobs.length
+        : s.placed_jobs || 0;
+      let placementMatch = true;
+      if (placementFilter === '✅') placementMatch = placed > 0;
+      if (placementFilter === '❌') placementMatch = placed === 0;
+      return (
+        firstMatch &&
+        lastMatch &&
+        emailMatch &&
+        locationMatch &&
+        codeMatch &&
+        licenseMatch &&
+        assignedMatch &&
+        placementMatch
+      );
+    });
+  }, [
+    schoolStudents,
+    firstNameFilter,
+    lastNameFilter,
+    emailFilter,
+    locationFilter,
+    codeFilter,
+    licenseFilter,
+    assignedFilter,
+    placementFilter,
+    userRole,
+    jobStatsByEmail,
+  ]);
 
   return (
 
@@ -518,14 +575,16 @@ function StudentProfiles() {
     >
       <div className="profiles-container">
         {showTour && (
-          <Joyride
-            steps={tourSteps}
-            continuous
-            showSkipButton
-            showProgress
-            callback={handleTourCallback}
-            styles={{ options: { zIndex: 10000 } }}
-          />
+          <Suspense fallback={null}>
+            <Joyride
+              steps={tourSteps}
+              continuous
+              showSkipButton
+              showProgress
+              callback={handleTourCallback}
+              styles={{ options: { zIndex: 10000 } }}
+            />
+          </Suspense>
         )}
         <AdminMenu>
         {isAdmin && (
@@ -583,12 +642,14 @@ function StudentProfiles() {
       <div className="tab-content">
         {activeTab === 'new' && (
           <div className="form-panel">
-            <StudentForm
-              title="New Student Profile"
-              licenses={licenses}
-              onSubmit={handleCreate}
-              isSaving={isSaving}
-            />
+            <Suspense fallback={<div>Loading...</div>}>
+              <StudentForm
+                title="New Student Profile"
+                licenses={licenses}
+                onSubmit={handleCreate}
+                isSaving={isSaving}
+              />
+            </Suspense>
           </div>
         )}
         {activeTab === 'students' && (
@@ -609,6 +670,7 @@ function StudentProfiles() {
                 <span style={{ marginLeft: '0.5rem' }}>Loading students...</span>
               </div>
             ) : schoolStudents.length > 0 ? (
+              <>
               <div className="table-wrapper" ref={tableWrapperRef}>
                 <table className="school-table">
                   <thead>
@@ -714,8 +776,18 @@ function StudentProfiles() {
                 </thead>
                 <tbody>
                   {filteredStudents.map((s) => {
-                    const assigned = Array.isArray(s.assigned_jobs) ? s.assigned_jobs.length : s.assigned_jobs || 0;
-                    const placed = Array.isArray(s.placed_jobs) ? s.placed_jobs.length : s.placed_jobs || 0;
+                    const stats = jobStatsByEmail[s.email];
+                    const assigned = stats
+                      ? (stats.assigned?.length || 0) +
+                        (stats.placed?.length || 0) +
+                        (stats.rejected?.length || 0) +
+                        (stats.uninterested?.length || 0)
+                      : 0;
+                    const placed = stats
+                      ? stats.placed?.length || 0
+                      : Array.isArray(s.placed_jobs)
+                      ? s.placed_jobs.length
+                      : s.placed_jobs || 0;
                     return (
                       <React.Fragment key={s.email}>
                         <tr>
@@ -726,7 +798,7 @@ function StudentProfiles() {
                             >
                               <button
                                 className="expand-toggle"
-                                onClick={() => toggleRow(s.email, s.assigned_jobs)}
+                                onClick={() => toggleRow(s.email)}
                                 type="button"
                                 title={expandedRows[s.email] ? 'Collapse' : 'Expand'}
                               >
@@ -802,8 +874,12 @@ function StudentProfiles() {
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {s.assigned_jobs && s.assigned_jobs.length > 0 ? (
-                                    s.assigned_jobs.map((job, index) => (
+                                  {loadingJobs[s.email] ? (
+                                    <tr className="no-jobs-row">
+                                      <td colSpan="6">Loading...</td>
+                                    </tr>
+                                  ) : jobsByEmail[s.email] && jobsByEmail[s.email].length > 0 ? (
+                                    jobsByEmail[s.email].map((job, index) => (
                                       <tr
                                         key={index}
                                         onMouseEnter={(e) => handleJobEnter(job, e)}
@@ -893,6 +969,12 @@ function StudentProfiles() {
                 </tbody>
                 </table>
               </div>
+              {nextCursor && (
+                <div style={{ textAlign: 'center', margin: '1rem 0' }}>
+                  <button onClick={() => fetchStudents(nextCursor)}>Load More</button>
+                </div>
+              )}
+              </>
             ) : (
               <p>You haven't created any student profiles.</p>
             )}
@@ -904,26 +986,30 @@ function StudentProfiles() {
         <>
           <div className="drawer-overlay" onClick={closeDrawer}></div>
           <div className="drawer-panel">
-            <StudentForm
-              title="Edit Student Profile"
-              initialData={editingStudent}
-              licenses={licenses}
-              onSubmit={handleUpdate}
-              onCancel={closeDrawer}
-              isSaving={isSaving}
-            />
+            <Suspense fallback={<div>Loading...</div>}>
+              <StudentForm
+                title="Edit Student Profile"
+                initialData={editingStudent}
+                licenses={licenses}
+                onSubmit={handleUpdate}
+                onCancel={closeDrawer}
+                isSaving={isSaving}
+              />
+            </Suspense>
           </div>
         </>
       )}
       {modalNotes && (
-        <NotesHistoryModal
-          notes={modalNotes.notes}
-          jobCode={modalNotes.jobCode}
-          studentEmail={modalNotes.studentEmail}
-          canAdd={modalNotes.canAdd}
-          isAdmin={isAdmin}
-          onClose={() => setModalNotes(null)}
-        />
+        <Suspense fallback={null}>
+          <NotesHistoryModal
+            notes={modalNotes.notes}
+            jobCode={modalNotes.jobCode}
+            studentEmail={modalNotes.studentEmail}
+            canAdd={modalNotes.canAdd}
+            isAdmin={isAdmin}
+            onClose={() => setModalNotes(null)}
+          />
+        </Suspense>
       )}
       {hoveredJob && (
         <div

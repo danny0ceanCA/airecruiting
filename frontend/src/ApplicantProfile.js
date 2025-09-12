@@ -79,6 +79,18 @@ function ApplicantProfile() {
     loadLicenses();
   }, []);
 
+  const fetchAssignedJobs = async () => {
+    try {
+      const resp = await api.get(`/students/${email}/jobs`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setAssignedJobs(resp.data.jobs || []);
+    } catch (err) {
+      console.error('Failed to fetch assigned jobs', err);
+      setAssignedJobs([]);
+    }
+  };
+
   const fetchProfile = async () => {
     try {
       const resp = await api.get('/students/me', { headers: { Authorization: `Bearer ${token}` } });
@@ -98,7 +110,7 @@ function ApplicantProfile() {
         lng: data.lng || '',
         max_travel: data.max_travel || ''
       });
-      setAssignedJobs(data.assigned_jobs || []);
+      await fetchAssignedJobs();
       setIsEditing(true);
     } catch (err) {
       // no profile yet

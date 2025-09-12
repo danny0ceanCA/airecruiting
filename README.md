@@ -259,6 +259,20 @@ export REDIS_URL=redis://localhost:6379/0  # or your instance
 python scripts/migrate_student_keys.py
 ```
 
+## Backfilling Student Job References
+
+Legacy deployments may lack the `student_jobs:*` sets used for efficient student
+lookups. Run the backfill script once to populate these references:
+
+```bash
+export REDIS_URL=redis://localhost:6379/0  # or your instance
+python scripts/backfill_student_jobs.py
+```
+
+The script scans all `job:*` records and adds each job code to the appropriate
+set for every student listed in a job's assigned, placed, rejected, or
+uninterested arrays.
+
 The script assigns a `student_id` when missing, adds the required index keys,
 and logs any records missing necessary data for manual review.
 

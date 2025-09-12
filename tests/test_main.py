@@ -17,6 +17,7 @@ class DummyRedis:
         self.store = {}
         self.hashes = {}
         self.lists = {}
+        self.sets = {}
 
     def set(self, key, value):
         self.store[key] = value
@@ -36,6 +37,11 @@ class DummyRedis:
             if fnmatch(k, pattern):
                 yield k
 
+    def scan(self, cursor=0, match=None, count=None):
+        from fnmatch import fnmatch
+        keys = [k for k in self.store.keys() if not match or fnmatch(k, match)]
+        return 0, keys
+
     def incr(self, key, amount=1):
         val = int(self.store.get(key, 0)) + amount
         self.store[key] = val
@@ -49,10 +55,24 @@ class DummyRedis:
     def mget(self, keys):
         return [self.store.get(k) for k in keys]
 
+    def smembers(self, key):
+        return self.sets.get(key, set())
+
+    def scard(self, key):
+        return len(self.smembers(key))
+
+    def sadd(self, key, value):
+        self.sets.setdefault(key, set()).add(value)
+
+    def srem(self, key, value):
+        if key in self.sets:
+            self.sets[key].discard(value)
+
     def flushdb(self):
         self.store.clear()
         self.hashes.clear()
         self.lists.clear()
+        self.sets.clear()
 
     def hset(self, name, key, value):
         self.hashes.setdefault(name, {})[key] = value
@@ -1467,6 +1487,7 @@ def test_tracking_fields_returned(monkeypatch):
                 }
             ),
         )
+    main_app.redis_client.sadd("student_jobs:stud@example.com:assigned", "codei")
 
     class FakeResp:
         def __init__(self):
@@ -1499,7 +1520,12 @@ def test_tracking_fields_returned(monkeypatch):
         "/students/all", headers={"Authorization": f"Bearer {token}"}
     )
     assert resp2.status_code == 200
-    job_entry = resp2.json()["students"][0]["assigned_jobs"][0]
+    student_email = resp2.json()["students"][0]["email"]
+    jobs_resp = client.get(
+        f"/students/{student_email}/jobs",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    job_entry = jobs_resp.json()["jobs"][0]
     assert job_entry["email_sent"] is not None
     assert job_entry["first_open"] is not None
     assert job_entry["clicked"] is True
@@ -2396,7 +2422,7 @@ def test_admin_test_notification(monkeypatch):
     )
     assert resp.status_code == 200
     assert sent["recipient"] == "admin@example.com"
-    assert "Recruiter Interest" in sent["subject"]
+    assert "Job Match" in sent["subject"]
     assert "recruiter has expressed interest" in sent["body"].lower()
 
 
@@ -2636,6 +2662,7 @@ def test_student_endpoints_handle_string_notes():
         "assigned_students": ["student@example.com"],
     }
     main_app.redis_client.set("job:J1", json.dumps(job))
+    main_app.redis_client.sadd("student_jobs:student@example.com:assigned", "J1")
 
     login_resp = client.post(
         "/login", json={"email": "admin@example.com", "password": "admin123"}
@@ -2647,7 +2674,13 @@ def test_student_endpoints_handle_string_notes():
     student_entry = resp_all.json()["students"][0]
     assert student_entry["city"] == "City"
     assert student_entry["state"] == "ST"
-    entry = student_entry["assigned_jobs"][0]
+    assert "assigned_job_count" not in student_entry
+    assert "assigned_jobs" not in student_entry
+    jobs_admin = client.get(
+        f"/students/{student['email']}/jobs",
+        headers={"Authorization": f"Bearer {token_admin}"},
+    )
+    entry = jobs_admin.json()["jobs"][0]
     assert entry["notes"] == [{"text": "legacy"}]
     assert entry["note"] == "legacy"
     assert "posted_by" in entry
@@ -2670,11 +2703,29 @@ def test_student_endpoints_handle_string_notes():
     school_entry = resp_school.json()["students"][0]
     assert school_entry["city"] == "City"
     assert school_entry["state"] == "ST"
-    entry = school_entry["assigned_jobs"][0]
+    assert "assigned_job_count" not in school_entry
+    stats_resp = client.get(
+        f"/students/{student['email']}/job-stats",
+        headers={"Authorization": f"Bearer {token_counselor}"},
+    )
+    stats = stats_resp.json()
+    assert set(stats["assigned"]) == {"J1"}
+    assert stats["placed"] == []
+    assert stats["rejected"] == []
+    assert stats["uninterested"] == []
+    jobs_school = client.get(
+        f"/students/{student['email']}/jobs",
+        headers={"Authorization": f"Bearer {token_counselor}"},
+    )
+    entry = jobs_school.json()["jobs"][0]
     assert entry["notes"] == [{"text": "legacy"}]
     assert entry["note"] == "legacy"
     assert "posted_by" in entry
 
+    main_app.redis_client.set(
+        "user:student@example.com",
+        json.dumps({"role": "applicant", "institutional_code": "001"}),
+    )
     token_student = jwt.encode(
         {
             "sub": "student@example.com",
@@ -2690,7 +2741,12 @@ def test_student_endpoints_handle_string_notes():
     me_entry = resp_me.json()
     assert me_entry["city"] == "City"
     assert me_entry["state"] == "ST"
-    entry = me_entry["assigned_jobs"][0]
+    assert "assigned_jobs" not in me_entry
+    jobs_self = client.get(
+        f"/students/{student['email']}/jobs",
+        headers={"Authorization": f"Bearer {token_student}"},
+    )
+    entry = jobs_self.json()["jobs"][0]
     assert entry["notes"] == [{"text": "legacy"}]
     assert entry["note"] == "legacy"
     assert "posted_by" in entry
@@ -2721,4 +2777,91 @@ def test_malformed_user_skipped_in_listings():
     assert users.status_code == 200
     user_emails = [u["email"] for u in users.json()["users"]]
     assert "bad@example.com" not in user_emails
+
+
+def test_student_job_sets_and_pagination():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    login_resp = client.post(
+        "/login", json={"email": "admin@example.com", "password": "admin123"}
+    )
+    token = login_resp.json()["token"]
+
+    student = {
+        "first_name": "Stu",
+        "last_name": "Dent",
+        "email": "stud@example.com",
+        "institutional_code": "001",
+    }
+    main_app.persist_student_record(
+        student["email"], student, student["institutional_code"], "1"
+    )
+    job = {"job_code": "j1", "assigned_students": [], "placed_students": []}
+    main_app.redis_client.set("job:j1", json.dumps(job))
+
+    client.post(
+        "/assign",
+        json={"job_code": "j1", "student_email": "stud@example.com"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert "j1" in main_app.redis_client.smembers(
+        "student_jobs:stud@example.com:assigned"
+    )
+
+    resp = client.get(
+        "/students/all?limit=1",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    data = resp.json()
+    assert len(data["students"]) == 1
+    assert "assigned_job_count" not in data["students"][0]
+    assert "assigned_jobs" not in data["students"][0]
+    jobs_resp = client.get(
+        "/students/stud@example.com/jobs",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert jobs_resp.json()["jobs"][0]["job_code"] == "j1"
+
+    client.post(
+        "/place",
+        json={"job_code": "j1", "student_email": "stud@example.com"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert "j1" in main_app.redis_client.smembers(
+        "student_jobs:stud@example.com:placed"
+    )
+
+
+def test_students_pagination():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    login_resp = client.post(
+        "/login", json={"email": "admin@example.com", "password": "admin123"}
+    )
+    token = login_resp.json()["token"]
+
+    for i in range(3):
+        student = {
+            "first_name": f"A{i}",
+            "last_name": "B",
+            "email": f"a{i}@example.com",
+            "institutional_code": "001",
+        }
+        main_app.redis_client.set(f"student:001:{i}", json.dumps(student))
+
+    resp1 = client.get(
+        "/students/all?limit=1",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    cur = resp1.json()["next_cursor"]
+    assert len(resp1.json()["students"]) == 1
+    if cur:
+        resp2 = client.get(
+            f"/students/all?limit=1&cursor={cur}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert len(resp2.json()["students"]) == 1
 
