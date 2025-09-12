@@ -1218,10 +1218,12 @@ def test_notify_interest_generates_description(monkeypatch):
     assert main_app.redis_client.get("jobdesc:codei:stud@example.com") == stored
     token_val = sent.get("token")
     assert token_val
-    mapping_raw = main_app.redis_client.hget(main_app.EMAIL_OPEN_TOKENS_KEY, token_val)
+    track_key = main_app.tracking_key("stud@example.com", "codei")
+    mapping_raw = main_app.redis_client.hget(track_key, token_val)
     assert mapping_raw is not None
     mapping = json.loads(mapping_raw)
     assert mapping.get("external_url") == "https://example.com/apply"
+    assert main_app.redis_client.hget(main_app.EMAIL_OPEN_TOKENS_KEY, token_val) is None
     click_url = f"/track/click/{token_val}"
     if main_app.SITE_BASE_URL:
         click_url = f"{main_app.SITE_BASE_URL}{click_url}"
@@ -1238,11 +1240,13 @@ def test_notify_interest_generates_description(monkeypatch):
     resp_click = client.get(f"/track/click/{token_val}", follow_redirects=False)
     assert resp_click.status_code in (302, 307)
     assert resp_click.headers.get("location") == "https://example.com/apply"
-    log_raw = main_app.redis_client.lindex(main_app.ACTIVITY_LOG_KEY, -2)
+    log_raw = main_app.redis_client.lindex(f"{track_key}:activity", -1)
     assert log_raw is not None
     log = json.loads(log_raw)
     assert log.get("event") == "email_click"
     assert log.get("token") == token_val
+    last_req = json.loads(main_app.redis_client.lindex(main_app.ACTIVITY_LOG_KEY, -1))
+    assert last_req.get("event") != "email_click"
 
 
 def test_notify_interest_multiple_times(monkeypatch):
@@ -1433,10 +1437,13 @@ def test_track_open_logs_event(monkeypatch):
     assert resp2.status_code == 200
     assert resp2.headers["content-type"] == "image/png"
     assert resp2.content == main_app.TRANSPARENT_PNG
-    entry_raw = main_app.redis_client.lindex(main_app.ACTIVITY_LOG_KEY, -2)
+    track_key = main_app.tracking_key("stud@example.com", "codei")
+    entry_raw = main_app.redis_client.lindex(f"{track_key}:activity", -1)
     entry = json.loads(entry_raw)
     assert entry["event"] == "email_open"
     assert entry["token"] == tok
+    last_req = json.loads(main_app.redis_client.lindex(main_app.ACTIVITY_LOG_KEY, -1))
+    assert last_req.get("event") != "email_open"
 
 
 def test_tracking_fields_returned(monkeypatch):
@@ -1494,6 +1501,10 @@ def test_tracking_fields_returned(monkeypatch):
     tok = sent["token"]
     client.get(f"/track/open/{tok}.png")
     client.get(f"/track/click/{tok}")
+
+    # Clear global tracking keys to ensure composite keys are used
+    main_app.redis_client.delete(main_app.EMAIL_OPEN_TOKENS_KEY)
+    main_app.redis_client.delete(main_app.ACTIVITY_LOG_KEY)
 
     resp2 = client.get(
         "/students/all", headers={"Authorization": f"Bearer {token}"}
