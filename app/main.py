@@ -288,10 +288,13 @@ def send_email(
     attachments: list[tuple[str, bytes | str, str]] | None = None,
     track_token: str | None = None,
 ) -> None:
-    """Send an email with optional attachments if SMTP configuration is available."""
+    """Send an email with optional attachments.
+
+    Raises a RuntimeError if SMTP settings are missing or if sending fails so
+    callers can surface the failure to the user."""
     if not SMTP_HOST or not EMAIL_SENDER:
-        logger.warning("[email] Skipping email to %s; SMTP not configured", recipient)
-        return
+        raise RuntimeError("SMTP configuration is missing")
+
     try:
         msg = EmailMessage()
         msg["From"] = EMAIL_SENDER
@@ -332,6 +335,7 @@ def send_email(
         logger.info("[email] Sent notification to %s", recipient)
     except Exception as e:
         logger.error("[email] Failed to send email to %s: %s", recipient, e)
+        raise
 
 async def get_driving_distance_miles(orig_lat: float, orig_lng: float, dest_lat: float, dest_lng: float) -> float:
     """Return driving distance in miles between two coordinates using Google Distance Matrix.
@@ -2536,13 +2540,17 @@ def notify_interest(data: dict, token_data: dict = Depends(get_current_user)):
         )
     except Exception as e:
         logger.error("Failed to store email open token: %s", e)
-    send_email(
-        student_email,
-        f"Job Match: {job.get('job_title')}",
-        body,
-        html_body=html_body,
-        track_token=token,
-    )
+    try:
+        send_email(
+            student_email,
+            f"Job Match: {job.get('job_title')}",
+            body,
+            html_body=html_body,
+            track_token=token,
+        )
+    except Exception as e:
+        logger.error("Notification email failed: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to send notification email")
 
     return {"message": "Notification sent"}
 

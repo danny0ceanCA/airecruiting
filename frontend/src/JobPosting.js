@@ -328,13 +328,20 @@ if (shouldRedirect) {
             : j
         )
       );
+      return true;
     } catch (err) {
       console.error('Assign failed', err.response?.data || err.message);
+      alert('Failed to assign candidate to job');
+      return false;
     }
   };
 
   const handleNotifyCandidate = async (job, row) => {
-    await handleAssign(job, row);
+    const assigned = await handleAssign(job, row);
+    if (!assigned) {
+      alert('Assignment failed; notification not sent');
+      return;
+    }
     await notifyInterest(job.job_code, row.email);
   };
 
@@ -380,7 +387,9 @@ if (shouldRedirect) {
       );
       alert('Candidate notified of interest');
     } catch (err) {
-      console.error('Notification failed', err);
+      console.error('Notification failed', err.response?.data || err.message);
+      const detail = err.response?.data?.detail || 'Failed to notify candidate';
+      alert(detail);
     }
   };
 
