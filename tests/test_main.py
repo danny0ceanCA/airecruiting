@@ -1521,7 +1521,6 @@ def test_tracking_fields_returned(monkeypatch):
     )
     assert resp2.status_code == 200
     student_email = resp2.json()["students"][0]["email"]
-    assert resp2.json()["students"][0]["assigned_job_count"] == 1
     jobs_resp = client.get(
         f"/students/{student_email}/jobs",
         headers={"Authorization": f"Bearer {token}"},
@@ -2675,7 +2674,7 @@ def test_student_endpoints_handle_string_notes():
     student_entry = resp_all.json()["students"][0]
     assert student_entry["city"] == "City"
     assert student_entry["state"] == "ST"
-    assert student_entry["assigned_job_count"] == 1
+    assert "assigned_job_count" not in student_entry
     assert "assigned_jobs" not in student_entry
     jobs_admin = client.get(
         f"/students/{student['email']}/jobs",
@@ -2808,7 +2807,7 @@ def test_student_job_sets_and_pagination():
     )
     data = resp.json()
     assert len(data["students"]) == 1
-    assert data["students"][0]["assigned_job_count"] == 1
+    assert "assigned_job_count" not in data["students"][0]
     assert "assigned_jobs" not in data["students"][0]
     jobs_resp = client.get(
         "/students/stud@example.com/jobs",

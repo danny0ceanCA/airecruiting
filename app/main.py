@@ -3214,13 +3214,6 @@ def get_all_students(
             assigned_codes = redis_client.smembers(
                 _student_job_key(email, "assigned")
             )
-            placed_count = redis_client.scard(_student_job_key(email, "placed"))
-            rejected_count = redis_client.scard(
-                _student_job_key(email, "rejected")
-            )
-            uninterested_count = redis_client.scard(
-                _student_job_key(email, "uninterested")
-            )
 
             info = {
                 "first_name": student.get("first_name"),
@@ -3235,11 +3228,6 @@ def get_all_students(
                 "interests": student.get("interests"),
                 "institutional_code": student.get("institutional_code")
                 or student.get("school_code"),
-                "assigned_job_count": len(assigned_codes)
-                + placed_count
-                + rejected_count
-                + uninterested_count,
-                "placed_jobs": placed_count,
                 "assigned_job_code": next(iter(assigned_codes), None),
             }
             students.append(info)
