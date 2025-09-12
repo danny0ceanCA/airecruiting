@@ -209,7 +209,7 @@ def test_registration_flow():
     assert payload["role"] == "career"
 
 
-def test_register_links_existing_student():
+def test_register_links_existing_student(monkeypatch):
     main_app.redis_client.flushdb()
     init_default_admin()
 
@@ -230,6 +230,7 @@ def test_register_links_existing_student():
         "password": "pw",
         "role": "applicant",
     }
+    monkeypatch.setattr(main_app, "send_email", lambda *a, **k: None)
     resp = client.post("/register", json=user)
     assert resp.status_code == 200
     skey = main_app.resolve_student_key(email)
@@ -533,6 +534,7 @@ def test_create_student_returns_existing_for_same_user(monkeypatch):
         "password": "pw",
         "role": "applicant",
     }
+    monkeypatch.setattr(main_app, "send_email", lambda *a, **k: None)
     client.post("/register", json=user)
 
     key = main_app.user_key(email)
@@ -1529,6 +1531,59 @@ def test_tracking_fields_returned(monkeypatch):
     assert job_entry["email_sent"] is not None
     assert job_entry["first_open"] is not None
     assert job_entry["clicked"] is True
+
+
+def test_notify_interest_missing_smtp(monkeypatch):
+    main_app.redis_client = DummyRedis()
+    init_default_admin()
+
+    student = {
+        "first_name": "Stud",
+        "last_name": "S",
+        "skills": ["python"],
+        "email": "stud@example.com",
+        "institutional_code": "1001",
+        "student_id": "stud_missing",
+    }
+    main_app.persist_student_record(
+        student["email"], student, student["institutional_code"], student["student_id"]
+    )
+    main_app.redis_client.set(
+        "job:missing",
+        json.dumps(
+            {
+                "job_code": "missing",
+                "job_title": "Dev",
+                "job_description": "desc",
+                "desired_skills": ["python"],
+                "assigned_students": ["stud@example.com"],
+            }
+        ),
+    )
+
+    class FakeResp:
+        def __init__(self):
+            self.choices = [type("obj", (), {"message": type("obj", (), {"content": "done"})})]
+
+    def fake_create(model, messages, temperature):
+        return FakeResp()
+
+    monkeypatch.setattr(main_app.client.chat.completions, "create", fake_create)
+    monkeypatch.setattr(main_app, "SMTP_HOST", None)
+    monkeypatch.setattr(main_app, "EMAIL_SENDER", None)
+
+    token = client.post(
+        "/login", json={"email": "admin@example.com", "password": "admin123"}
+    ).json()["token"]
+
+    resp = client.post(
+        "/notify-interest",
+        json={"student_email": "stud@example.com", "job_code": "missing"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 500
+    assert resp.json()["detail"] == "Failed to send notification email"
 
 
 def test_generate_resume_html(monkeypatch):
