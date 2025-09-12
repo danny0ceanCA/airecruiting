@@ -715,6 +715,68 @@ def test_students_all_admin_access():
     assert student_map["two@example.com"]["state"] == "ST"
 
 
+def test_students_all_job_statuses_batched():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    # Seed students
+    s1 = {
+        "first_name": "One",
+        "last_name": "A",
+        "email": "one@example.com",
+        "license": "lvn",
+        "city": "City1",
+        "state": "ST",
+        "institutional_code": "1001",
+        "student_id": "one",
+    }
+    s2 = {
+        "first_name": "Two",
+        "last_name": "B",
+        "email": "two@example.com",
+        "license": "ma",
+        "city": "City2",
+        "state": "ST",
+        "institutional_code": "1001",
+        "student_id": "two",
+    }
+    main_app.persist_student_record(
+        s1["email"], s1, s1["institutional_code"], s1["student_id"]
+    )
+    main_app.persist_student_record(
+        s2["email"], s2, s2["institutional_code"], s2["student_id"]
+    )
+
+    # Seed jobs with student associations
+    job1 = {
+        "job_code": "J1",
+        "job_title": "Job 1",
+        "assigned_students": [s1["email"]],
+    }
+    job2 = {
+        "job_code": "J2",
+        "job_title": "Job 2",
+        "placed_students": [s2["email"]],
+    }
+    main_app.redis_client.set("job:J1", json.dumps(job1))
+    main_app.redis_client.set("job:J2", json.dumps(job2))
+
+    login_resp = client.post(
+        "/login", json={"email": "admin@example.com", "password": "admin123"}
+    )
+    token = login_resp.json()["token"]
+
+    resp = client.get("/students/all", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200
+    data = {s["email"]: s for s in resp.json()["students"]}
+
+    jobs_one = data[s1["email"]]["assigned_jobs"]
+    assert any(j["job_code"] == "J1" and j["status"] == "assigned" for j in jobs_one)
+
+    jobs_two = data[s2["email"]]["assigned_jobs"]
+    assert any(j["job_code"] == "J2" and j["status"] == "placed" for j in jobs_two)
+
+
 def test_students_all_forbidden_for_non_admin():
     main_app.redis_client.flushdb()
     init_default_admin()
