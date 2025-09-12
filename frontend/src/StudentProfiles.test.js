@@ -19,6 +19,11 @@ beforeEach(() => {
     if (url === '/licenses') {
       return Promise.resolve({ data: { licenses: [] } });
     }
+    if (url.includes('/job-stats')) {
+      return Promise.resolve({
+        data: { assigned: [], placed: [], rejected: [], uninterested: [] }
+      });
+    }
     return Promise.resolve({ data: { students: [] } });
   });
 });
@@ -50,9 +55,7 @@ test('displays student count in tab bar', async () => {
             city: 'City',
             state: 'ST',
             institutional_code: 'ABC',
-            license: '',
-            assigned_job_count: 0,
-            placed_jobs: 0
+            license: ''
           },
           {
             first_name: 'C',
@@ -61,9 +64,7 @@ test('displays student count in tab bar', async () => {
             city: 'City',
             state: 'ST',
             institutional_code: 'ABC',
-            license: '',
-            assigned_job_count: 0,
-            placed_jobs: 0
+            license: ''
           }
         ]
       }
@@ -99,6 +100,11 @@ test('opens notes history modal when View Notes clicked', async () => {
         }
       });
     }
+    if (url === '/students/s@example.com/job-stats') {
+      return Promise.resolve({
+        data: { assigned: ['J1'], placed: [], rejected: [], uninterested: [] }
+      });
+    }
     return Promise.resolve({
       data: {
         students: [
@@ -108,10 +114,7 @@ test('opens notes history modal when View Notes clicked', async () => {
             email: 's@example.com',
             city: 'City',
             state: 'ST',
-            institutional_code: 'ABC',
-            assigned_job_count: 1,
-            placed_jobs: 0,
-            assigned_job_code: 'J1'
+            institutional_code: 'ABC'
           }
         ]
       }
@@ -149,6 +152,11 @@ test('loads jobs on demand when expanding a student', async () => {
         data: { jobs: [{ job_code: 'J1', job_title: 'Job 1', status: 'open' }] }
       });
     }
+    if (url === '/students/s@example.com/job-stats') {
+      return Promise.resolve({
+        data: { assigned: ['J1'], placed: [], rejected: [], uninterested: [] }
+      });
+    }
     return Promise.resolve({
       data: {
         students: [
@@ -158,10 +166,7 @@ test('loads jobs on demand when expanding a student', async () => {
             email: 's@example.com',
             city: 'City',
             state: 'ST',
-            institutional_code: 'ABC',
-            assigned_job_count: 1,
-            placed_jobs: 0,
-            assigned_job_code: 'J1'
+            institutional_code: 'ABC'
           }
         ]
       }
@@ -193,14 +198,17 @@ test('deduplicates students from multiple payloads', async () => {
     city: 'City',
     state: 'ST',
     institutional_code: 'ABC',
-    license: '',
-    assigned_job_count: 0,
-    placed_jobs: 0
+    license: ''
   };
 
   api.get.mockImplementation((url) => {
     if (url === '/licenses') {
       return Promise.resolve({ data: { licenses: [] } });
+    }
+    if (url.includes('/job-stats')) {
+      return Promise.resolve({
+        data: { assigned: [], placed: [], rejected: [], uninterested: [] }
+      });
     }
     return Promise.resolve({ data: { students: [student] } });
   });

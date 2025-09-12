@@ -93,6 +93,7 @@ function StudentProfiles() {
   const hoverTimer = useRef(null);
   const [jobsByEmail, setJobsByEmail] = useState({});
   const [loadingJobs, setLoadingJobs] = useState({});
+  const [jobStatsByEmail, setJobStatsByEmail] = useState({});
 
   const mergeStudents = (list) => {
     const map = new Map();
@@ -278,6 +279,16 @@ function StudentProfiles() {
       const state = prev[email];
       const isOpen = state === 'open' || state === 'opening';
       if (!isOpen) {
+        if (!jobStatsByEmail[email]) {
+          api
+            .get(`/students/${email}/job-stats`, {
+              headers: { Authorization: `Bearer ${token}` },
+            })
+            .then((resp) =>
+              setJobStatsByEmail((p) => ({ ...p, [email]: resp.data || {} }))
+            )
+            .catch((err) => console.error('Failed to fetch job stats', err));
+        }
         if (!jobsByEmail[email]) {
           setLoadingJobs((l) => ({ ...l, [email]: true }));
           api
@@ -512,12 +523,20 @@ function StudentProfiles() {
               .includes(codeFilter.toLowerCase());
       const licenseMatch =
         !licenseFilter || (s.license || '').toLowerCase() === licenseFilter.toLowerCase();
-      const assignedCount = s.assigned_job_count || 0;
+      const stats = jobStatsByEmail[s.email];
+      const assignedCount = stats
+        ? (stats.assigned?.length || 0) +
+          (stats.placed?.length || 0) +
+          (stats.rejected?.length || 0) +
+          (stats.uninterested?.length || 0)
+        : s.assigned_job_count || 0;
       const assignedMatch =
         assignedFilter === ''
           ? true
           : assignedCount.toString().includes(assignedFilter.toString());
-      const placed = Array.isArray(s.placed_jobs)
+      const placed = stats
+        ? stats.placed?.length || 0
+        : Array.isArray(s.placed_jobs)
         ? s.placed_jobs.length
         : s.placed_jobs || 0;
       let placementMatch = true;
@@ -545,6 +564,7 @@ function StudentProfiles() {
     assignedFilter,
     placementFilter,
     userRole,
+    jobStatsByEmail,
   ]);
 
   return (
@@ -756,8 +776,18 @@ function StudentProfiles() {
                 </thead>
                 <tbody>
                   {filteredStudents.map((s) => {
-                    const assigned = s.assigned_job_count || 0;
-                    const placed = Array.isArray(s.placed_jobs) ? s.placed_jobs.length : s.placed_jobs || 0;
+                    const stats = jobStatsByEmail[s.email];
+                    const assigned = stats
+                      ? (stats.assigned?.length || 0) +
+                        (stats.placed?.length || 0) +
+                        (stats.rejected?.length || 0) +
+                        (stats.uninterested?.length || 0)
+                      : s.assigned_job_count || 0;
+                    const placed = stats
+                      ? stats.placed?.length || 0
+                      : Array.isArray(s.placed_jobs)
+                      ? s.placed_jobs.length
+                      : s.placed_jobs || 0;
                     return (
                       <React.Fragment key={s.email}>
                         <tr>

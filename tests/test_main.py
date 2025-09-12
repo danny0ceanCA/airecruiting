@@ -2704,8 +2704,16 @@ def test_student_endpoints_handle_string_notes():
     school_entry = resp_school.json()["students"][0]
     assert school_entry["city"] == "City"
     assert school_entry["state"] == "ST"
-    assert school_entry["assigned_job_count"] == 1
-    assert "assigned_jobs" not in school_entry
+    assert "assigned_job_count" not in school_entry
+    stats_resp = client.get(
+        f"/students/{student['email']}/job-stats",
+        headers={"Authorization": f"Bearer {token_counselor}"},
+    )
+    stats = stats_resp.json()
+    assert set(stats["assigned"]) == {"J1"}
+    assert stats["placed"] == []
+    assert stats["rejected"] == []
+    assert stats["uninterested"] == []
     jobs_school = client.get(
         f"/students/{student['email']}/jobs",
         headers={"Authorization": f"Bearer {token_counselor}"},
