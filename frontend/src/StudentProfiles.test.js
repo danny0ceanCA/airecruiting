@@ -124,6 +124,9 @@ test('opens notes history modal when View Notes clicked', async () => {
   );
   const expand = await screen.findByTitle('Expand');
   fireEvent.click(expand);
+  expect(api.get).toHaveBeenCalledWith('/students/s@example.com/jobs', {
+    headers: { Authorization: `Bearer ${token}` }
+  });
   const viewNotes = await screen.findByText(/View Notes/);
   fireEvent.click(viewNotes);
   expect(await screen.findByText('Test note')).toBeInTheDocument();
@@ -172,6 +175,9 @@ test('loads jobs on demand when expanding a student', async () => {
   expect(screen.queryByText('Job 1')).not.toBeInTheDocument();
   const expand = await screen.findByTitle('Expand');
   fireEvent.click(expand);
+  expect(api.get).toHaveBeenCalledWith('/students/s@example.com/jobs', {
+    headers: { Authorization: `Bearer ${token}` }
+  });
   expect(await screen.findByText('Job 1')).toBeInTheDocument();
   localStorage.clear();
 });

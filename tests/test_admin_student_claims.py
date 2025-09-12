@@ -55,7 +55,6 @@ class DummyRedis:
     def scard(self, key):
         return len(self.smembers(key))
 
-
     def sadd(self, key, value):
         self.sets.setdefault(key, set()).add(value)
 

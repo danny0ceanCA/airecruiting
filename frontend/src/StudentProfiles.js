@@ -281,7 +281,9 @@ function StudentProfiles() {
         if (!jobsByEmail[email]) {
           setLoadingJobs((l) => ({ ...l, [email]: true }));
           api
-            .get(`/students/${email}/jobs`)
+            .get(`/students/${email}/jobs`, {
+              headers: { Authorization: `Bearer ${token}` },
+            })
             .then((resp) => {
               const jobs = resp.data?.jobs || [];
               setJobsByEmail((p) => ({ ...p, [email]: jobs }));

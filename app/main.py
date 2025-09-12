@@ -3247,7 +3247,6 @@ def get_all_students(
                 break
         if cur == 0:
             break
-            
     next_cursor = None if cur == 0 else str(cur)
     return {"students": students, "next_cursor": next_cursor}
 
@@ -3288,6 +3287,7 @@ def students_by_school(
                 student = json.loads(raw)
             except Exception:
                 continue
+
             if (student.get("institutional_code") or student.get("school_code")) != institutional_code:
                 continue
 
