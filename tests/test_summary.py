@@ -40,6 +40,10 @@ class DummyRedis:
     def smembers(self, key):
         return self.sets.get(key, set())
 
+    def scard(self, key):
+        return len(self.smembers(key))
+
+
     def sadd(self, key, value):
         self.sets.setdefault(key, set()).add(value)
 

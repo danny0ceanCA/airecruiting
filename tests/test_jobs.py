@@ -53,6 +53,11 @@ class DummyRedis:
     def smembers(self, key):
         return self.sets.get(key, set())
 
+
+    def scard(self, key):
+        return len(self.smembers(key))
+
+
     def sadd(self, key, value):
         self.sets.setdefault(key, set()).add(value)
 
@@ -70,6 +75,9 @@ class DummyRedis:
 
     def flushdb(self):
         self.store.clear()
+        self.hashes.clear()
+        self.lists.clear()
+        self.sets.clear()
 
 
 main_app.redis_client = DummyRedis()
@@ -1095,7 +1103,13 @@ def test_reject_assigned(monkeypatch):
 
     resp = client.get("/students/by-school", headers={"Authorization": f"Bearer {token}"})
     data = resp.json()["students"][0]
-    entry = next(j for j in data["assigned_jobs"] if j["job_code"] == job_code)
+    assert data["assigned_job_count"] == 1
+    assert "assigned_jobs" not in data
+    jobs_resp = client.get(
+        f"/students/{student['email']}/jobs",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    entry = next(j for j in jobs_resp.json()["jobs"] if j["job_code"] == job_code)
     assert entry["status"] == "rejected"
     assert entry["notes"][-1]["text"] == note
     assert "posted_by" in entry
@@ -1180,11 +1194,19 @@ def test_student_note_school_code_fallback():
     notes = stored.get("student_notes", {}).get(student["email"])
     assert notes[-1]["text"] == note
 
-    resp = client.get("/students/by-school", headers={"Authorization": f"Bearer {token}"})
+    resp = client.get(
+        "/students/by-school", headers={"Authorization": f"Bearer {token}"}
+    )
     assert resp.status_code == 200
     data = resp.json()["students"]
     stu = next(s for s in data if s["email"] == student["email"])
-    entry = next(j for j in stu["assigned_jobs"] if j["job_code"] == job_code)
+    assert stu["assigned_job_count"] == 1
+    assert "assigned_jobs" not in stu
+    jobs_resp = client.get(
+        f"/students/{student['email']}/jobs",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    entry = next(j for j in jobs_resp.json()["jobs"] if j["job_code"] == job_code)
     assert entry["notes"][-1]["text"] == note
     assert "posted_by" in entry
 
@@ -1246,7 +1268,13 @@ def test_assign_note_persists_on_reject(monkeypatch):
 
     resp = client.get("/students/by-school", headers={"Authorization": f"Bearer {token}"})
     data = resp.json()["students"][0]
-    entry = next(j for j in data["assigned_jobs"] if j["job_code"] == job_code)
+    assert data["assigned_job_count"] == 1
+    assert "assigned_jobs" not in data
+    jobs_resp = client.get(
+        f"/students/{student['email']}/jobs",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    entry = next(j for j in jobs_resp.json()["jobs"] if j["job_code"] == job_code)
     assert entry["status"] == "assigned"
     assert entry["notes"][-1]["text"] == note
     assert "posted_by" in entry
@@ -1378,7 +1406,13 @@ def test_student_note_assigned(monkeypatch):
 
     resp = client.get("/students/by-school", headers={"Authorization": f"Bearer {token}"})
     data = resp.json()["students"][0]
-    entry = next(j for j in data["assigned_jobs"] if j["job_code"] == job_code)
+    assert data["assigned_job_count"] == 1
+    assert "assigned_jobs" not in data
+    jobs_resp = client.get(
+        f"/students/{student['email']}/jobs",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    entry = next(j for j in jobs_resp.json()["jobs"] if j["job_code"] == job_code)
     assert entry["notes"][-1]["text"] == note
     assert entry["status"] == "assigned"
     assert "posted_by" in entry
@@ -1396,7 +1430,13 @@ def test_student_note_assigned(monkeypatch):
 
     resp = client.get("/students/by-school", headers={"Authorization": f"Bearer {token}"})
     data = resp.json()["students"][0]
-    entry = next(j for j in data["assigned_jobs"] if j["job_code"] == job_code)
+    assert data["assigned_job_count"] == 1
+    assert "assigned_jobs" not in data
+    jobs_resp = client.get(
+        f"/students/{student['email']}/jobs",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    entry = next(j for j in jobs_resp.json()["jobs"] if j["job_code"] == job_code)
     assert entry["status"] == "rejected"
     assert entry["notes"][-1]["text"] == note
     assert "posted_by" in entry

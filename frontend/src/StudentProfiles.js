@@ -91,6 +91,8 @@ function StudentProfiles() {
   const [modalNotes, setModalNotes] = useState(null);
   const [hoveredJob, setHoveredJob] = useState(null);
   const hoverTimer = useRef(null);
+  const [jobsByEmail, setJobsByEmail] = useState({});
+  const [loadingJobs, setLoadingJobs] = useState({});
 
   const mergeStudents = (list) => {
     const map = new Map();
@@ -271,13 +273,28 @@ function StudentProfiles() {
     };
   }, []);
 
-  const toggleRow = (email, assignedJobs = []) => {
+  const toggleRow = (email) => {
     setExpandedRows((prev) => {
       const state = prev[email];
       const isOpen = state === 'open' || state === 'opening';
       if (!isOpen) {
-        for (const job of assignedJobs) {
-          fetchJobDescriptionStatus(email, job.job_code);
+        if (!jobsByEmail[email]) {
+          setLoadingJobs((l) => ({ ...l, [email]: true }));
+          api
+            .get(`/students/${email}/jobs`)
+            .then((resp) => {
+              const jobs = resp.data?.jobs || [];
+              setJobsByEmail((p) => ({ ...p, [email]: jobs }));
+              jobs.forEach((job) => fetchJobDescriptionStatus(email, job.job_code));
+            })
+            .catch((err) => console.error('Failed to fetch jobs', err))
+            .finally(() =>
+              setLoadingJobs((l) => ({ ...l, [email]: false }))
+            );
+        } else {
+          jobsByEmail[email].forEach((job) =>
+            fetchJobDescriptionStatus(email, job.job_code)
+          );
         }
         return { ...prev, [email]: 'opening' };
       } else {
@@ -493,9 +510,7 @@ function StudentProfiles() {
               .includes(codeFilter.toLowerCase());
       const licenseMatch =
         !licenseFilter || (s.license || '').toLowerCase() === licenseFilter.toLowerCase();
-      const assignedCount = Array.isArray(s.assigned_jobs)
-        ? s.assigned_jobs.length
-        : s.assigned_jobs || 0;
+      const assignedCount = s.assigned_job_count || 0;
       const assignedMatch =
         assignedFilter === ''
           ? true
@@ -739,7 +754,7 @@ function StudentProfiles() {
                 </thead>
                 <tbody>
                   {filteredStudents.map((s) => {
-                    const assigned = Array.isArray(s.assigned_jobs) ? s.assigned_jobs.length : s.assigned_jobs || 0;
+                    const assigned = s.assigned_job_count || 0;
                     const placed = Array.isArray(s.placed_jobs) ? s.placed_jobs.length : s.placed_jobs || 0;
                     return (
                       <React.Fragment key={s.email}>
@@ -751,7 +766,7 @@ function StudentProfiles() {
                             >
                               <button
                                 className="expand-toggle"
-                                onClick={() => toggleRow(s.email, s.assigned_jobs)}
+                                onClick={() => toggleRow(s.email)}
                                 type="button"
                                 title={expandedRows[s.email] ? 'Collapse' : 'Expand'}
                               >
@@ -827,8 +842,12 @@ function StudentProfiles() {
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {s.assigned_jobs && s.assigned_jobs.length > 0 ? (
-                                    s.assigned_jobs.map((job, index) => (
+                                  {loadingJobs[s.email] ? (
+                                    <tr className="no-jobs-row">
+                                      <td colSpan="6">Loading...</td>
+                                    </tr>
+                                  ) : jobsByEmail[s.email] && jobsByEmail[s.email].length > 0 ? (
+                                    jobsByEmail[s.email].map((job, index) => (
                                       <tr
                                         key={index}
                                         onMouseEnter={(e) => handleJobEnter(job, e)}

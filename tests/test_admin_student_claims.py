@@ -52,6 +52,10 @@ class DummyRedis:
     def smembers(self, key):
         return self.sets.get(key, set())
 
+    def scard(self, key):
+        return len(self.smembers(key))
+
+
     def sadd(self, key, value):
         self.sets.setdefault(key, set()).add(value)
 
@@ -69,6 +73,9 @@ class DummyRedis:
 
     def flushdb(self):
         self.store.clear()
+        self.hashes.clear()
+        self.lists.clear()
+        self.sets.clear()
 
 
 main_app.redis_client = DummyRedis()

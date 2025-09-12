@@ -3211,6 +3211,17 @@ def get_all_students(
             if license and (st_license or "").lower() != license.lower():
                 continue
 
+            assigned_codes = redis_client.smembers(
+                _student_job_key(email, "assigned")
+            )
+            placed_count = redis_client.scard(_student_job_key(email, "placed"))
+            rejected_count = redis_client.scard(
+                _student_job_key(email, "rejected")
+            )
+            uninterested_count = redis_client.scard(
+                _student_job_key(email, "uninterested")
+            )
+
             info = {
                 "first_name": student.get("first_name"),
                 "last_name": student.get("last_name"),
@@ -3224,23 +3235,19 @@ def get_all_students(
                 "interests": student.get("interests"),
                 "institutional_code": student.get("institutional_code")
                 or student.get("school_code"),
-                "assigned_jobs": _fetch_student_jobs(email),
-                "placed_jobs": 0,
-                "assigned_job_code": None,
+                "assigned_job_count": len(assigned_codes)
+                + placed_count
+                + rejected_count
+                + uninterested_count,
+                "placed_jobs": placed_count,
+                "assigned_job_code": next(iter(assigned_codes), None),
             }
-
-            jobs_list = info["assigned_jobs"]
-            info["placed_jobs"] = sum(1 for j in jobs_list if j["status"] == "placed")
-            info["assigned_job_code"] = next(
-                (j["job_code"] for j in jobs_list if j["status"] == "assigned"),
-                None,
-            )
             students.append(info)
             if len(students) >= limit:
                 break
         if cur == 0:
             break
-
+            
     next_cursor = None if cur == 0 else str(cur)
     return {"students": students, "next_cursor": next_cursor}
 
@@ -3281,7 +3288,6 @@ def students_by_school(
                 student = json.loads(raw)
             except Exception:
                 continue
-
             if (student.get("institutional_code") or student.get("school_code")) != institutional_code:
                 continue
 
@@ -3292,6 +3298,17 @@ def students_by_school(
             st_license = student.get("license") or student.get("education_level")
             if license and (st_license or "").lower() != license.lower():
                 continue
+            assigned_codes = redis_client.smembers(
+                _student_job_key(email, "assigned")
+            )
+            placed_count = redis_client.scard(_student_job_key(email, "placed"))
+            rejected_count = redis_client.scard(
+                _student_job_key(email, "rejected")
+            )
+            uninterested_count = redis_client.scard(
+                _student_job_key(email, "uninterested")
+            )
+
             info = {
                 "first_name": student.get("first_name"),
                 "last_name": student.get("last_name"),
@@ -3303,17 +3320,13 @@ def students_by_school(
                 "skills": student.get("skills"),
                 "experience_summary": student.get("experience_summary"),
                 "interests": student.get("interests"),
-                "assigned_jobs": _fetch_student_jobs(email),
-                "placed_jobs": 0,
-                "assigned_job_code": None,
+                "assigned_job_count": len(assigned_codes)
+                + placed_count
+                + rejected_count
+                + uninterested_count,
+                "placed_jobs": placed_count,
+                "assigned_job_code": next(iter(assigned_codes), None),
             }
-
-            jobs_list = info["assigned_jobs"]
-            info["placed_jobs"] = sum(1 for j in jobs_list if j["status"] == "placed")
-            info["assigned_job_code"] = next(
-                (j["job_code"] for j in jobs_list if j["status"] == "assigned"),
-                None,
-            )
             students.append(info)
             if len(students) >= limit:
                 break
@@ -3323,6 +3336,31 @@ def students_by_school(
     next_cursor = None if cur == 0 else str(cur)
     return {"students": students, "next_cursor": next_cursor}
 
+
+@app.get("/students/{email}/jobs")
+def student_jobs(email: str, current_user: dict = Depends(get_current_user)):
+    """Return the job list for a given student."""
+    norm = normalize_email(email)
+    key = resolve_student_key(norm)
+    raw = redis_client.get(key) if key else None
+    if not raw:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    if current_user.get("role") not in ADMIN_ROLES:
+        try:
+            student = json.loads(raw)
+        except Exception:
+            raise HTTPException(status_code=500, detail="Corrupted profile data")
+        user_raw = redis_client.get(user_key(current_user.get("sub")))
+        user = json.loads(user_raw) if user_raw else {}
+        st_code = student.get("institutional_code") or student.get("school_code")
+        u_code = user.get("institutional_code") or user.get("school_code")
+        if st_code != u_code:
+            raise HTTPException(status_code=403, detail="Not authorized")
+        if current_user.get("role") == "career" and student.get("created_by") != current_user.get("sub"):
+            raise HTTPException(status_code=403, detail="Not authorized")
+
+    return {"jobs": _fetch_student_jobs(norm)}
 
 @app.get("/students/me")
 def student_me(current_user: dict = Depends(get_current_user)):
