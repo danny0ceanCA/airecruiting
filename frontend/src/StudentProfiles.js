@@ -529,7 +529,7 @@ function StudentProfiles() {
           (stats.placed?.length || 0) +
           (stats.rejected?.length || 0) +
           (stats.uninterested?.length || 0)
-        : s.assigned_job_count || 0;
+        : 0;
       const assignedMatch =
         assignedFilter === ''
           ? true
@@ -782,7 +782,7 @@ function StudentProfiles() {
                         (stats.placed?.length || 0) +
                         (stats.rejected?.length || 0) +
                         (stats.uninterested?.length || 0)
-                      : s.assigned_job_count || 0;
+                      : 0;
                     const placed = stats
                       ? stats.placed?.length || 0
                       : Array.isArray(s.placed_jobs)
