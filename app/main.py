@@ -3387,42 +3387,15 @@ def student_me(current_user: dict = Depends(get_current_user)):
     if claimed_by and claimed_by != current_sub:
         raise HTTPException(status_code=403, detail="Profile not claimed by current user")
 
-    # gather related job info
-    assigned_jobs = []
+    # Summaries of job status are stored in Redis sets keyed by status
+    assigned_job_code = None
     placed = 0
-    for job_key in redis_client.scan_iter("job:*"):
-        job_raw = redis_client.get(job_key)
-        if not job_raw:
-            continue
-        try:
-            job = json.loads(job_raw)
-        except Exception:
-            continue
-        status = None
-        notes_raw = job.get("student_notes", {}).get(email, [])
-        notes, latest_note = _normalize_notes(notes_raw)
-        if email in job.get("placed_students", []):
-            placed += 1
-            status = "placed"
-        elif email in job.get("assigned_students", []):
-            status = "assigned"
-        elif email in job.get("rejected_students", []):
-            status = "rejected"
-        elif email in job.get("uninterested_students", []):
-            status = "uninterested"
-        if status:
-            assigned_jobs.append({
-                "job_code": job.get("job_code"),
-                "job_title": job.get("job_title"),
-                "source": job.get("source"),
-                "min_pay": job.get("min_pay"),
-                "max_pay": job.get("max_pay"),
-                "job_description": job.get("job_description"),
-                "status": status,
-                "posted_by": job.get("posted_by"),
-                "notes": notes,
-                **({"note": latest_note} if latest_note is not None else {}),
-            })
+    if email:
+        assigned = redis_client.smembers(f"student_jobs:{email}:assigned") or []
+        assigned_job_code = next(iter(assigned), None)
+        if isinstance(assigned_job_code, bytes):
+            assigned_job_code = assigned_job_code.decode("utf-8")
+        placed = len(redis_client.smembers(f"student_jobs:{email}:placed") or [])
 
     info = {
         "first_name": student.get("first_name"),
@@ -3436,9 +3409,8 @@ def student_me(current_user: dict = Depends(get_current_user)):
         "experience_summary": student.get("experience_summary"),
         "interests": student.get("interests"),
         "institutional_code": student.get("institutional_code"),
-        "assigned_jobs": assigned_jobs,
         "placed_jobs": placed,
-        "assigned_job_code": next((j["job_code"] for j in assigned_jobs if j["status"] == "assigned"), None),
+        "assigned_job_code": assigned_job_code,
     }
     return info
 
