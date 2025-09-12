@@ -14,6 +14,9 @@ from app.main import app, JWT_SECRET, ALGORITHM
 class DummyRedis:
     def __init__(self):
         self.store = {}
+        self.hashes = {}
+        self.lists = {}
+        self.sets = {}
 
     def set(self, key, value):
         self.store[key] = value
@@ -33,10 +36,31 @@ class DummyRedis:
             if fnmatch(k, pattern):
                 yield k
 
+    def scan(self, cursor=0, match=None, count=None):
+        from fnmatch import fnmatch
+        keys = [k for k in self.store.keys() if not match or fnmatch(k, match)]
+        return 0, keys
+
     def incr(self, key, amount=1):
         val = int(self.store.get(key, 0)) + amount
         self.store[key] = val
         return val
+
+    def mget(self, keys):
+        return [self.store.get(k) for k in keys]
+
+    def smembers(self, key):
+        return self.sets.get(key, set())
+
+    def scard(self, key):
+        return len(self.smembers(key))
+
+    def sadd(self, key, value):
+        self.sets.setdefault(key, set()).add(value)
+
+    def srem(self, key, value):
+        if key in self.sets:
+            self.sets[key].discard(value)
 
     def incrbyfloat(self, key, amount=1.0):
         val = float(self.store.get(key, 0.0)) + amount
@@ -48,6 +72,9 @@ class DummyRedis:
 
     def flushdb(self):
         self.store.clear()
+        self.hashes.clear()
+        self.lists.clear()
+        self.sets.clear()
 
 
 main_app.redis_client = DummyRedis()
