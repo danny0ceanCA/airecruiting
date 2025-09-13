@@ -447,6 +447,18 @@ function StudentProfiles() {
         { headers: { Authorization: `Bearer ${token}` } }
       );
       alert('Job description resent');
+      const [jobsResp, statsResp] = await Promise.all([
+        api.get(`/students/${studentEmail}/jobs`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        api.get(`/students/${studentEmail}/job-stats`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+      ]);
+      const jobs = jobsResp.data?.jobs || [];
+      setJobsByEmail((p) => ({ ...p, [studentEmail]: jobs }));
+      setJobStatsByEmail((p) => ({ ...p, [studentEmail]: statsResp.data || {} }));
+      await fetchJobDescriptionStatus(studentEmail, jobCode);
     } catch (err) {
       console.error('Notification failed', err);
     }
