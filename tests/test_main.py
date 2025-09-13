@@ -1533,6 +1533,101 @@ def test_tracking_fields_returned(monkeypatch):
     assert job_entry["clicked"] is True
 
 
+def test_resend_updates_tracking(monkeypatch):
+    main_app.redis_client = DummyRedis()
+    init_default_admin()
+
+    student = {
+        "first_name": "Stud",
+        "last_name": "S",
+        "skills": ["python"],
+        "email": "stud@example.com",
+        "institutional_code": "1001",
+        "student_id": "stud8",
+    }
+    main_app.persist_student_record(
+        student["email"], student, student["institutional_code"], student["student_id"]
+    )
+    main_app.redis_client.set(
+        "job:codei",
+        json.dumps(
+            {
+                "job_code": "codei",
+                "job_title": "Dev",
+                "job_description": "desc",
+                "desired_skills": ["python"],
+                "assigned_students": ["stud@example.com"],
+                "external_apply_url": "https://example.com/apply",
+            }
+        ),
+    )
+    main_app.redis_client.sadd("student_jobs:stud@example.com:assigned", "codei")
+
+    class FakeResp:
+        def __init__(self):
+            self.choices = [type("obj", (), {"message": type("obj", (), {"content": "done"})})]
+
+    def fake_create(model, messages, temperature):
+        return FakeResp()
+
+    sent = []
+
+    def fake_send(recipient, subject, body, html_body=None, attachments=None, track_token=None):
+        sent.append(track_token)
+
+    monkeypatch.setattr(main_app.client.chat.completions, "create", fake_create)
+    monkeypatch.setattr(main_app, "send_email", fake_send)
+
+    token = client.post("/login", json={"email": "admin@example.com", "password": "admin123"}).json()["token"]
+
+    resp = client.post(
+        "/notify-interest",
+        json={"student_email": "stud@example.com", "job_code": "codei"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    first_token = sent[-1]
+    client.get(f"/track/open/{first_token}.png")
+    client.get(f"/track/click/{first_token}")
+
+    jobs_resp = client.get(
+        "/students/stud@example.com/jobs",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    job_entry = jobs_resp.json()["jobs"][0]
+    first_sent = job_entry["email_sent"]
+    assert job_entry["first_open"] is not None
+    assert job_entry["clicked"] is True
+
+    resp = client.post(
+        "/notify-interest",
+        json={"student_email": "stud@example.com", "job_code": "codei"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    second_token = sent[-1]
+    jobs_resp = client.get(
+        "/students/stud@example.com/jobs",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    job_entry = jobs_resp.json()["jobs"][0]
+    assert job_entry["email_sent"] != first_sent
+    assert job_entry["first_open"] is None
+    assert job_entry["clicked"] is False
+
+    client.get(f"/track/open/{second_token}.png")
+    client.get(f"/track/click/{second_token}")
+
+    jobs_resp = client.get(
+        "/students/stud@example.com/jobs",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    job_entry = jobs_resp.json()["jobs"][0]
+    assert job_entry["email_sent"] != first_sent
+    assert job_entry["first_open"] is not None
+    assert job_entry["clicked"] is True
+
+
 def test_notify_interest_missing_smtp(monkeypatch):
     main_app.redis_client = DummyRedis()
     init_default_admin()
