@@ -3089,10 +3089,16 @@ def _tracking_stats(student_email: str, job_code: str) -> dict:
     if not tokens:
         return {"email_sent": None, "first_open": None, "clicked": False}
 
-    email_sent_values = [t.get("sent") for t in tokens if t.get("sent")]
-    email_sent = min(email_sent_values) if email_sent_values else None
+    latest_token: dict | None = None
+    latest_sent: str | None = None
+    for t in tokens:
+        sent = t.get("sent")
+        if sent and (latest_sent is None or sent > latest_sent):
+            latest_sent = sent
+            latest_token = t
 
-    token_set = {t["token"] for t in tokens}
+    token_set = {latest_token["token"]} if latest_token else set()
+    email_sent = latest_sent
     first_open = None
     clicked = False
     try:
