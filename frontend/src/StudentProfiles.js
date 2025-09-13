@@ -458,6 +458,19 @@ function StudentProfiles() {
       const jobs = jobsResp.data?.jobs || [];
       setJobsByEmail((p) => ({ ...p, [studentEmail]: jobs }));
       setJobStatsByEmail((p) => ({ ...p, [studentEmail]: statsResp.data || {} }));
+
+      // If the analytics pop-over is open for this job, refresh it with the
+      // latest data so the email tracking numbers update immediately.
+      if (
+        hoveredJob &&
+        hoveredJob.job.job_code === jobCode &&
+        hoveredJob.job.student_email === studentEmail
+      ) {
+        const updated = jobs.find((j) => j.job_code === jobCode);
+        if (updated) {
+          setHoveredJob({ job: updated, position: hoveredJob.position });
+        }
+      }
       await fetchJobDescriptionStatus(studentEmail, jobCode);
     } catch (err) {
       console.error('Notification failed', err);
