@@ -187,6 +187,52 @@ test('loads jobs on demand when expanding a student', async () => {
   localStorage.clear();
 });
 
+test('shows placement controls after job stats load', async () => {
+  const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiY2FyZWVyX3N0YWZmIn0.signature';
+  localStorage.setItem('token', token);
+  api.get.mockImplementation((url) => {
+    if (url === '/licenses') {
+      return Promise.resolve({ data: { licenses: [] } });
+    }
+    if (url === '/students/s@example.com/jobs') {
+      return Promise.resolve({
+        data: { jobs: [{ job_code: 'J1', job_title: 'Job 1', status: 'open' }] }
+      });
+    }
+    if (url === '/students/s@example.com/job-stats') {
+      return Promise.resolve({
+        data: { assigned: ['J1'], placed: [], rejected: [], uninterested: [] }
+      });
+    }
+    if (url === '/students/by-school') {
+      return Promise.resolve({
+        data: {
+          students: [
+            {
+              first_name: 'F',
+              last_name: 'L',
+              email: 's@example.com',
+              city: 'City',
+              state: 'ST',
+              institutional_code: 'ABC'
+            }
+          ]
+        }
+      });
+    }
+    return Promise.resolve({ data: {} });
+  });
+  render(
+    <BrowserRouter>
+      <StudentProfiles />
+    </BrowserRouter>
+  );
+  const expand = await screen.findByTitle('Expand');
+  fireEvent.click(expand);
+  expect(await screen.findByText('Mark as Placed')).toBeInTheDocument();
+  localStorage.clear();
+});
+
 test('deduplicates students from multiple payloads', async () => {
   const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYWRtaW4ifQ.signature';
   localStorage.setItem('token', token);
