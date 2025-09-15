@@ -172,3 +172,35 @@ def test_compile_weekly_stats_includes_all_notes():
     notes = stats["students"][0]["notes"]
     assert [n["text"] for n in notes] == ["old", "new"]
     assert stats["notes_count"] == 1
+
+
+def test_preexisting_student_assignments_counted():
+    summary.redis_client = DummyRedis()
+    summary.send_email = lambda *a, **k: None  # avoid _ensure_dependencies import
+    now = datetime(2025, 8, 8, tzinfo=timezone.utc)
+    earlier = (now - timedelta(days=14)).isoformat()
+
+    # Student created before the week
+    student = {
+        "email": "old@example.com",
+        "created_by": "career@example.com",
+        "created_at": earlier,
+    }
+    summary.redis_client.set("student:old@example.com", json.dumps(student))
+
+    job = {
+        "assigned_students": ["old@example.com"],
+        "placed_students": ["old@example.com"],
+        "student_notes": {},
+    }
+    summary.redis_client.set("job:1", json.dumps(job))
+
+    stats = summary.compile_weekly_stats("career@example.com", now)
+    assert stats["created_count"] == 0
+    assert stats["assignment_count"] == 1
+    assert stats["placement_count"] == 1
+    assert stats["engaged_count"] == 1
+    assert any(
+        s["email"] == "old@example.com" and s["assigned_jobs"] == 1 and s["placed_jobs"] == 1
+        for s in stats["students"]
+    )
