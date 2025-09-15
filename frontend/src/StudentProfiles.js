@@ -53,10 +53,6 @@ function StudentProfiles() {
       content: 'Use the pencil to edit or the trash can to remove a profile.'
     },
     {
-      target: '.assigned-col',
-      content: 'Shows how many jobs are assigned to each student.'
-    },
-    {
       target: '.placement-status-col',
       content: 'A check means placed. An X means still looking.'
     },
@@ -77,7 +73,6 @@ function StudentProfiles() {
   const [locationFilter, setLocationFilter] = useState('');
   const [codeFilter, setCodeFilter] = useState('');
   const [licenseFilter, setLicenseFilter] = useState('');
-  const [assignedFilter, setAssignedFilter] = useState('');
   const [placementFilter, setPlacementFilter] = useState('');
   const [editingEmail, setEditingEmail] = useState('');
   const [editingStudent, setEditingStudent] = useState(null);
@@ -549,16 +544,6 @@ function StudentProfiles() {
       const licenseMatch =
         !licenseFilter || (s.license || '').toLowerCase() === licenseFilter.toLowerCase();
       const stats = jobStatsByEmail[s.email];
-      const assignedCount = stats
-        ? (stats.assigned?.length || 0) +
-          (stats.placed?.length || 0) +
-          (stats.rejected?.length || 0) +
-          (stats.uninterested?.length || 0)
-        : 0;
-      const assignedMatch =
-        assignedFilter === ''
-          ? true
-          : assignedCount.toString().includes(assignedFilter.toString());
       const placed = stats
         ? stats.placed?.length || 0
         : Array.isArray(s.placed_jobs)
@@ -574,7 +559,6 @@ function StudentProfiles() {
         locationMatch &&
         codeMatch &&
         licenseMatch &&
-        assignedMatch &&
         placementMatch
       );
     });
@@ -586,7 +570,6 @@ function StudentProfiles() {
     locationFilter,
     codeFilter,
     licenseFilter,
-    assignedFilter,
     placementFilter,
     userRole,
     jobStatsByEmail,
@@ -708,7 +691,6 @@ function StudentProfiles() {
                     {isAdmin && <th>School</th>}
                     <th>License</th>
                     <th className="edit-col">Edit</th>
-                    <th className="assigned-col">Assigned Jobs</th>
                     <th className="placement-status-col">Placement Status</th>
                     <th className="placement-controls-col">Placement Controls</th>
                   </tr>
@@ -776,15 +758,6 @@ function StudentProfiles() {
                       </select>
                     </th>
                     <th></th>
-                    <th>
-                      <input
-                        className="column-filter"
-                        type="number"
-                        value={assignedFilter}
-                        onChange={(e) => setAssignedFilter(e.target.value)}
-                        placeholder="Filter"
-                      />
-                    </th>
                     <th>
                       <select
                         className="column-filter"
@@ -865,12 +838,11 @@ function StudentProfiles() {
                                     }}
                                   >
                                     🗑️
-                                  </button>
+                          </button>
                                 </Tooltip>
                               )}
                             </div>
                           </td>
-                          <td className="assigned-col">{assigned}</td>
                           <td className="placement-status-col">{placed > 0 ? '✅' : '❌'}</td>
                           <td className="placement-controls-col">
                             {assigned > 0 && placed === 0 && userRole !== 'admin' && userRole !== 'junior_admin' && (
