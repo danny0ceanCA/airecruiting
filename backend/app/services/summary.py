@@ -87,7 +87,7 @@ def compile_weekly_stats(user_email: str, now: datetime) -> Dict[str, Any]:
     """
     Aggregate stats for a career user over the last Mon–Fri window:
       - created_count: # students created in-window
-      - engaged_count: # students with >=1 assignment (within created-in-window cohort)
+      - engaged_count: # students with >=1 assignment (across all of the user's students)
       - assignment_count: total assignments across those students
       - placement_count: total placements across those students
       - notes_count: # students with a note in-window
@@ -97,10 +97,31 @@ def compile_weekly_stats(user_email: str, now: datetime) -> Dict[str, Any]:
     window_start, window_end = _week_window(now)
     user_lc = (user_email or "").strip().lower()
 
-    # ---- Discover students created in-window by this user (union of logs + student:* scan) ----
+    # ---- Discover all students owned by this user & track creations in-window ----
     created_emails: set[str] = set()
+    user_students: set[str] = set()
 
-    # From activity logs (POST/PUT /students*)
+    # Scan student:* objects (schema: created_by, created_at, email)
+    for key in redis_client.scan_iter("student:*"):
+        raw = _decode(redis_client.get(key))
+        if not raw:
+            continue
+        try:
+            student = json.loads(raw)
+        except Exception:
+            continue
+
+        if (student.get("created_by") or "").strip().lower() != user_lc:
+            continue
+
+        email = student.get("email") or key.split("student:", 1)[1]
+        if not email:
+            continue
+        user_students.add(email)
+        if _in_window(student.get("created_at"), window_start, window_end):
+            created_emails.add(email)
+
+    # From activity logs (POST/PUT /students*) to catch any creations not captured above
     logs = redis_client.lrange(ACTIVITY_LOG_KEY, 0, -1) or []
     for raw in logs:
         raw = _decode(raw)
@@ -120,73 +141,60 @@ def compile_weekly_stats(user_email: str, now: datetime) -> Dict[str, Any]:
         if not path.startswith("/students"):
             continue
 
-        if not _in_window(entry.get("timestamp"), window_start, window_end):
-            continue
-
         email = entry.get("student_email")
         if not email:
             if path.startswith("/students/"):
                 email = path.split("/students/", 1)[1]
             elif "?email=" in path:
                 email = path.split("?email=", 1)[1]
-        if email:
+        if not email:
+            continue
+
+        user_students.add(email)
+        if _in_window(entry.get("timestamp"), window_start, window_end):
             created_emails.add(email)
 
-    # Also scan student:* objects (schema: created_by, created_at, email)
-    for key in redis_client.scan_iter("student:*"):
-        raw = _decode(redis_client.get(key))
-        if not raw:
+    # ---- Build per-student stats across all user students ----
+    stats_per_student: Dict[str, Dict[str, Any]] = {
+        email: {
+            "assigned_jobs": 0,
+            "placed_jobs": 0,
+            "latest_note": None,
+            "notes": [],
+            "note_in_window": False,
+        }
+        for email in user_students
+    }
+
+    for key in redis_client.scan_iter("job:*"):
+        job_raw = _decode(redis_client.get(key))
+        if not job_raw:
             continue
         try:
-            student = json.loads(raw)
+            job = json.loads(job_raw)
         except Exception:
             continue
 
-        if (student.get("created_by") or "").strip().lower() != user_lc:
-            continue
+        for email in job.get("assigned_students", []) or []:
+            if email in stats_per_student:
+                stats_per_student[email]["assigned_jobs"] += 1
 
-        if _in_window(student.get("created_at"), window_start, window_end):
-            email = student.get("email") or key.split("student:", 1)[1]
-            if email:
-                created_emails.add(email)
+        for email in job.get("placed_students", []) or []:
+            if email in stats_per_student:
+                stats_per_student[email]["placed_jobs"] += 1
 
-    # ---- Build per-student stats for those created in-window ----
-    stats_students: List[Dict[str, Any]] = []
-    engaged_count = 0
-    assignment_count = 0
-    placement_count = 0
-    notes_count = 0
-
-    for email in created_emails:
-        assigned = 0
-        placed = 0
-        latest_note: Dict[str, Any] | None = None
-        note_in_window = False
-        all_notes: List[Dict[str, Any]] = []
-
-        for key in redis_client.scan_iter("job:*"):
-            job_raw = _decode(redis_client.get(key))
-            if not job_raw:
-                continue
+        # Optional per-job notes: { student_email: [ {text, timestamp}, ... ] }
+        notes_map = job.get("student_notes", {})
+        if isinstance(notes_map, str):
             try:
-                job = json.loads(job_raw)
+                notes_map = json.loads(notes_map)
             except Exception:
+                notes_map = {}
+
+        for email, raw_notes in notes_map.items():
+            if email not in stats_per_student:
                 continue
 
-            if email in job.get("assigned_students", []):
-                assigned += 1
-            if email in job.get("placed_students", []):
-                placed += 1
-
-            # Optional per-job notes: { student_email: [ {text, timestamp}, ... ] }
-            notes_map = job.get("student_notes", {})
-            if isinstance(notes_map, str):
-                try:
-                    notes_map = json.loads(notes_map)
-                except Exception:
-                    notes_map = {}
-
-            raw_notes = notes_map.get(email) or []
             if isinstance(raw_notes, str):
                 raw_notes = [{"text": raw_notes, "timestamp": None}]
             elif isinstance(raw_notes, list):
@@ -201,12 +209,14 @@ def compile_weekly_stats(user_email: str, now: datetime) -> Dict[str, Any]:
                 raw_notes = []
 
             if raw_notes:
-                all_notes.extend(raw_notes)
+                stats_per_student[email]["notes"].extend(raw_notes)
                 candidate = raw_notes[-1]
                 cand_ts = _parse_ts(candidate.get("timestamp"))
-                curr_ts = _parse_ts(latest_note.get("timestamp")) if latest_note else None
+                curr_ts = _parse_ts(
+                    stats_per_student[email]["latest_note"].get("timestamp")
+                ) if stats_per_student[email]["latest_note"] else None
                 if not curr_ts or (cand_ts and cand_ts > curr_ts):
-                    latest_note = {
+                    stats_per_student[email]["latest_note"] = {
                         "text": candidate.get("text", ""),
                         "timestamp": candidate.get("timestamp"),
                     }
@@ -214,7 +224,20 @@ def compile_weekly_stats(user_email: str, now: datetime) -> Dict[str, Any]:
                     _in_window(n.get("timestamp"), window_start, window_end)
                     for n in raw_notes
                 ):
-                    note_in_window = True
+                    stats_per_student[email]["note_in_window"] = True
+
+    stats_students: List[Dict[str, Any]] = []
+    engaged_count = 0
+    assignment_count = 0
+    placement_count = 0
+    notes_count = 0
+
+    for email, data in stats_per_student.items():
+        assigned = data["assigned_jobs"]
+        placed = data["placed_jobs"]
+        all_notes = data["notes"]
+        latest_note = data["latest_note"]
+        note_in_window = data["note_in_window"]
 
         if assigned > 0:
             engaged_count += 1
