@@ -1556,6 +1556,7 @@ def match_job(
             req.job_code,
             False,
             enq_time,
+            job_timeout=600,
             meta={"request_id": request.state.request_id},
         )
         return {"message": "Match job queued"}
@@ -1578,6 +1579,7 @@ def rematch_job(
             job_code,
             False,
             enq_time,
+            job_timeout=600,
             meta={"request_id": request.state.request_id},
         )
         return {"message": "Rematch queued"}
