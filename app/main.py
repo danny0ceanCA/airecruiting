@@ -7,7 +7,7 @@ import json
 import csv
 import os
 import uuid
-from typing import Optional
+from typing import Optional, Callable, Any
 import smtplib
 import logging
 import sys
@@ -357,8 +357,24 @@ async def get_driving_distance_miles(
         raise RuntimeError("Missing GOOGLE_KEY")
 
     provided_list = isinstance(orig_lat, list)
+    invalid_origins = 0
     if provided_list:
-        origins = [(float(lat), float(lng)) for lat, lng in orig_lat]
+        valid_origins: list[tuple[float, float]] = []
+        for lat, lng in orig_lat:
+            if lat is None or lng is None:
+                invalid_origins += 1
+                continue
+            try:
+                lat_f = float(lat)
+                lng_f = float(lng)
+            except (TypeError, ValueError):
+                invalid_origins += 1
+                continue
+            if lat_f == 0.0 and lng_f == 0.0:
+                invalid_origins += 1
+                continue
+            valid_origins.append((lat_f, lng_f))
+        origins = valid_origins
         if dest_lat is not None and dest_lng is not None:
             dest_latitude = float(dest_lat)
             dest_longitude = float(dest_lng)
@@ -377,6 +393,9 @@ async def get_driving_distance_miles(
     results: dict[tuple[float, float], float] = {}
     missing: list[tuple[float, float]] = []
     ttl_seconds = int(timedelta(hours=24).total_seconds())
+
+    if invalid_origins:
+        logger.info("Skipping %s invalid origins before distance lookup", invalid_origins)
 
     for lat, lng in origins:
         cache_key = f"distance:{lat}:{lng}:{dest_latitude}:{dest_longitude}"
@@ -397,6 +416,9 @@ async def get_driving_distance_miles(
         async with httpx.AsyncClient() as client:
             for i in range(0, len(missing), 25):
                 batch = missing[i : i + 25]
+                if not batch:
+                    continue
+                logger.info("Sending batch of %s valid origins to Google API", len(batch))
                 origins_param = "|".join(f"{lat},{lng}" for lat, lng in batch)
                 params = {
                     "origins": origins_param,
@@ -1643,7 +1665,12 @@ def rematch_job(
         return {"matches": matches}
 
 
-async def _perform_match_async(job_code: str, send_emails: bool = False, enq_time: float | None = None):
+async def _perform_match_async(
+    job_code: str,
+    send_emails: bool = False,
+    enq_time: float | None = None,
+    progress_callback: Callable[[str, dict[str, Any]], None] | None = None,
+):
     key = f"job:{job_code}"
     raw = redis_client.get(key)
     if not raw:
@@ -1717,6 +1744,15 @@ async def _perform_match_async(job_code: str, send_emails: bool = False, enq_tim
         except Exception:
             continue
 
+    if progress_callback:
+        try:
+            progress_callback(
+                "start",
+                {"job_code": job_code, "candidate_count": len(candidates)},
+            )
+        except Exception:
+            logger.exception("Progress callback failed during start event")
+
     distances: dict[tuple[float, float], float] = {}
     if candidate_coords:
         try:
@@ -1732,6 +1768,11 @@ async def _perform_match_async(job_code: str, send_emails: bool = False, enq_tim
                 distances = {coord: float(result) for coord in candidate_coords}
         except Exception:
             distances = {}
+    if progress_callback:
+        try:
+            progress_callback("distances_complete", {"job_code": job_code})
+        except Exception:
+            logger.exception("Progress callback failed during distance completion event")
 
     for student, emb, coord in candidates:
         dist = distances.get(coord)
@@ -1830,7 +1871,14 @@ async def _perform_match_async(job_code: str, send_emails: bool = False, enq_tim
     redis_client.set(
         f"match_results:{job_code}", json.dumps(top_matches)
     )
-    logger.info("✅ Stored %s matches for job %s", len(top_matches), job_code)
+    if progress_callback:
+        try:
+            progress_callback(
+                "stored",
+                {"job_code": job_code, "match_count": len(top_matches)},
+            )
+        except Exception:
+            logger.exception("Progress callback failed during stored event")
 
     if send_emails:
         for m in top_matches:
@@ -1865,19 +1913,45 @@ async def _perform_match_async(job_code: str, send_emails: bool = False, enq_tim
     return top_matches
 
 
-def _perform_match(job_code: str, send_emails: bool = False, enq_time: float | None = None):
+def _perform_match(
+    job_code: str,
+    send_emails: bool = False,
+    enq_time: float | None = None,
+    progress_callback: Callable[[str, dict[str, Any]], None] | None = None,
+):
     """Synchronous wrapper for background execution."""
-    return asyncio.run(_perform_match_async(job_code, send_emails, enq_time))
+    return asyncio.run(
+        _perform_match_async(job_code, send_emails, enq_time, progress_callback)
+    )
 
 
 def match_worker(job_code: str, send_emails: bool = False, enq_time: float | None = None):
     start = datetime.now()
+
+    def progress_callback(event: str, payload: dict[str, Any]) -> None:
+        job = payload.get("job_code", job_code)
+        if event == "start":
+            logger.info(
+                "Starting match job %s with %s candidates",
+                job,
+                payload.get("candidate_count", 0),
+            )
+        elif event == "distances_complete":
+            logger.info("Completed distance lookups for %s", job)
+        elif event == "stored":
+            logger.info(
+                "✅ Stored %s matches for job %s",
+                payload.get("match_count", 0),
+                job,
+            )
+
     if enq_time is not None:
         queue_time = start - datetime.fromtimestamp(enq_time)
         redis_client.incrbyfloat("metrics:match_queue_time", queue_time.total_seconds())
-    result = _perform_match(job_code, send_emails)
+    result = _perform_match(job_code, send_emails, enq_time, progress_callback)
     process_time = datetime.now() - start
     redis_client.incrbyfloat("metrics:match_process_time", process_time.total_seconds())
+    logger.info("Finished match job %s in %s", job_code, process_time)
     return result
 
 
