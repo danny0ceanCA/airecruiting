@@ -1,6 +1,9 @@
 import os
 import json
 import logging
+import time
+import resource
+import sys
 
 import redis
 from dotenv import load_dotenv
@@ -80,9 +83,54 @@ class RequestIdWorker(Worker):
 
     def execute_job(self, job, queue):  # type: ignore[override]
         token = request_id_ctx_var.set(job.meta.get("request_id", "-"))
+        start_time = time.perf_counter()
+        start_usage = resource.getrusage(resource.RUSAGE_SELF)
+        status = "success"
+        exc_info = None
         try:
             return super().execute_job(job, queue)
+        except Exception:
+            status = "failure"
+            exc_info = sys.exc_info()
+            raise
         finally:
+            end_time = time.perf_counter()
+            end_usage = resource.getrusage(resource.RUSAGE_SELF)
+
+            wall_time = end_time - start_time
+            cpu_time = (
+                (end_usage.ru_utime + end_usage.ru_stime)
+                - (start_usage.ru_utime + start_usage.ru_stime)
+            )
+            rss_delta = end_usage.ru_maxrss - start_usage.ru_maxrss
+
+            queue_name = getattr(queue, "name", str(queue))
+            log_message = (
+                "Job %s on queue %s status=%s runtime=%.4fs cpu_time=%.4fs rss_delta=%s"
+            )
+
+            if status == "success":
+                logger.info(
+                    log_message,
+                    job.id,
+                    queue_name,
+                    status,
+                    wall_time,
+                    cpu_time,
+                    rss_delta,
+                )
+            else:
+                logger.exception(
+                    log_message,
+                    job.id,
+                    queue_name,
+                    status,
+                    wall_time,
+                    cpu_time,
+                    rss_delta,
+                    exc_info=exc_info,
+                )
+
             request_id_ctx_var.reset(token)
 
 
