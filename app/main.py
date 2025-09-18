@@ -1685,8 +1685,8 @@ async def _perform_match_async(job_code: str, send_emails: bool = False, enq_tim
     else:
         candidate_emails = []
 
-    tasks = []
-    candidates = []
+    candidates: list[tuple[dict, list, tuple[float, float]]] = []
+    candidate_coords: list[tuple[float, float]] = []
     for email in candidate_emails:
         skey = resolve_student_key(email)
         student_raw = redis_client.get(skey) if skey else None
@@ -1711,23 +1711,31 @@ async def _perform_match_async(job_code: str, send_emails: bool = False, enq_tim
                         continue
                 except Exception:
                     pass
-            coro = get_driving_distance_miles(
-                student.get("lat"),
-                student.get("lng"),
-                job.get("lat"),
-                job.get("lng"),
-            )
-            if asyncio.iscoroutine(coro):
-                tasks.append(coro)
-            else:
-                tasks.append(asyncio.sleep(0, result=coro))
-            candidates.append((student, emb))
+            coord = (float(student.get("lat")), float(student.get("lng")))
+            candidate_coords.append(coord)
+            candidates.append((student, emb, coord))
         except Exception:
             continue
 
-    dists = await asyncio.gather(*tasks, return_exceptions=True)
-    for (student, emb), dist in zip(candidates, dists):
-        if isinstance(dist, Exception):
+    distances: dict[tuple[float, float], float] = {}
+    if candidate_coords:
+        try:
+            coro = get_driving_distance_miles(
+                candidate_coords,
+                dest_lat=job.get("lat"),
+                dest_lng=job.get("lng"),
+            )
+            result = await coro if asyncio.iscoroutine(coro) else coro
+            if isinstance(result, dict):
+                distances = result
+            elif isinstance(result, (int, float)):
+                distances = {coord: float(result) for coord in candidate_coords}
+        except Exception:
+            distances = {}
+
+    for student, emb, coord in candidates:
+        dist = distances.get(coord)
+        if dist is None:
             continue
         if dist > float(student.get("max_travel", 0)):
             continue
