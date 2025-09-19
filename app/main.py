@@ -41,6 +41,8 @@ from html import unescape, escape
 import random
 from zoneinfo import ZoneInfo
 from urllib.parse import urlparse
+import secrets
+import hashlib
 from backend.app.schemas.resume import ResumeRequest
 from backend.app.schemas.description import DescriptionRequest
 from backend.app.services.resume import generate_resume_text
@@ -65,6 +67,11 @@ for handler in logging.getLogger().handlers:
 logger = get_logger(__name__)
 
 ADMIN_ROLES = {"admin", "junior_admin"}
+
+REFRESH_TOKEN_TTL_SECONDS = int(os.getenv("REFRESH_TOKEN_TTL_SECONDS", str(60 * 60 * 24 * 7)))
+REFRESH_TOKEN_LOOKUP_PREFIX = "refresh_token_lookup"
+REFRESH_TOKEN_USER_PREFIX = "refresh_token_user"
+ACCESS_TOKEN_TTL = timedelta(hours=1)
 
 
 def init_default_school_codes():
@@ -182,6 +189,54 @@ def normalize_email(email: str | None) -> str:
 def user_key(email: str) -> str:
     """Return the redis key for a user."""
     return f"user:{normalize_email(email)}"
+
+
+def _hash_refresh_token(token: str) -> str:
+    """Return a deterministic hash for a refresh token."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _set_with_ttl(key: str, ttl: int, value: str) -> None:
+    """Set a redis key with an optional TTL, falling back to set."""
+    if hasattr(redis_client, "setex"):
+        redis_client.setex(key, ttl, value)
+    else:
+        redis_client.set(key, value)
+
+
+def issue_refresh_token(email: str) -> str:
+    """Generate and persist a refresh token for a user, rotating old values."""
+    normalized = normalize_email(email)
+    raw_token = secrets.token_urlsafe(48)
+    hashed = _hash_refresh_token(raw_token)
+    current = redis_client.get(f"{REFRESH_TOKEN_USER_PREFIX}:{normalized}")
+    if current:
+        redis_client.delete(f"{REFRESH_TOKEN_LOOKUP_PREFIX}:{current}")
+    _set_with_ttl(f"{REFRESH_TOKEN_USER_PREFIX}:{normalized}", REFRESH_TOKEN_TTL_SECONDS, hashed)
+    _set_with_ttl(f"{REFRESH_TOKEN_LOOKUP_PREFIX}:{hashed}", REFRESH_TOKEN_TTL_SECONDS, normalized)
+    return raw_token
+
+
+def revoke_refresh_token(email: str, hashed: str | None = None) -> None:
+    """Remove refresh token mappings for a user."""
+    normalized = normalize_email(email)
+    stored_hash = hashed or redis_client.get(f"{REFRESH_TOKEN_USER_PREFIX}:{normalized}")
+    if stored_hash:
+        redis_client.delete(f"{REFRESH_TOKEN_LOOKUP_PREFIX}:{stored_hash}")
+    redis_client.delete(f"{REFRESH_TOKEN_USER_PREFIX}:{normalized}")
+
+
+def generate_access_token(email: str, role: str) -> str:
+    """Create a signed JWT access token for the given user."""
+    now = datetime.utcnow()
+    payload = {
+        "sub": normalize_email(email),
+        "role": role,
+        "exp": now + ACCESS_TOKEN_TTL,
+        "iat": now,
+        "jti": str(uuid.uuid4()),
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=ALGORITHM)
 
 
 def student_key(institution_code: str, student_id: str) -> str:
@@ -706,6 +761,10 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
 class VerifyTokenRequest(BaseModel):
     token: str
 
@@ -921,12 +980,8 @@ def login(req: LoginRequest, request: Request):
         )
         raise HTTPException(status_code=403, detail="User deactivated")
 
-    payload = {
-        "sub": email,
-        "role": user["role"],
-        "exp": datetime.utcnow() + timedelta(hours=1),
-    }
-    token = jwt.encode(payload, JWT_SECRET, algorithm=ALGORITHM)
+    token = generate_access_token(email, user["role"])
+    refresh_token = issue_refresh_token(email)
     logger.info(
         "POST /login success email=%s ip=%s ts=%s request_id=%s",
         email,
@@ -947,7 +1002,46 @@ def login(req: LoginRequest, request: Request):
         )
     except Exception as e:
         logger.error("Failed to store login log for %s: %s", email, e)
-    return {"token": token}
+    return {"token": token, "refresh_token": refresh_token}
+
+
+@app.post("/refresh")
+def refresh(req: RefreshRequest):
+    token_value = (req.refresh_token or "").strip()
+    if not token_value:
+        raise HTTPException(status_code=400, detail="Refresh token required")
+
+    hashed = _hash_refresh_token(token_value)
+    lookup_key = f"{REFRESH_TOKEN_LOOKUP_PREFIX}:{hashed}"
+    email = redis_client.get(lookup_key)
+    if not email:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    stored_hash = redis_client.get(f"{REFRESH_TOKEN_USER_PREFIX}:{normalize_email(email)}")
+    if stored_hash != hashed:
+        revoke_refresh_token(email, hashed)
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    key = find_user_key(email)
+    raw = redis_client.get(key) if key else None
+    if not raw:
+        revoke_refresh_token(email, hashed)
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    try:
+        user = json.loads(raw)
+    except json.JSONDecodeError:
+        revoke_refresh_token(email, hashed)
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    if not user.get("approved") or not user.get("active", True):
+        revoke_refresh_token(email, hashed)
+        raise HTTPException(status_code=403, detail="User not authorized")
+
+    revoke_refresh_token(email, hashed)
+    new_refresh_token = issue_refresh_token(email)
+    access_token = generate_access_token(email, user["role"])
+    return {"token": access_token, "refresh_token": new_refresh_token}
 
 
 @app.post("/verify-token")
@@ -2111,6 +2205,8 @@ def get_metrics(current_user: dict = Depends(get_current_user)):
             or skey.startswith("metrics:")
             or skey.startswith("school_code:")
             or skey.startswith("license:")
+            or skey.startswith(f"{REFRESH_TOKEN_LOOKUP_PREFIX}:")
+            or skey.startswith(f"{REFRESH_TOKEN_USER_PREFIX}:")
         ):
             continue
         if redis_client.get(key):

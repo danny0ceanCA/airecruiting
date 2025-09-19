@@ -10,6 +10,7 @@ from jose import jwt
 import json
 import app.main as main_app
 from datetime import datetime, timedelta
+import hashlib
 
 
 class DummyRedis:
@@ -18,28 +19,53 @@ class DummyRedis:
         self.hashes = {}
         self.lists = {}
         self.sets = {}
+        self.expirations = {}
+
+    def _expired(self, key):
+        expires = self.expirations.get(key)
+        if expires and expires <= datetime.utcnow():
+            self.store.pop(key, None)
+            self.hashes.pop(key, None)
+            self.lists.pop(key, None)
+            self.sets.pop(key, None)
+            self.expirations.pop(key, None)
+            return True
+        return False
 
     def set(self, key, value):
         self.store[key] = value
+        self.expirations.pop(key, None)
 
     def get(self, key):
+        if self._expired(key):
+            return None
         return self.store.get(key)
 
     def exists(self, key):
+        if self._expired(key):
+            return False
         return key in self.store
 
     def delete(self, key):
         self.store.pop(key, None)
+        self.expirations.pop(key, None)
 
     def scan_iter(self, pattern="*"):
         from fnmatch import fnmatch
         for k in list(self.store.keys()):
+            if self._expired(k):
+                continue
             if fnmatch(k, pattern):
                 yield k
 
     def scan(self, cursor=0, match=None, count=None):
         from fnmatch import fnmatch
-        keys = [k for k in self.store.keys() if not match or fnmatch(k, match)]
+        keys = []
+        for k in list(self.store.keys()):
+            if self._expired(k):
+                continue
+            if not match or fnmatch(k, match):
+                keys.append(k)
         return 0, keys
 
     def incr(self, key, amount=1):
@@ -73,6 +99,7 @@ class DummyRedis:
         self.hashes.clear()
         self.lists.clear()
         self.sets.clear()
+        self.expirations.clear()
 
     def hset(self, name, key, value):
         self.hashes.setdefault(name, {})[key] = value
@@ -90,6 +117,18 @@ class DummyRedis:
         if 0 <= index < len(lst):
             return lst[index]
         return None
+
+    def setex(self, key, ttl, value):
+        self.store[key] = value
+        self.expirations[key] = datetime.utcnow() + timedelta(seconds=ttl)
+
+    def ttl(self, key):
+        if self._expired(key):
+            return -2
+        expires = self.expirations.get(key)
+        if not expires:
+            return -1
+        return int((expires - datetime.utcnow()).total_seconds())
 
 
 main_app.redis_client = DummyRedis()
@@ -209,6 +248,68 @@ def test_registration_flow():
     assert payload["role"] == "career"
 
 
+def test_login_issues_refresh_token_and_allows_rotation():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    login_resp = client.post(
+        "/login",
+        json={"email": "admin@example.com", "password": "admin123"},
+    )
+    assert login_resp.status_code == 200
+    data = login_resp.json()
+    access_token = data["token"]
+    refresh_token = data["refresh_token"]
+    assert access_token
+    assert refresh_token
+
+    hashed = hashlib.sha256(refresh_token.encode()).hexdigest()
+    lookup_key = f"refresh_token_lookup:{hashed}"
+    user_key = f"refresh_token_user:admin@example.com"
+    assert main_app.redis_client.get(lookup_key) == "admin@example.com"
+    assert main_app.redis_client.get(user_key) == hashed
+
+    refresh_resp = client.post(
+        "/refresh",
+        json={"refresh_token": refresh_token},
+    )
+    assert refresh_resp.status_code == 200
+    refreshed = refresh_resp.json()
+    assert refreshed["token"] != access_token
+    assert refreshed["refresh_token"] != refresh_token
+
+    # Old lookup entries should be gone and replaced with the new token
+    assert main_app.redis_client.get(lookup_key) is None
+    new_hashed = hashlib.sha256(refreshed["refresh_token"].encode()).hexdigest()
+    assert main_app.redis_client.get(f"refresh_token_lookup:{new_hashed}") == "admin@example.com"
+    assert main_app.redis_client.get(user_key) == new_hashed
+
+
+def test_refresh_rejects_invalid_or_expired_tokens():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    login_resp = client.post(
+        "/login",
+        json={"email": "admin@example.com", "password": "admin123"},
+    )
+    refresh_token = login_resp.json()["refresh_token"]
+    hashed = hashlib.sha256(refresh_token.encode()).hexdigest()
+
+    # Simulate expiry by removing lookup entry
+    main_app.redis_client.delete(f"refresh_token_lookup:{hashed}")
+    expired_resp = client.post(
+        "/refresh",
+        json={"refresh_token": refresh_token},
+    )
+    assert expired_resp.status_code == 401
+
+    # Completely invalid token
+    invalid_resp = client.post(
+        "/refresh",
+        json={"refresh_token": "totally-invalid"},
+    )
+    assert invalid_resp.status_code == 401
 def test_register_links_existing_student(monkeypatch):
     main_app.redis_client.flushdb()
     init_default_admin()
