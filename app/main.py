@@ -1926,6 +1926,7 @@ def _perform_match(
 
 
 def match_worker(job_code: str, send_emails: bool = False, enq_time: float | None = None):
+    logger.info(f"🔎 Match worker started for job {job_code}")
     start = datetime.now()
 
     def progress_callback(event: str, payload: dict[str, Any]) -> None:
