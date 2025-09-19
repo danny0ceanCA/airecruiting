@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import jwt_decode from 'jwt-decode';
+import { clearStoredTokens } from './api';
 import './AdminMenu.css';
 
 function AdminMenu({ children }) {
@@ -12,7 +13,7 @@ function AdminMenu({ children }) {
   const userRole = decoded?.role;
 
   const handleLogout = () => {
-    localStorage.removeItem('token');
+    clearStoredTokens();
     navigate('/login');
   };
 

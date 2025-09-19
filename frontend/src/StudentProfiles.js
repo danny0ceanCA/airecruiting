@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react';
-import api from './api';
+import api, { getAccessToken, getRefreshToken } from './api';
 import { useNavigate } from 'react-router-dom';
 
 import AdminMenu from './AdminMenu';
@@ -171,7 +171,7 @@ function StudentProfiles() {
   }, [schoolStudents, activeTab]);
 
   const navigate = useNavigate();
-  const token = localStorage.getItem('token');
+  const token = getAccessToken();
   let decoded = {};
   try {
     decoded = token ? jwt_decode(token) : {};
@@ -198,7 +198,6 @@ function StudentProfiles() {
       setNextCursor(resp.data?.next_cursor || null);
     } catch (err) {
       if (err.response && err.response.status === 401) {
-        localStorage.removeItem('token');
         navigate('/login');
       } else {
         console.error('Failed to fetch students:', err);
@@ -213,7 +212,7 @@ function StudentProfiles() {
           const p = api.post(
             '/metrics/student-load-time',
             { role: decoded.role, duration },
-            { headers: { Authorization: `Bearer ${token}` } }
+            { headers: { Authorization: `Bearer ${getAccessToken()}` } }
           );
           if (p && p.catch) p.catch(() => {});
         } catch (e) {
@@ -233,18 +232,8 @@ function StudentProfiles() {
   };
 
   useEffect(() => {
-    if (!token) {
-      navigate('/login');
-      return;
-    }
-    try {
-      const { exp } = jwt_decode(token);
-      if (exp && Date.now() >= exp * 1000) {
-        localStorage.removeItem('token');
-        navigate('/login');
-        return;
-      }
-    } catch (err) {
+    const refreshToken = getRefreshToken();
+    if (!token && !refreshToken) {
       navigate('/login');
       return;
     }

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import api from "./api";
+import api, { storeTokens } from "./api";
 import { Link, useNavigate } from 'react-router-dom';
 import './LoginForm.css';
 import TopMenu from './TopMenu';
@@ -28,8 +28,9 @@ function LoginForm({ infoContent }) {
       console.log('Response data:', resp.data);
 
       const token = resp.data.token || resp.data.access_token;
+      const refreshToken = resp.data.refresh_token || resp.data.refreshToken;
       if (token) {
-        localStorage.setItem('token', token);
+        storeTokens(token, refreshToken);
         console.log('Token stored in localStorage:', token);
 
         // Primary navigation
