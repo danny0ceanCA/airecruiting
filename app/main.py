@@ -2142,6 +2142,7 @@ def match_worker(job_code: str, send_emails: bool = False, enq_time: float | Non
         process_time.total_seconds(),
         breakdown,
     )
+    logger.info(f"⬅️ match_worker returning results for job {job_code} at {time.time()}")
     return result
 
 
