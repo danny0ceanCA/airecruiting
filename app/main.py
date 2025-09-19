@@ -33,6 +33,7 @@ from openai import OpenAI
 import redis
 import base64
 import asyncio
+import time
 import re
 import numpy as np
 import faiss
@@ -469,11 +470,17 @@ async def get_driving_distance_miles(
     if missing:
         url = "https://maps.googleapis.com/maps/api/distancematrix/json"
         async with httpx.AsyncClient() as client:
-            for i in range(0, len(missing), 25):
-                batch = missing[i : i + 25]
+            if len(missing) > 25:
+                batches = [missing[i : i + 25] for i in range(0, len(missing), 25)]
+            else:
+                batches = [missing]
+
+            for batch in batches:
                 if not batch:
                     continue
-                logger.info("Sending batch of %s valid origins to Google API", len(batch))
+                logger.info(
+                    "Requesting Google API for batch of %s origins", len(batch)
+                )
                 origins_param = "|".join(f"{lat},{lng}" for lat, lng in batch)
                 params = {
                     "origins": origins_param,
@@ -1785,14 +1792,33 @@ async def _perform_match_async(
             poster_code = None
 
     combined = job.get("job_description", "") + " " + ", ".join(job.get("desired_skills", []))
+    embed_start = time.perf_counter()
     try:
         resp = client.embeddings.create(input=combined, model="text-embedding-3-small")
         job_emb = resp.data[0].embedding
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Embedding failed: {str(e)}")
+    embed_elapsed = time.perf_counter() - embed_start
+    if progress_callback:
+        try:
+            progress_callback(
+                "embeddings_complete",
+                {"job_code": job_code, "elapsed": embed_elapsed},
+            )
+        except Exception:
+            logger.exception("Progress callback failed during embeddings event")
 
     ensure_index(len(job_emb))
+    search_start = time.perf_counter()
     if vector_index is None:
+        if progress_callback:
+            try:
+                progress_callback(
+                    "search_complete",
+                    {"job_code": job_code, "elapsed": 0.0, "candidate_count": 0},
+                )
+            except Exception:
+                logger.exception("Progress callback failed during search event")
         return []
 
     matches = []
@@ -1805,6 +1831,19 @@ async def _perform_match_async(
         candidate_emails = [vector_emails[i] for i in idxs[0] if i != -1]
     else:
         candidate_emails = []
+    search_elapsed = time.perf_counter() - search_start
+    if progress_callback:
+        try:
+            progress_callback(
+                "search_complete",
+                {
+                    "job_code": job_code,
+                    "elapsed": search_elapsed,
+                    "candidate_count": len(candidate_emails),
+                },
+            )
+        except Exception:
+            logger.exception("Progress callback failed during search event")
 
     candidates: list[tuple[dict, list, tuple[float, float]]] = []
     candidate_coords: list[tuple[float, float]] = []
@@ -1848,8 +1887,10 @@ async def _perform_match_async(
             logger.exception("Progress callback failed during start event")
 
     distances: dict[tuple[float, float], float] = {}
+    distance_elapsed = 0.0
     if candidate_coords:
         try:
+            distance_start = time.perf_counter()
             coro = get_driving_distance_miles(
                 candidate_coords,
                 dest_lat=job.get("lat"),
@@ -1862,9 +1903,18 @@ async def _perform_match_async(
                 distances = {coord: float(result) for coord in candidate_coords}
         except Exception:
             distances = {}
+        finally:
+            distance_elapsed = time.perf_counter() - distance_start
     if progress_callback:
         try:
-            progress_callback("distances_complete", {"job_code": job_code})
+            progress_callback(
+                "distances_complete",
+                {
+                    "job_code": job_code,
+                    "elapsed": distance_elapsed,
+                    "candidate_count": len(candidate_coords),
+                },
+            )
         except Exception:
             logger.exception("Progress callback failed during distance completion event")
 
@@ -2022,9 +2072,31 @@ def _perform_match(
 def match_worker(job_code: str, send_emails: bool = False, enq_time: float | None = None):
     logger.info(f"🔎 Match worker started for job {job_code}")
     start = datetime.now()
+    timings: dict[str, float] = {}
 
     def progress_callback(event: str, payload: dict[str, Any]) -> None:
         job = payload.get("job_code", job_code)
+        if event == "embeddings_complete":
+            elapsed = payload.get("elapsed")
+            if elapsed is not None:
+                timings["embeddings"] = float(elapsed)
+                logger.info(
+                    "⏱️ Embeddings completed in %.2fs for job %s",
+                    float(elapsed),
+                    job,
+                )
+            return
+        if event == "search_complete":
+            elapsed = payload.get("elapsed")
+            if elapsed is not None:
+                timings["search"] = float(elapsed)
+                logger.info(
+                    "⏱️ Candidate similarity search completed in %.2fs for job %s (%s candidates)",
+                    float(elapsed),
+                    job,
+                    payload.get("candidate_count", 0),
+                )
+            return
         if event == "start":
             logger.info(
                 "Starting match job %s with %s candidates",
@@ -2032,7 +2104,17 @@ def match_worker(job_code: str, send_emails: bool = False, enq_time: float | Non
                 payload.get("candidate_count", 0),
             )
         elif event == "distances_complete":
-            logger.info("Completed distance lookups for %s", job)
+            elapsed = payload.get("elapsed")
+            if elapsed is not None:
+                timings["distances"] = float(elapsed)
+                logger.info(
+                    "⏱️ Distance lookups completed in %.2fs for job %s (%s origins)",
+                    float(elapsed),
+                    job,
+                    payload.get("candidate_count", 0),
+                )
+            else:
+                logger.info("Completed distance lookups for %s", job)
         elif event == "stored":
             logger.info(
                 "✅ Stored %s matches for job %s",
@@ -2046,7 +2128,20 @@ def match_worker(job_code: str, send_emails: bool = False, enq_time: float | Non
     result = _perform_match(job_code, send_emails, enq_time, progress_callback)
     process_time = datetime.now() - start
     redis_client.incrbyfloat("metrics:match_process_time", process_time.total_seconds())
-    logger.info("Finished match job %s in %s", job_code, process_time)
+    breakdown_parts = []
+    if "embeddings" in timings:
+        breakdown_parts.append(f"embeddings {timings['embeddings']:.2f}s")
+    if "search" in timings:
+        breakdown_parts.append(f"search {timings['search']:.2f}s")
+    if "distances" in timings:
+        breakdown_parts.append(f"distances {timings['distances']:.2f}s")
+    breakdown = f" ({', '.join(breakdown_parts)})" if breakdown_parts else ""
+    logger.info(
+        "✅ Finished match job %s in %.2fs%s",
+        job_code,
+        process_time.total_seconds(),
+        breakdown,
+    )
     return result
 
 
