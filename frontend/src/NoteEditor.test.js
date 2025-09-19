@@ -4,7 +4,17 @@ import api from './api';
 import axios from 'axios';
 
 jest.mock('axios', () => {
-  const mockAxios = { get: jest.fn(), post: jest.fn(), create: jest.fn() };
+  const mockAxios = {
+    get: jest.fn(),
+    post: jest.fn(),
+    put: jest.fn(),
+    delete: jest.fn(),
+    create: jest.fn(),
+    interceptors: {
+      request: { use: jest.fn() },
+      response: { use: jest.fn() }
+    }
+  };
   mockAxios.create.mockReturnValue(mockAxios);
   return mockAxios;
 });
