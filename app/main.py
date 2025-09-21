@@ -13,13 +13,14 @@ import logging
 import sys
 from email.message import EmailMessage
 from fastapi import (
-    FastAPI,
-    HTTPException,
+    BackgroundTasks,
     Depends,
+    FastAPI,
+    File,
     Header,
+    HTTPException,
     Request,
     UploadFile,
-    File,
 )
 from fastapi.responses import HTMLResponse, Response, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -1724,23 +1725,49 @@ def update_job(job_code: str, updated: dict, token_data: dict = Depends(get_curr
 def match_job(
     req: JobCodeRequest,
     request: Request,
+    background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_user),
 ):
-    """Enqueue a matching job and return immediately."""
-    enq_time = datetime.now().timestamp()
+    """Launch a background matching job and return immediately."""
+
+    job_id = str(uuid.uuid4())
+    result_key = f"match_job:{job_id}"
+
+    def _run_match_job(job_code: str, redis_key: str, enqueued_at: float) -> None:
+        try:
+            logger.info("🚀 Starting background match job %s", job_code)
+            matches = match_worker(job_code, False, enqueued_at)
+            payload: dict[str, Any] = {"status": "complete", "results": matches}
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.exception("❌ Match job %s failed", job_code)
+            payload = {"status": "failed", "error": str(exc)}
+        redis_client.set(redis_key, json.dumps(payload))
+
+    enqueue_time = datetime.now().timestamp()
     if hasattr(redis_client, "pipeline"):
-        get_queue().enqueue(
-            match_worker,
+        background_tasks.add_task(
+            _run_match_job,
             req.job_code,
-            False,
-            enq_time,
-            job_timeout=600,
-            meta={"request_id": request.state.request_id},
+            result_key,
+            enqueue_time,
         )
-        return {"message": "Match job queued"}
-    else:
-        matches = match_worker(req.job_code, False, enq_time)
-        return {"matches": matches}
+        logger.info(
+            "📨 Dispatched background task for job %s with id %s (request_id=%s)",
+            req.job_code,
+            job_id,
+            getattr(request.state, "request_id", None),
+        )
+        return {"job_id": job_id}
+
+    logger.info(
+        "⚙️ Executing match synchronously for job %s (test mode)", req.job_code
+    )
+    matches = match_worker(req.job_code, False, enqueue_time)
+    redis_client.set(
+        result_key,
+        json.dumps({"status": "complete", "results": matches}),
+    )
+    return {"job_id": job_id, "matches": matches}
 
 
 @app.post("/rematches/{job_code}")
@@ -2212,28 +2239,24 @@ def get_match_results(job_code: str, current_user: dict = Depends(get_current_us
         return {"matches": []}
 
 
-@app.get("/has-match/{job_code}")
-def has_match_data(job_code: str):
-    key = f"match_results:{job_code}"
+@app.get("/has-match/{job_id}")
+def has_match_data(job_id: str):
+    key = f"match_job:{job_id}"
     results_json = redis_client.get(key)
 
-    if results_json is not None:
-        try:
-            results = json.loads(results_json)
-        except json.JSONDecodeError:
-            results = results_json
-        logger.info("✅ Returning match results from Redis for job %s", job_code)
-        return {"has_match": True, "results": results}
+    if results_json is None:
+        return {"status": "pending"}
 
-    job = get_queue().fetch_job(job_code)
-    if job is None:
-        return {"has_match": False, "results": None}
+    try:
+        payload = json.loads(results_json)
+    except json.JSONDecodeError:
+        logger.warning("⚠️ Match payload for job %s was not JSON", job_id)
+        return results_json
 
-    status = job.get_status(refresh=False)
-    if status == "finished":
-        return {"has_match": True, "results": job.result}
+    if isinstance(payload, dict) and "results" in payload:
+        return payload["results"]
 
-    return {"has_match": False, "results": None}
+    return payload
 
 @app.get("/jobs")
 def list_jobs(current_user: dict = Depends(get_current_user)):
