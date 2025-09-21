@@ -2012,9 +2012,14 @@ async def _perform_match_async(
 
 
 
+    redis_payload = {
+        "status": "complete",
+        "results": top_matches,
+    }
     redis_client.set(
-        f"match_results:{job_code}", json.dumps(top_matches)
+        f"match_results:{job_code}", json.dumps(redis_payload)
     )
+    logger.info(f"✅ Marked job {job_code} as complete in Redis")
     if progress_callback:
         try:
             progress_callback(
@@ -2156,60 +2161,74 @@ def get_match_results(job_code: str, current_user: dict = Depends(get_current_us
         return {"matches": []}
 
     try:
-        matches = {m["email"]: m for m in json.loads(results_json)}
-        logger.info("📦 Returning %s stored matches for job %s", len(matches), job_code)
-
-        # Ensure each match has first and last name fields
-        for m in matches.values():
-            if "first_name" not in m or "last_name" not in m:
-                parts = m.get("name", "").split(" ", 1)
-                m.setdefault("first_name", parts[0] if parts else "")
-                m.setdefault("last_name", parts[1] if len(parts) > 1 else "")
-
-        job_raw = redis_client.get(f"job:{job_code}")
-        if not job_raw:
-            raise HTTPException(status_code=404, detail="Job not found")
-
-        job = json.loads(job_raw)
-        assigned = set(job.get("assigned_students", []))
-        placed = set(job.get("placed_students", []))
-        rejected = set(job.get("rejected_students", []))
-
-        existing = set(matches)
-        for email in assigned | placed | rejected:
-            if email not in existing:
-                udata = json.loads(redis_client.get(f"user:{email}") or "{}")
-                first = udata.get("first_name", "")
-                last = udata.get("last_name", "")
-                name = f"{first} {last}".strip()
-                matches[email] = {
-                    "name": name,
-                    "first_name": first,
-                    "last_name": last,
-                    "email": email,
-                    "score": None,
-                }
-
-        for email, m in matches.items():
-            if email in placed:
-                m["status"] = "placed"
-            elif email in assigned:
-                m["status"] = "assigned"
-            elif email in rejected:
-                m["status"] = "rejected"
-            else:
-                m["status"] = None
-
-            notes_raw = job.get("student_notes", {}).get(email, [])
-            notes, latest_note = _normalize_notes(notes_raw)
-            m["notes"] = notes
-            if latest_note is not None:
-                m["note"] = latest_note
-
-        return {"matches": list(matches.values())}
+        payload = json.loads(results_json)
     except Exception as e:
         logger.error("❌ Failed to load match results for %s: %s", job_code, e)
         return {"matches": []}
+
+    if isinstance(payload, dict) and "results" in payload:
+        match_list = payload.get("results")
+    else:
+        match_list = payload
+
+    try:
+        matches = {m["email"]: m for m in match_list}
+    except Exception as e:
+        logger.error(
+            "❌ Unexpected match payload structure for %s: %s", job_code, e
+        )
+        return {"matches": []}
+
+    logger.info("📦 Returning %s stored matches for job %s", len(matches), job_code)
+
+    # Ensure each match has first and last name fields
+    for m in matches.values():
+        if "first_name" not in m or "last_name" not in m:
+            parts = m.get("name", "").split(" ", 1)
+            m.setdefault("first_name", parts[0] if parts else "")
+            m.setdefault("last_name", parts[1] if len(parts) > 1 else "")
+
+    job_raw = redis_client.get(f"job:{job_code}")
+    if not job_raw:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    job = json.loads(job_raw)
+    assigned = set(job.get("assigned_students", []))
+    placed = set(job.get("placed_students", []))
+    rejected = set(job.get("rejected_students", []))
+
+    existing = set(matches)
+    for email in assigned | placed | rejected:
+        if email not in existing:
+            udata = json.loads(redis_client.get(f"user:{email}") or "{}")
+            first = udata.get("first_name", "")
+            last = udata.get("last_name", "")
+            name = f"{first} {last}".strip()
+            matches[email] = {
+                "name": name,
+                "first_name": first,
+                "last_name": last,
+                "email": email,
+                "score": None,
+            }
+
+    for email, m in matches.items():
+        if email in placed:
+            m["status"] = "placed"
+        elif email in assigned:
+            m["status"] = "assigned"
+        elif email in rejected:
+            m["status"] = "rejected"
+        else:
+            m["status"] = None
+
+        notes_raw = job.get("student_notes", {}).get(email, [])
+        notes, latest_note = _normalize_notes(notes_raw)
+        m["notes"] = notes
+        if latest_note is not None:
+            m["note"] = latest_note
+
+    return {"matches": list(matches.values())}
 
 
 @app.get("/has-match/{job_code}")
@@ -2219,9 +2238,15 @@ def has_match_data(job_code: str):
 
     if results_json is not None:
         try:
-            results = json.loads(results_json)
+            payload = json.loads(results_json)
         except json.JSONDecodeError:
-            results = results_json
+            payload = results_json
+
+        if isinstance(payload, dict) and "results" in payload:
+            results = payload.get("results")
+        else:
+            results = payload
+
         logger.info("✅ Returning match results from Redis for job %s", job_code)
         return {"has_match": True, "results": results}
 
