@@ -773,7 +773,10 @@ def test_admin_reset_jobs():
 
     # Seed some job and match data
     main_app.redis_client.set("job:one", json.dumps({"job_code": "one"}))
-    main_app.redis_client.set("match_results:one", json.dumps([]))
+    main_app.redis_client.set(
+        "match_results:one",
+        json.dumps({"status": "complete", "results": []}),
+    )
 
     login_resp = client.post(
         "/login", json={"email": "admin@example.com", "password": "admin123"}
@@ -2173,7 +2176,10 @@ def test_admin_delete_student_cleans_up():
     )
     main_app.redis_client.set("resume:j1:del@example.com", "resume")
     main_app.redis_client.set("job_description:j1:del@example.com", "desc")
-    main_app.redis_client.set("match_results:j1", json.dumps([{"email": "del@example.com"}]))
+    main_app.redis_client.set(
+        "match_results:j1",
+        json.dumps({"status": "complete", "results": [{"email": "del@example.com"}]}),
+    )
 
     login_resp = client.post("/login", json={"email": "admin@example.com", "password": "admin123"})
     token = login_resp.json()["token"]
@@ -2192,7 +2198,9 @@ def test_admin_delete_student_cleans_up():
     assert "del@example.com" not in job.get("placed_students", [])
     assert main_app.redis_client.get("resume:j1:del@example.com") is None
     assert main_app.redis_client.get("job_description:j1:del@example.com") is None
-    assert main_app.redis_client.get("match_results:j1") == "[]"
+    stored_match = main_app.redis_client.get("match_results:j1")
+    assert stored_match is not None
+    assert json.loads(stored_match)["results"] == []
 
 
 def test_delete_student_not_found():
