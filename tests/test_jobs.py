@@ -208,9 +208,9 @@ def test_get_match_results_status(monkeypatch):
     monkeypatch.setattr(main_app.redis_client, "set", fake_set)
 
     job_code = "XYZ"
-    store[f"match_results:{job_code}"] = json.dumps([
-        {"email": "a@example.com", "score": 1.0}
-    ])
+    store[f"match_results:{job_code}"] = json.dumps(
+        {"status": "complete", "results": [{"email": "a@example.com", "score": 1.0}]}
+    )
     store[f"job:{job_code}"] = json.dumps({
         "job_code": job_code,
         "assigned_students": ["a@example.com"],
@@ -238,9 +238,9 @@ def test_get_match_results_status_placed(monkeypatch):
     monkeypatch.setattr(main_app.redis_client, "set", fake_set)
 
     job_code = "XYZ2"
-    store[f"match_results:{job_code}"] = json.dumps([
-        {"email": "b@example.com", "score": 1.0}
-    ])
+    store[f"match_results:{job_code}"] = json.dumps(
+        {"status": "complete", "results": [{"email": "b@example.com", "score": 1.0}]}
+    )
     store[f"job:{job_code}"] = json.dumps({
         "job_code": job_code,
         "assigned_students": [],
@@ -268,7 +268,9 @@ def test_get_match_results_includes_missing_assigned(monkeypatch):
     monkeypatch.setattr(main_app.redis_client, "set", fake_set)
 
     job_code = "XYZ3"
-    store[f"match_results:{job_code}"] = json.dumps([])
+    store[f"match_results:{job_code}"] = json.dumps(
+        {"status": "complete", "results": []}
+    )
     store[f"job:{job_code}"] = json.dumps({
         "job_code": job_code,
         "assigned_students": ["a@example.com", "b@example.com"],
@@ -304,9 +306,9 @@ def test_get_match_results_includes_notes(monkeypatch):
     monkeypatch.setattr(main_app.redis_client, "set", fake_set)
 
     job_code = "XYZ4"
-    store[f"match_results:{job_code}"] = json.dumps([
-        {"email": "a@example.com", "score": 1.0}
-    ])
+    store[f"match_results:{job_code}"] = json.dumps(
+        {"status": "complete", "results": [{"email": "a@example.com", "score": 1.0}]}
+    )
     store[f"job:{job_code}"] = json.dumps({
         "job_code": job_code,
         "assigned_students": [],
@@ -337,10 +339,15 @@ def test_get_match_results_no_duplicate_emails(monkeypatch):
     monkeypatch.setattr(main_app.redis_client, "set", fake_set)
 
     job_code = "XYZ5"
-    store[f"match_results:{job_code}"] = json.dumps([
-        {"email": "dup@example.com", "score": 1.0},
-        {"email": "dup@example.com", "score": 2.0},
-    ])
+    store[f"match_results:{job_code}"] = json.dumps(
+        {
+            "status": "complete",
+            "results": [
+                {"email": "dup@example.com", "score": 1.0},
+                {"email": "dup@example.com", "score": 2.0},
+            ],
+        },
+    )
     store[f"job:{job_code}"] = json.dumps({
         "job_code": job_code,
         "assigned_students": [],
