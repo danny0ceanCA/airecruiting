@@ -13,6 +13,7 @@ from openai import OpenAI
 from backend.app.logging_utils import get_logger
 
 ACTIVITY_LOG_KEY = "activity_logs"
+EMAIL_OPEN_TOKENS_KEY = "email_open_tokens"
 redis_client = None
 send_email = None
 
@@ -122,13 +123,16 @@ def compile_weekly_stats(user_email: str, now: datetime) -> Dict[str, Any]:
             created_emails.add(email)
 
     # From activity logs (POST/PUT /students*) to catch any creations not captured above
-    logs = redis_client.lrange(ACTIVITY_LOG_KEY, 0, -1) or []
-    for raw in logs:
-        raw = _decode(raw)
+    raw_logs = redis_client.lrange(ACTIVITY_LOG_KEY, 0, -1) or []
+    activity_entries: List[Dict[str, Any]] = []
+    for raw in raw_logs:
+        decoded = _decode(raw)
         try:
-            entry = json.loads(raw)
+            entry = json.loads(decoded)
         except Exception:
             continue
+
+        activity_entries.append(entry)
 
         if (entry.get("user") or "").strip().lower() != user_lc:
             continue
@@ -226,13 +230,89 @@ def compile_weekly_stats(user_email: str, now: datetime) -> Dict[str, Any]:
                 ):
                     stats_per_student[email]["note_in_window"] = True
 
+    # ---- Email analytics for the week ----
+    email_tokens: Dict[str, Dict[str, Any]] = {}
+    per_student_email: Dict[str, Dict[str, Any]] = {
+        email: {"sent": 0, "opened": False, "clicked": False}
+        for email in user_students
+    }
+    sent_count = 0
+    opened_students: set[str] = set()
+    clicked_students: set[str] = set()
+
+    try:
+        if hasattr(redis_client, "hscan_iter"):
+            iterator = redis_client.hscan_iter(EMAIL_OPEN_TOKENS_KEY)
+        else:
+            iterator = redis_client.hashes.get(EMAIL_OPEN_TOKENS_KEY, {}).items()  # type: ignore[attr-defined]
+    except Exception:
+        iterator = []
+
+    for token, raw in iterator:
+        decoded = _decode(raw)
+        try:
+            info = json.loads(decoded)
+        except Exception:
+            continue
+
+        email = (info.get("student_email") or "").strip()
+        if not email:
+            continue
+        if email not in user_students:
+            user_students.add(email)
+            stats_per_student.setdefault(
+                email,
+                {
+                    "assigned_jobs": 0,
+                    "placed_jobs": 0,
+                    "latest_note": None,
+                    "notes": [],
+                    "note_in_window": False,
+                },
+            )
+            per_student_email[email] = {"sent": 0, "opened": False, "clicked": False}
+
+        email_tokens[token] = {
+            "student_email": email,
+            "sent": info.get("sent"),
+            "job_code": info.get("job_code"),
+        }
+
+        if _in_window(info.get("sent"), window_start, window_end):
+            sent_count += 1
+            per_student_email[email]["sent"] += 1
+
+    for entry in activity_entries:
+        token = entry.get("token")
+        if not token or token not in email_tokens:
+            continue
+
+        timestamp = entry.get("timestamp")
+        if not _in_window(timestamp, window_start, window_end):
+            continue
+
+        email = email_tokens[token]["student_email"]
+        per_student_email.setdefault(email, {"sent": 0, "opened": False, "clicked": False})
+
+        event = entry.get("event")
+        if event == "email_open":
+            per_student_email[email]["opened"] = True
+            opened_students.add(email)
+        elif event == "email_click":
+            per_student_email[email]["clicked"] = True
+            clicked_students.add(email)
+
+    for email in stats_per_student.keys():
+        per_student_email.setdefault(email, {"sent": 0, "opened": False, "clicked": False})
+
     stats_students: List[Dict[str, Any]] = []
     engaged_count = 0
     assignment_count = 0
     placement_count = 0
     notes_count = 0
 
-    for email, data in stats_per_student.items():
+    for email in sorted(stats_per_student.keys()):
+        data = stats_per_student[email]
         assigned = data["assigned_jobs"]
         placed = data["placed_jobs"]
         all_notes = data["notes"]
@@ -251,6 +331,7 @@ def compile_weekly_stats(user_email: str, now: datetime) -> Dict[str, Any]:
             or datetime.min.replace(tzinfo=timezone.utc)
         )
 
+        email_metrics = per_student_email.get(email, {"sent": 0, "opened": False, "clicked": False})
         stats_students.append(
             {
                 "email": email,
@@ -258,8 +339,26 @@ def compile_weekly_stats(user_email: str, now: datetime) -> Dict[str, Any]:
                 "placed_jobs": placed,
                 "latest_note": latest_note,
                 "notes": all_notes,
+                "email_metrics": email_metrics,
             }
         )
+
+    email_analytics = {
+        "sent_count": sent_count,
+        "unique_open_count": len(opened_students),
+        "unique_click_count": len(clicked_students),
+        "click_students": sorted(clicked_students),
+        "open_students": sorted(opened_students),
+        "per_student": [
+            {
+                "email": student["email"],
+                "sent": student["email_metrics"]["sent"],
+                "opened": student["email_metrics"]["opened"],
+                "clicked": student["email_metrics"]["clicked"],
+            }
+            for student in stats_students
+        ],
+    }
 
     return {
         "created_count": len(created_emails),
@@ -271,6 +370,7 @@ def compile_weekly_stats(user_email: str, now: datetime) -> Dict[str, Any]:
         "window_start": window_start.isoformat(),
         "window_end": window_end.isoformat(),
         "user_email": user_email,
+        "email_analytics": email_analytics,
     }
 
 
@@ -278,6 +378,13 @@ def compile_all_weekly_stats(now: datetime) -> Dict[str, Any]:
     """Aggregate weekly stats for all career staff (for admin summaries)."""
     _ensure_dependencies()
     users: Dict[str, Any] = {}
+    agg_email = {
+        "sent_count": 0,
+        "unique_open_count": 0,
+        "unique_click_count": 0,
+        "click_students": set(),
+        "open_students": set(),
+    }
     for key in redis_client.scan_iter("user:*"):
         raw = _decode(redis_client.get(key))
         if not raw:
@@ -289,8 +396,27 @@ def compile_all_weekly_stats(now: datetime) -> Dict[str, Any]:
         if user.get("role") != "career":
             continue
         email = key.split("user:", 1)[1]
-        users[email] = compile_weekly_stats(email, now)
-    return {"users": users, "window_end": now.isoformat()}
+        stats = compile_weekly_stats(email, now)
+        users[email] = stats
+        email_stats = stats.get("email_analytics", {})
+        agg_email["sent_count"] += email_stats.get("sent_count", 0)
+        agg_email["unique_open_count"] += email_stats.get("unique_open_count", 0)
+        agg_email["unique_click_count"] += email_stats.get("unique_click_count", 0)
+        agg_email["click_students"].update(email_stats.get("click_students", []))
+        agg_email["open_students"].update(email_stats.get("open_students", []))
+
+    agg_email_summary = {
+        "sent_count": agg_email["sent_count"],
+        "unique_open_count": agg_email["unique_open_count"],
+        "unique_click_count": agg_email["unique_click_count"],
+        "click_students": sorted(agg_email["click_students"]),
+        "open_students": sorted(agg_email["open_students"]),
+    }
+    return {
+        "users": users,
+        "window_end": now.isoformat(),
+        "email_analytics": agg_email_summary,
+    }
 
 
 def build_summary_narrative(stats: Dict[str, Any], user_name: str) -> str:
@@ -306,6 +432,17 @@ def build_summary_narrative(stats: Dict[str, Any], user_name: str) -> str:
     assignment_count = stats.get("assignment_count", 0)
     placement_count = stats.get("placement_count", 0)
     notes_count = stats.get("notes_count", 0)
+
+    email_stats = stats.get("email_analytics", {}) or {}
+    sent_count = email_stats.get("sent_count", 0)
+    open_count = email_stats.get("unique_open_count", 0)
+    click_count = email_stats.get("unique_click_count", 0)
+    click_students = email_stats.get("click_students") or []
+    click_line = (
+        f"• Apply link clicks: {click_count} ({', '.join(click_students)})"
+        if click_students
+        else f"• Apply link clicks: {click_count}"
+    )
 
     prompt = f"""
 You are generating a concise, upbeat weekly activity summary email for {user_name}.
@@ -324,6 +461,11 @@ Key Numbers
 • {assignment_count} job assignments
 • {placement_count} job placements
 • Notes recorded for {notes_count} students this week
+
+Email Analytics
+• {sent_count} outreach emails sent
+• {open_count} unique opens
+{click_line}
 
 Short Insights
 • 1–3 short bullet points highlighting notable trends or outcomes based on the Stats JSON.

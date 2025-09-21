@@ -1,5 +1,8 @@
 import json
+import os
 from datetime import datetime, timezone, timedelta
+
+os.environ.setdefault("OPENAI_API_KEY", "test-key")
 
 from backend.app.services import summary
 
@@ -9,6 +12,7 @@ class DummyRedis:
         self.store = {}
         self.lists = {}
         self.sets = {}
+        self.hashes = {}
 
     def set(self, key, value):
         self.store[key] = value
@@ -28,7 +32,7 @@ class DummyRedis:
     def scan_iter(self, pattern="*"):
         from fnmatch import fnmatch
 
-        for k in list(self.store.keys()) + list(self.lists.keys()):
+        for k in list(self.store.keys()) + list(self.lists.keys()) + list(self.hashes.keys()):
             if fnmatch(k, pattern):
                 yield k
 
@@ -50,6 +54,16 @@ class DummyRedis:
         if key in self.sets:
             self.sets[key].discard(value)
 
+    def hset(self, key, field, value):
+        self.hashes.setdefault(key, {})[field] = value
+
+    def hget(self, key, field):
+        return self.hashes.get(key, {}).get(field)
+
+    def hscan_iter(self, key):
+        for field, value in self.hashes.get(key, {}).items():
+            yield field, value
+
 
 
 def test_admin_weekly_summary():
@@ -60,15 +74,34 @@ def test_admin_weekly_summary():
     summary.redis_client.set("user:career@example.com", json.dumps({"role": "career"}))
     summary.redis_client.set("user:admin@example.com", json.dumps({"role": "admin"}))
 
+    token = "tok-1"
+    sent_ts = now.isoformat()
+    summary.redis_client.hset(
+        summary.EMAIL_OPEN_TOKENS_KEY,
+        token,
+        json.dumps(
+            {
+                "student_email": "stu@example.com",
+                "job_code": "1",
+                "sent": sent_ts,
+            }
+        ),
+    )
+
     # Activity log for career user
-    log = {
+    creation_log = {
         "user": "career@example.com",
         "method": "POST",
         "path": "/students",
         "timestamp": now.isoformat(),
         "student_email": "stu@example.com",
     }
-    summary.redis_client.lpush(summary.ACTIVITY_LOG_KEY, json.dumps(log))
+    summary.redis_client.lpush(summary.ACTIVITY_LOG_KEY, json.dumps(creation_log))
+
+    open_log = {"event": "email_open", "token": token, "timestamp": sent_ts}
+    click_log = {"event": "email_click", "token": token, "timestamp": sent_ts}
+    summary.redis_client.lpush(summary.ACTIVITY_LOG_KEY, json.dumps(open_log))
+    summary.redis_client.lpush(summary.ACTIVITY_LOG_KEY, json.dumps(click_log))
 
     # Job record
     job = {
@@ -112,6 +145,10 @@ def test_admin_weekly_summary():
     assert (
         captured_stats["stats"]["users"]["career@example.com"]["created_count"] == 1
     )
+    email_stats = captured_stats["stats"]["email_analytics"]
+    assert email_stats["sent_count"] == 1
+    assert email_stats["unique_click_count"] == 1
+    assert email_stats["click_students"] == ["stu@example.com"]
 
 
 def test_compile_weekly_stats_handles_naive_timestamp():
@@ -140,6 +177,7 @@ def test_compile_weekly_stats_handles_naive_timestamp():
     stats = summary.compile_weekly_stats("career@example.com", now)
     assert stats["created_count"] == 1
     assert stats["students"][0]["latest_note"]["text"] == "note"
+    assert stats["email_analytics"]["sent_count"] == 0
 
 
 def test_compile_weekly_stats_includes_all_notes():
@@ -172,6 +210,7 @@ def test_compile_weekly_stats_includes_all_notes():
     notes = stats["students"][0]["notes"]
     assert [n["text"] for n in notes] == ["old", "new"]
     assert stats["notes_count"] == 1
+    assert stats["email_analytics"]["unique_open_count"] == 0
 
 
 def test_preexisting_student_assignments_counted():
@@ -198,6 +237,7 @@ def test_preexisting_student_assignments_counted():
     stats = summary.compile_weekly_stats("career@example.com", now)
     assert stats["created_count"] == 0
     assert stats["assignment_count"] == 1
+    assert stats["email_analytics"]["unique_click_count"] == 0
     assert stats["placement_count"] == 1
     assert stats["engaged_count"] == 1
     assert any(
