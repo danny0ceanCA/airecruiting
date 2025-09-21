@@ -2214,8 +2214,26 @@ def get_match_results(job_code: str, current_user: dict = Depends(get_current_us
 
 @app.get("/has-match/{job_code}")
 def has_match_data(job_code: str):
-    exists = redis_client.exists(f"match_results:{job_code}")
-    return {"has_match": bool(exists)}
+    key = f"match_results:{job_code}"
+    results_json = redis_client.get(key)
+
+    if results_json is not None:
+        try:
+            results = json.loads(results_json)
+        except json.JSONDecodeError:
+            results = results_json
+        logger.info("✅ Returning match results from Redis for job %s", job_code)
+        return {"has_match": True, "results": results}
+
+    job = get_queue().fetch_job(job_code)
+    if job is None:
+        return {"has_match": False, "results": None}
+
+    status = job.get_status(refresh=False)
+    if status == "finished":
+        return {"has_match": True, "results": job.result}
+
+    return {"has_match": False, "results": None}
 
 @app.get("/jobs")
 def list_jobs(current_user: dict = Depends(get_current_user)):
