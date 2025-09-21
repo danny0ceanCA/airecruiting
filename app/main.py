@@ -1731,24 +1731,23 @@ def match_job(
     """Launch a background matching job and return immediately."""
 
     job_id = str(uuid.uuid4())
-    result_key = f"match_job:{job_id}"
 
-    def _run_match_job(job_code: str, redis_key: str, enqueued_at: float) -> None:
+    def _run_match_job(job_code: str, job_id: str, enqueued_at: float) -> None:
+        redis_key = f"match_job:{job_id}"
         try:
             logger.info("🚀 Starting background match job %s", job_code)
-            matches = match_worker(job_code, False, enqueued_at)
-            payload: dict[str, Any] = {"status": "complete", "results": matches}
+            match_worker(job_code, False, enqueued_at, job_id=job_id)
         except Exception as exc:  # pragma: no cover - defensive
             logger.exception("❌ Match job %s failed", job_code)
-            payload = {"status": "failed", "error": str(exc)}
-        redis_client.set(redis_key, json.dumps(payload))
+            payload = {"status": "failed", "results": [], "error": str(exc)}
+            redis_client.set(redis_key, json.dumps(payload))
 
     enqueue_time = datetime.now().timestamp()
     if hasattr(redis_client, "pipeline"):
         background_tasks.add_task(
             _run_match_job,
             req.job_code,
-            result_key,
+            job_id,
             enqueue_time,
         )
         logger.info(
@@ -1762,11 +1761,7 @@ def match_job(
     logger.info(
         "⚙️ Executing match synchronously for job %s (test mode)", req.job_code
     )
-    matches = match_worker(req.job_code, False, enqueue_time)
-    redis_client.set(
-        result_key,
-        json.dumps({"status": "complete", "results": matches}),
-    )
+    matches = match_worker(req.job_code, False, enqueue_time, job_id=job_id)
     return {"job_id": job_id, "matches": matches}
 
 
@@ -1798,6 +1793,7 @@ async def _perform_match_async(
     send_emails: bool = False,
     enq_time: float | None = None,
     progress_callback: Callable[[str, dict[str, Any]], None] | None = None,
+    job_id: str | None = None,
 ):
     key = f"job:{job_code}"
     raw = redis_client.get(key)
@@ -2039,8 +2035,18 @@ async def _perform_match_async(
 
 
 
+    payload = {"status": "complete", "results": top_matches}
+    if job_id:
+        redis_client.set(
+            f"match_job:{job_id}", json.dumps(payload)
+        )
+        logger.info(
+            "✅ Marked job %s as complete in Redis with %s results",
+            job_id,
+            len(top_matches),
+        )
     redis_client.set(
-        f"match_results:{job_code}", json.dumps(top_matches)
+        f"match_results:{job_code}", json.dumps(payload)
     )
     if progress_callback:
         try:
@@ -2089,14 +2095,26 @@ def _perform_match(
     send_emails: bool = False,
     enq_time: float | None = None,
     progress_callback: Callable[[str, dict[str, Any]], None] | None = None,
+    job_id: str | None = None,
 ):
     """Synchronous wrapper for background execution."""
     return asyncio.run(
-        _perform_match_async(job_code, send_emails, enq_time, progress_callback)
+        _perform_match_async(
+            job_code,
+            send_emails,
+            enq_time,
+            progress_callback,
+            job_id=job_id,
+        )
     )
 
 
-def match_worker(job_code: str, send_emails: bool = False, enq_time: float | None = None):
+def match_worker(
+    job_code: str,
+    send_emails: bool = False,
+    enq_time: float | None = None,
+    job_id: str | None = None,
+):
     logger.info(f"🔎 Match worker started for job {job_code}")
     start = datetime.now()
     timings: dict[str, float] = {}
@@ -2152,7 +2170,13 @@ def match_worker(job_code: str, send_emails: bool = False, enq_time: float | Non
     if enq_time is not None:
         queue_time = start - datetime.fromtimestamp(enq_time)
         redis_client.incrbyfloat("metrics:match_queue_time", queue_time.total_seconds())
-    result = _perform_match(job_code, send_emails, enq_time, progress_callback)
+    result = _perform_match(
+        job_code,
+        send_emails,
+        enq_time,
+        progress_callback,
+        job_id=job_id,
+    )
     process_time = datetime.now() - start
     redis_client.incrbyfloat("metrics:match_process_time", process_time.total_seconds())
     breakdown_parts = []
@@ -2183,7 +2207,20 @@ def get_match_results(job_code: str, current_user: dict = Depends(get_current_us
         return {"matches": []}
 
     try:
-        matches = {m["email"]: m for m in json.loads(results_json)}
+        parsed = json.loads(results_json)
+    except json.JSONDecodeError:
+        logger.warning("⚠️ Stored match payload for job %s was not JSON", job_code)
+        return {"matches": []}
+
+    if isinstance(parsed, dict):
+        stored_matches = parsed.get("results", [])
+    elif isinstance(parsed, list):
+        stored_matches = parsed
+    else:
+        stored_matches = []
+
+    try:
+        matches = {m["email"]: m for m in stored_matches}
         logger.info("📦 Returning %s stored matches for job %s", len(matches), job_code)
 
         # Ensure each match has first and last name fields
@@ -2251,12 +2288,20 @@ def has_match_data(job_id: str):
         payload = json.loads(results_json)
     except json.JSONDecodeError:
         logger.warning("⚠️ Match payload for job %s was not JSON", job_id)
-        return results_json
+        return {"has_match": True, "results": []}
 
-    if isinstance(payload, dict) and "results" in payload:
-        return payload["results"]
+    results: list[Any]
+    if isinstance(payload, dict):
+        results = payload.get("results", [])
+    elif isinstance(payload, list):
+        results = payload
+    else:
+        results = []
 
-    return payload
+    logger.info(
+        "📬 Returning %s results for match job %s", len(results), job_id
+    )
+    return {"has_match": True, "results": results}
 
 @app.get("/jobs")
 def list_jobs(current_user: dict = Depends(get_current_user)):
@@ -3417,12 +3462,23 @@ def delete_student(email: str, current_user: dict = Depends(get_current_user)):
         if not raw:
             continue
         try:
-            matches = json.loads(raw)
-            new_matches = [m for m in matches if m.get("email") != email]
-            if len(new_matches) != len(matches):
-                redis_client.set(match_key, json.dumps(new_matches))
+            data = json.loads(raw)
         except Exception:
             continue
+
+        if isinstance(data, dict):
+            matches = data.get("results", [])
+            status = data.get("status", "complete")
+        elif isinstance(data, list):
+            matches = data
+            status = "complete"
+        else:
+            continue
+
+        new_matches = [m for m in matches if m.get("email") != email]
+        if len(new_matches) != len(matches):
+            updated_payload = {"status": status, "results": new_matches}
+            redis_client.set(match_key, json.dumps(updated_payload))
 
     return {"message": f"Student {email} and related data deleted successfully"}
 
