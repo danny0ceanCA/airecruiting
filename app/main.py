@@ -1969,6 +1969,16 @@ async def _perform_match_async(
 
     candidates: list[tuple[dict, list, tuple[float, float]]] = []
     candidate_coords: list[tuple[float, float]] = []
+    filtering_wall_start = time.time()
+    filtering_perf_start = time.perf_counter()
+    logger.info(
+        "🔎 Filtering candidates started at %.6f with %d raw candidates for job %s (job_id=%s)",
+        filtering_wall_start,
+        len(candidate_emails),
+        job_code,
+        job_identifier,
+    )
+
     for email in candidate_emails:
         skey = resolve_student_key(email)
         student_raw = redis_client.get(skey) if skey else None
@@ -2078,6 +2088,17 @@ async def _perform_match_async(
             }
         )
 
+    filtering_wall_end = time.time()
+    filtering_perf_elapsed = time.perf_counter() - filtering_perf_start
+    logger.info(
+        "✅ Filtering completed at %.6f, kept %d candidates, duration=%.2fs for job %s (job_id=%s)",
+        filtering_wall_end,
+        len(matches),
+        filtering_perf_elapsed,
+        job_code,
+        job_identifier,
+    )
+
     # Deduplicate by email
     dedup: dict[str, dict] = {}
     for m in matches:
@@ -2181,18 +2202,14 @@ async def _perform_match_async(
 
     payload = {"status": "complete", "results": top_matches}
     storage_id = job_id or job_code
+    store_wall_start = time.time()
+    store_perf_start = time.perf_counter()
     logger.info(
-        "💾 Preparing to store %s results for job %s (job_id=%s)",
+        "💾 Storing %s matches to Redis started at %.6f for job %s (job_id=%s)",
         len(top_matches),
+        store_wall_start,
         job_code,
         job_identifier,
-    )
-    t_store = time.perf_counter()
-    logger.info(
-        "💾 Starting Redis write for job %s (job_id=%s) with %s matches",
-        job_code,
-        job_identifier,
-        len(top_matches),
     )
     final_results = top_matches
     logger.info(
@@ -2201,10 +2218,12 @@ async def _perform_match_async(
         job_identifier,
     )
     redis_client.set(f"match_job:{storage_id}", json.dumps(payload))
-    elapsed_store = time.perf_counter() - t_store
+    store_perf_elapsed = time.perf_counter() - store_perf_start
+    store_wall_end = time.time()
     logger.info(
-        "✅ Redis write completed in %.2fs for job %s (job_id=%s)",
-        elapsed_store,
+        "✅ Storing completed at %.6f, duration=%.2fs for job %s (job_id=%s)",
+        store_wall_end,
+        store_perf_elapsed,
         job_code,
         job_identifier,
     )
