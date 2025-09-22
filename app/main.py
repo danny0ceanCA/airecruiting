@@ -750,7 +750,7 @@ def on_startup():
     init_default_school_codes()
     init_default_licenses()
     init_default_rss_feeds()
-    keys = redis_client.keys("match_results:*")
+    keys = redis_client.keys("match_job:*")
     logger.info("🔎 Found %s saved match sets at startup.", len(keys))
 
 # -------- Models -------- #
@@ -1739,8 +1739,13 @@ def match_job(
             match_worker(job_code, False, enqueued_at, job_id=job_id)
         except Exception as exc:  # pragma: no cover - defensive
             logger.exception("❌ Match job %s failed", job_code)
-            payload = {"status": "failed", "results": [], "error": str(exc)}
+            payload = {
+                "status": "failed",
+                "results": [],
+                "error": str(exc),
+            }
             redis_client.set(redis_key, json.dumps(payload))
+            redis_client.set(f"match_job_lookup:{job_code}", job_id)
 
     enqueue_time = datetime.now().timestamp()
     if hasattr(redis_client, "pipeline"):
@@ -1801,7 +1806,11 @@ async def _perform_match_async(
         raise HTTPException(status_code=404, detail="Job not found")
     job = json.loads(raw)
     job.setdefault("uninterested_students", [])
-    was_matched_before = bool(redis_client.exists(f"match_results:{job_code}"))
+    lookup_id = redis_client.get(f"match_job_lookup:{job_code}")
+    was_matched_before = bool(
+        redis_client.exists(f"match_job:{job_code}")
+        or (lookup_id and redis_client.exists(f"match_job:{lookup_id}"))
+    )
 
     required_license = license_to_code(job.get("required_license"))
 
@@ -2036,18 +2045,15 @@ async def _perform_match_async(
 
 
     payload = {"status": "complete", "results": top_matches}
+    storage_id = job_id or job_code
+    redis_client.set(f"match_job:{storage_id}", json.dumps(payload))
     if job_id:
-        redis_client.set(
-            f"match_job:{job_id}", json.dumps(payload)
-        )
-        logger.info(
-            "✅ Marked job %s as complete in Redis with %s results",
-            job_id,
-            len(top_matches),
-        )
-    redis_client.set(
-        f"match_results:{job_code}", json.dumps(payload)
+        redis_client.set(f"match_job_lookup:{job_code}", storage_id)
+    logger.info(
+        f"✅ Marked job {storage_id} as complete in Redis with {len(top_matches)} results"
     )
+    if job_id and job_id != job_code:
+        redis_client.delete(f"match_job:{job_code}")
     if progress_callback:
         try:
             progress_callback(
@@ -2199,8 +2205,25 @@ def match_worker(
 
 @app.get("/match/{job_code}")
 def get_match_results(job_code: str, current_user: dict = Depends(get_current_user)):
-    key = f"match_results:{job_code}"
-    results_json = redis_client.get(key)
+    lookup_key = f"match_job_lookup:{job_code}"
+    storage_id = redis_client.get(lookup_key)
+    candidate_keys: list[str] = []
+    if storage_id:
+        candidate_keys.append(f"match_job:{storage_id}")
+    candidate_keys.append(f"match_job:{job_code}")
+
+    results_json: str | None = None
+    for candidate in candidate_keys:
+        payload_json = redis_client.get(candidate)
+        if payload_json is not None:
+            results_json = payload_json
+            break
+
+    if results_json is None:
+        legacy_key = f"match_results:{job_code}"
+        legacy_json = redis_client.get(legacy_key)
+        if legacy_json is not None:
+            results_json = legacy_json
 
     if results_json is None:
         logger.warning("⚠️ No match results found for job %s", job_code)
@@ -2298,9 +2321,7 @@ def has_match_data(job_id: str):
     else:
         results = []
 
-    logger.info(
-        "📬 Returning %s results for match job %s", len(results), job_id
-    )
+    logger.info(f"✅ Returning {len(results)} results for job {job_id}")
     return {"has_match": True, "results": results}
 
 @app.get("/jobs")
@@ -2326,13 +2347,19 @@ def delete_job(job_code: str, token_data: dict = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Admin access required")
 
     job_key = f"job:{job_code}"
-    match_key = f"match_results:{job_code}"
+    match_key = f"match_job:{job_code}"
+    lookup_key = f"match_job_lookup:{job_code}"
 
     if not redis_client.exists(job_key):
         raise HTTPException(status_code=404, detail="Job not found")
 
     redis_client.delete(job_key)
     redis_client.delete(match_key)
+    match_id = redis_client.get(lookup_key)
+    if match_id:
+        redis_client.delete(f"match_job:{match_id}")
+    redis_client.delete(lookup_key)
+    redis_client.delete(f"match_results:{job_code}")
 
     return {"message": f"Job {job_code} deleted successfully"}
 
@@ -3373,6 +3400,10 @@ def reset_jobs(current_user: dict = Depends(get_current_user)):
     for key in list(redis_client.scan_iter("job:*")):
         redis_client.delete(key)
         deleted += 1
+    for key in list(redis_client.scan_iter("match_job:*")):
+        redis_client.delete(key)
+    for key in list(redis_client.scan_iter("match_job_lookup:*")):
+        redis_client.delete(key)
     for key in list(redis_client.scan_iter("match_results:*")):
         redis_client.delete(key)
 
@@ -3457,6 +3488,29 @@ def delete_student(email: str, current_user: dict = Depends(get_current_user)):
         redis_client.delete(key)
 
     # (Optional) Clean match results if student appears
+    for match_key in redis_client.scan_iter("match_job:*"):
+        raw = redis_client.get(match_key)
+        if not raw:
+            continue
+        try:
+            data = json.loads(raw)
+        except Exception:
+            continue
+
+        if isinstance(data, dict):
+            matches = data.get("results", [])
+            status = data.get("status", "complete")
+        elif isinstance(data, list):
+            matches = data
+            status = "complete"
+        else:
+            continue
+
+        new_matches = [m for m in matches if m.get("email") != email]
+        if len(new_matches) != len(matches):
+            updated_payload = {"status": status, "results": new_matches}
+            redis_client.set(match_key, json.dumps(updated_payload))
+
     for match_key in redis_client.scan_iter("match_results:*"):
         raw = redis_client.get(match_key)
         if not raw:
