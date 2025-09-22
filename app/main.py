@@ -399,6 +399,9 @@ async def get_driving_distance_miles(
     orig_lng: float | None = None,
     dest_lat: float | None = None,
     dest_lng: float | None = None,
+    *,
+    job_code: str | None = None,
+    job_id: str | None = None,
 ) -> float | dict[tuple[float, float], float]:
     """Return driving distance(s) in miles using Google Distance Matrix.
 
@@ -476,7 +479,15 @@ async def get_driving_distance_miles(
             else:
                 batches = [missing]
 
-            for batch in batches:
+            logger.info(
+                "🌍 Starting distance lookups for %s origins across %s batches (job=%s, job_id=%s)",
+                len(origins),
+                len(batches),
+                job_code or "n/a",
+                job_id or "n/a",
+            )
+            elapsed_total = 0.0
+            for idx, batch in enumerate(batches):
                 if not batch:
                     continue
                 logger.info(
@@ -491,7 +502,17 @@ async def get_driving_distance_miles(
                 }
                 try:
                     logger.info("Requesting %s params=%s", url, params)
+                    t0 = time.perf_counter()
                     resp = await client.get(url, params=params)
+                    elapsed = time.perf_counter() - t0
+                    elapsed_total += elapsed
+                    logger.info(
+                        "   ↳ Batch %s/%s finished in %.2fs (%s origins)",
+                        idx + 1,
+                        len(batches),
+                        elapsed,
+                        len(batch),
+                    )
                 except Exception:
                     logger.exception("Error requesting distance matrix")
                     raise
@@ -524,6 +545,13 @@ async def get_driving_distance_miles(
                     cache_key = f"distance:{origin[0]}:{origin[1]}:{dest_latitude}:{dest_longitude}"
                     redis_client.setex(cache_key, ttl_seconds, miles)
                     results[origin] = miles
+
+            logger.info(
+                "⏱️ Distance lookups completed in %.2fs for job %s (job_id=%s)",
+                elapsed_total,
+                job_code or "n/a",
+                job_id or "n/a",
+            )
 
     if provided_list:
         return results
@@ -1965,6 +1993,8 @@ async def _perform_match_async(
                 candidate_coords,
                 dest_lat=job.get("lat"),
                 dest_lng=job.get("lng"),
+                job_code=job_code,
+                job_id=job_identifier,
             )
             result = await coro if asyncio.iscoroutine(coro) else coro
             if isinstance(result, dict):
