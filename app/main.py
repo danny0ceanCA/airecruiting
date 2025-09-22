@@ -1800,10 +1800,24 @@ async def _perform_match_async(
     progress_callback: Callable[[str, dict[str, Any]], None] | None = None,
     job_id: str | None = None,
 ):
+    overall_start = time.perf_counter()
+    job_identifier = job_id or "n/a"
+    logger.info(
+        "⏱️ _perform_match_async started for job %s (job_id=%s) at %.6f",
+        job_code,
+        job_identifier,
+        time.time(),
+    )
     key = f"job:{job_code}"
     raw = redis_client.get(key)
     if not raw:
         raise HTTPException(status_code=404, detail="Job not found")
+    logger.info(
+        "📥 Retrieved job payload for job %s (job_id=%s) in %.2fs",
+        job_code,
+        job_identifier,
+        time.perf_counter() - overall_start,
+    )
     job = json.loads(raw)
     job.setdefault("uninterested_students", [])
     lookup_id = redis_client.get(f"match_job_lookup:{job_code}")
@@ -1830,7 +1844,16 @@ async def _perform_match_async(
         job_emb = resp.data[0].embedding
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Embedding failed: {str(e)}")
-    embed_elapsed = time.perf_counter() - embed_start
+    embed_end = time.perf_counter()
+    embed_elapsed = embed_end - embed_start
+    logger.info(
+        "⏱️ Embeddings started at %.6f, completed at %.6f, duration=%.2fs for job %s (job_id=%s)",
+        embed_start,
+        embed_end,
+        embed_elapsed,
+        job_code,
+        job_identifier,
+    )
     if progress_callback:
         try:
             progress_callback(
@@ -1863,7 +1886,16 @@ async def _perform_match_async(
         candidate_emails = [vector_emails[i] for i in idxs[0] if i != -1]
     else:
         candidate_emails = []
-    search_elapsed = time.perf_counter() - search_start
+    search_end = time.perf_counter()
+    search_elapsed = search_end - search_start
+    logger.info(
+        "🔍 FAISS similarity search completed at %.6f (duration=%.2fs) for job %s (job_id=%s) with %s candidates",
+        search_end,
+        search_elapsed,
+        job_code,
+        job_identifier,
+        len(candidate_emails),
+    )
     if progress_callback:
         try:
             progress_callback(
@@ -1909,6 +1941,12 @@ async def _perform_match_async(
         except Exception:
             continue
 
+    logger.info(
+        "🗺️ Preparing distance lookups for job %s (job_id=%s) with %s origins",
+        job_code,
+        job_identifier,
+        len(candidate_coords),
+    )
     if progress_callback:
         try:
             progress_callback(
@@ -1949,6 +1987,13 @@ async def _perform_match_async(
             )
         except Exception:
             logger.exception("Progress callback failed during distance completion event")
+    logger.info(
+        "⏱️ Distance lookups completed in %.2fs for job %s (job_id=%s) (%s origins)",
+        distance_elapsed,
+        job_code,
+        job_identifier,
+        len(candidate_coords),
+    )
 
     for student, emb, coord in candidates:
         dist = distances.get(coord)
@@ -1973,6 +2018,12 @@ async def _perform_match_async(
     for m in matches:
         dedup[m["email"]] = m
     matches = list(dedup.values())
+    logger.info(
+        "🧮 Raw matches ready for filtering for job %s (job_id=%s): %s candidates",
+        job_code,
+        job_identifier,
+        len(matches),
+    )
 
     # Include applicant user records with a matching institutional code when no
     # student profile exists for them
@@ -2041,16 +2092,32 @@ async def _perform_match_async(
         else:
             m["status"] = None
 
-
-
+    logger.info(
+        "🎯 Filtered top matches for job %s (job_id=%s): keeping %s candidates",
+        job_code,
+        job_identifier,
+        len(top_matches),
+    )
 
     payload = {"status": "complete", "results": top_matches}
     storage_id = job_id or job_code
+    logger.info(
+        "💾 Preparing to store %s results for job %s (job_id=%s)",
+        len(top_matches),
+        job_code,
+        job_identifier,
+    )
     redis_client.set(f"match_job:{storage_id}", json.dumps(payload))
     if job_id:
         redis_client.set(f"match_job_lookup:{job_code}", storage_id)
+    store_time = time.perf_counter()
     logger.info(
-        f"✅ Marked job {storage_id} as complete in Redis with {len(top_matches)} results"
+        "✅ Match results persisted for job %s (job_id=%s) at %.6f (elapsed %.2fs) with payload size %s",
+        job_code,
+        job_identifier,
+        store_time,
+        store_time - overall_start,
+        len(top_matches),
     )
     if job_id and job_id != job_code:
         redis_client.delete(f"match_job:{job_code}")
@@ -2064,6 +2131,13 @@ async def _perform_match_async(
             logger.exception("Progress callback failed during stored event")
 
     if send_emails:
+        logger.info(
+            "📧 Preparing to send %s notification emails for job %s (job_id=%s)",
+            len(top_matches),
+            job_code,
+            job_identifier,
+        )
+        emails_sent = 0
         for m in top_matches:
             send_email(
                 m["email"],
@@ -2074,6 +2148,13 @@ async def _perform_match_async(
                     "This means that your resume is being reviewed by a recruiter to determine compatibility with any open assignments within their organization."
                 ),
             )
+            emails_sent += 1
+        logger.info(
+            "📬 Sent %s notification emails for job %s (job_id=%s)",
+            emails_sent,
+            job_code,
+            job_identifier,
+        )
 
     # Metrics tracking
     try:
@@ -2121,8 +2202,15 @@ def match_worker(
     enq_time: float | None = None,
     job_id: str | None = None,
 ):
-    logger.info(f"🔎 Match worker started for job {job_code}")
+    job_identifier = job_id or "n/a"
     start = datetime.now()
+    worker_start = time.perf_counter()
+    logger.info(
+        "🔎 match_worker started for job %s (job_id=%s) at %.6f",
+        job_code,
+        job_identifier,
+        time.time(),
+    )
     timings: dict[str, float] = {}
 
     def progress_callback(event: str, payload: dict[str, Any]) -> None:
@@ -2132,9 +2220,10 @@ def match_worker(
             if elapsed is not None:
                 timings["embeddings"] = float(elapsed)
                 logger.info(
-                    "⏱️ Embeddings completed in %.2fs for job %s",
+                    "⏱️ Embeddings completed in %.2fs for job %s (job_id=%s)",
                     float(elapsed),
                     job,
+                    job_identifier,
                 )
             return
         if event == "search_complete":
@@ -2142,16 +2231,18 @@ def match_worker(
             if elapsed is not None:
                 timings["search"] = float(elapsed)
                 logger.info(
-                    "⏱️ Candidate similarity search completed in %.2fs for job %s (%s candidates)",
+                    "⏱️ Candidate similarity search completed in %.2fs for job %s (job_id=%s) (%s candidates)",
                     float(elapsed),
                     job,
+                    job_identifier,
                     payload.get("candidate_count", 0),
                 )
             return
         if event == "start":
             logger.info(
-                "Starting match job %s with %s candidates",
+                "🚦 Match job %s (job_id=%s) starting with %s candidates",
                 job,
+                job_identifier,
                 payload.get("candidate_count", 0),
             )
         elif event == "distances_complete":
@@ -2159,18 +2250,24 @@ def match_worker(
             if elapsed is not None:
                 timings["distances"] = float(elapsed)
                 logger.info(
-                    "⏱️ Distance lookups completed in %.2fs for job %s (%s origins)",
+                    "⏱️ Distance lookups completed in %.2fs for job %s (job_id=%s) (%s origins)",
                     float(elapsed),
                     job,
+                    job_identifier,
                     payload.get("candidate_count", 0),
                 )
             else:
-                logger.info("Completed distance lookups for %s", job)
+                logger.info(
+                    "⏱️ Distance lookups completed for job %s (job_id=%s)",
+                    job,
+                    job_identifier,
+                )
         elif event == "stored":
             logger.info(
-                "✅ Stored %s matches for job %s",
+                "✅ Stored %s matches for job %s (job_id=%s)",
                 payload.get("match_count", 0),
                 job,
+                job_identifier,
             )
 
     if enq_time is not None:
@@ -2183,23 +2280,37 @@ def match_worker(
         progress_callback,
         job_id=job_id,
     )
+    after_match = time.perf_counter()
+    logger.info(
+        "🧵 _perform_match_async completed for job %s (job_id=%s) at %.6f (elapsed %.2fs)",
+        job_code,
+        job_identifier,
+        after_match,
+        after_match - worker_start,
+    )
     process_time = datetime.now() - start
     redis_client.incrbyfloat("metrics:match_process_time", process_time.total_seconds())
-    breakdown_parts = []
-    if "embeddings" in timings:
-        breakdown_parts.append(f"embeddings {timings['embeddings']:.2f}s")
-    if "search" in timings:
-        breakdown_parts.append(f"search {timings['search']:.2f}s")
-    if "distances" in timings:
-        breakdown_parts.append(f"distances {timings['distances']:.2f}s")
-    breakdown = f" ({', '.join(breakdown_parts)})" if breakdown_parts else ""
+    t_total = after_match - worker_start
+    t_emb = timings.get("embeddings", 0.0)
+    t_search = timings.get("search", 0.0)
+    t_dist = timings.get("distances", 0.0)
+    t_other = max(t_total - (t_emb + t_search + t_dist), 0.0)
     logger.info(
-        "✅ Finished match job %s in %.2fs%s",
+        "✅ match_worker finished job %s (job_id=%s) in %.2fs (embeddings %.2fs, search %.2fs, distances %.2fs, other %.2fs)",
         job_code,
-        process_time.total_seconds(),
-        breakdown,
+        job_identifier,
+        t_total,
+        t_emb,
+        t_search,
+        t_dist,
+        t_other,
     )
-    logger.info(f"⬅️ match_worker returning results for job {job_code} at {time.time()}")
+    logger.info(
+        "⬅️ match_worker returning results for job %s (job_id=%s) at %.6f",
+        job_code,
+        job_identifier,
+        time.time(),
+    )
     return result
 
 
