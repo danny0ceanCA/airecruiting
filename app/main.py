@@ -2137,7 +2137,21 @@ async def _perform_match_async(
         job_code,
         job_identifier,
     )
+    t_store = time.perf_counter()
+    logger.info(
+        "💾 Starting Redis write for job %s (job_id=%s) with %s matches",
+        job_code,
+        job_identifier,
+        len(top_matches),
+    )
     redis_client.set(f"match_job:{storage_id}", json.dumps(payload))
+    elapsed_store = time.perf_counter() - t_store
+    logger.info(
+        "✅ Redis write completed in %.2fs for job %s (job_id=%s)",
+        elapsed_store,
+        job_code,
+        job_identifier,
+    )
     if job_id:
         redis_client.set(f"match_job_lookup:{job_code}", storage_id)
     store_time = time.perf_counter()
@@ -2167,6 +2181,13 @@ async def _perform_match_async(
             job_code,
             job_identifier,
         )
+        t_emails = time.perf_counter()
+        logger.info(
+            "📧 Starting email notifications for job %s (job_id=%s), sending %s emails",
+            job_code,
+            job_identifier,
+            len(top_matches),
+        )
         emails_sent = 0
         for m in top_matches:
             send_email(
@@ -2182,6 +2203,13 @@ async def _perform_match_async(
         logger.info(
             "📬 Sent %s notification emails for job %s (job_id=%s)",
             emails_sent,
+            job_code,
+            job_identifier,
+        )
+        elapsed_emails = time.perf_counter() - t_emails
+        logger.info(
+            "✅ Email notifications finished in %.2fs for job %s (job_id=%s)",
+            elapsed_emails,
             job_code,
             job_identifier,
         )
@@ -2203,6 +2231,14 @@ async def _perform_match_async(
         )
     except Exception:
         pass
+
+    total_elapsed = time.perf_counter() - embed_start
+    logger.info(
+        "🚩 Finished all post-processing for job %s (job_id=%s) in %.2fs",
+        job_code,
+        job_identifier,
+        total_elapsed,
+    )
 
     return top_matches
 
