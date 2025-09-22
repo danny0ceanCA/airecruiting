@@ -474,25 +474,21 @@ async def get_driving_distance_miles(
     if missing:
         url = "https://maps.googleapis.com/maps/api/distancematrix/json"
         async with httpx.AsyncClient() as client:
+            logger.info(
+                f"🛠️ Preparing distance batches for job {job_code} ({len(origins)} origins)"
+            )
             if len(missing) > 25:
                 batches = [missing[i : i + 25] for i in range(0, len(missing), 25)]
             else:
                 batches = [missing]
 
             logger.info(
-                "🌍 Starting distance lookups for %s origins across %s batches (job=%s, job_id=%s)",
-                len(origins),
-                len(batches),
-                job_code or "n/a",
-                job_id or "n/a",
+                f"🌍 Starting distance lookups for {len(origins)} origins across {len(batches)} batches (job={job_code}, job_id={job_id})"
             )
             elapsed_total = 0.0
             for idx, batch in enumerate(batches):
                 if not batch:
                     continue
-                logger.info(
-                    "Requesting Google API for batch of %s origins", len(batch)
-                )
                 origins_param = "|".join(f"{lat},{lng}" for lat, lng in batch)
                 params = {
                     "origins": origins_param,
@@ -501,17 +497,15 @@ async def get_driving_distance_miles(
                     "key": key,
                 }
                 try:
-                    logger.info("Requesting %s params=%s", url, params)
+                    logger.info(
+                        f"   🌐 Sending batch {idx + 1}/{len(batches)} with {len(batch)} origins to Google (job={job_code}, job_id={job_id})"
+                    )
                     t0 = time.perf_counter()
                     resp = await client.get(url, params=params)
                     elapsed = time.perf_counter() - t0
                     elapsed_total += elapsed
                     logger.info(
-                        "   ↳ Batch %s/%s finished in %.2fs (%s origins)",
-                        idx + 1,
-                        len(batches),
-                        elapsed,
-                        len(batch),
+                        f"   ✅ Batch {idx + 1}/{len(batches)} completed in {elapsed:.2f}s (job={job_code}, job_id={job_id})"
                     )
                 except Exception:
                     logger.exception("Error requesting distance matrix")
@@ -551,6 +545,9 @@ async def get_driving_distance_miles(
                 elapsed_total,
                 job_code or "n/a",
                 job_id or "n/a",
+            )
+            logger.info(
+                f"⏱️ All distance lookups completed for job {job_code} (job_id={job_id})"
             )
 
     if provided_list:
@@ -1988,6 +1985,9 @@ async def _perform_match_async(
     distance_elapsed = 0.0
     if candidate_coords:
         try:
+            logger.info(
+                f"🛠️ Preparing distance batches for job {job_code} ({len(candidate_coords)} origins)"
+            )
             distance_start = time.perf_counter()
             coro = get_driving_distance_miles(
                 candidate_coords,
