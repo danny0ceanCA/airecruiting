@@ -1826,6 +1826,7 @@ async def _perform_match_async(
     job_id: str | None = None,
 ):
     overall_start = time.perf_counter()
+    overall_wall_start = time.time()
     job_identifier = job_id or "n/a"
     logger.info(
         "⏱️ _perform_match_async started for job %s (job_id=%s) at %.6f",
@@ -1864,6 +1865,7 @@ async def _perform_match_async(
 
     combined = job.get("job_description", "") + " " + ", ".join(job.get("desired_skills", []))
     embed_start = time.perf_counter()
+    embedding_wall_start = time.time()
     try:
         resp = client.embeddings.create(input=combined, model="text-embedding-3-small")
         job_emb = resp.data[0].embedding
@@ -1871,6 +1873,8 @@ async def _perform_match_async(
         raise HTTPException(status_code=500, detail=f"Embedding failed: {str(e)}")
     embed_end = time.perf_counter()
     embed_elapsed = embed_end - embed_start
+    embedding_wall_end = time.time()
+    embedding_time = embedding_wall_end - embedding_wall_start
     logger.info(
         "⏱️ Embeddings started at %.6f, completed at %.6f, duration=%.2fs for job %s (job_id=%s)",
         embed_start,
@@ -1890,6 +1894,9 @@ async def _perform_match_async(
 
     ensure_index(len(job_emb))
     search_start = time.perf_counter()
+    faiss_time = 0.0
+    filter_time = 0.0
+    distance_time = 0.0
     if vector_index is None:
         if progress_callback:
             try:
@@ -1899,6 +1906,17 @@ async def _perform_match_async(
                 )
             except Exception:
                 logger.exception("Progress callback failed during search event")
+        total_time = time.time() - overall_wall_start
+        logger.info(
+            "🏁 Finished match job %s in %.2fs (embeddings %.2fs, FAISS %.2fs, filtering %.2fs, distances %.2fs, total %.2fs)",
+            job_identifier,
+            total_time,
+            embedding_time,
+            faiss_time,
+            filter_time,
+            distance_time,
+            total_time,
+        )
         return []
 
     matches = []
@@ -1907,7 +1925,22 @@ async def _perform_match_async(
     search_vec = np.array([job_emb], dtype="float32")
     k = min(50, vector_index.ntotal)
     if k > 0:
+        candidates = vector_emails
+        logger.info(
+            "🔍 Starting FAISS search for job %s with %d candidates",
+            job_identifier,
+            len(candidates),
+        )
+        faiss_start = time.time()
         sims, idxs = vector_index.search(search_vec, k)
+        faiss_time = time.time() - faiss_start
+        similarities = sims[0]
+        logger.info(
+            "✅ FAISS search completed in %.2fs with %d results for job %s",
+            faiss_time,
+            len(similarities),
+            job_identifier,
+        )
         candidate_emails = [vector_emails[i] for i in idxs[0] if i != -1]
     else:
         candidate_emails = []
@@ -1989,6 +2022,7 @@ async def _perform_match_async(
                 f"🛠️ Preparing distance batches for job {job_code} ({len(candidate_coords)} origins)"
             )
             distance_start = time.perf_counter()
+            distance_wall_start = time.time()
             coro = get_driving_distance_miles(
                 candidate_coords,
                 dest_lat=job.get("lat"),
@@ -2005,6 +2039,7 @@ async def _perform_match_async(
             distances = {}
         finally:
             distance_elapsed = time.perf_counter() - distance_start
+            distance_time = time.time() - distance_wall_start
     if progress_callback:
         try:
             progress_callback(
@@ -2055,6 +2090,13 @@ async def _perform_match_async(
         len(matches),
     )
 
+    raw_matches = list(matches)
+    logger.info(
+        "⚙️ Starting candidate filtering for job %s with %d raw matches",
+        job_identifier,
+        len(raw_matches),
+    )
+    filter_start = time.time()
     # Include applicant user records with a matching institutional code when no
     # student profile exists for them
     for ukey in redis_client.scan_iter("user:*"):
@@ -2122,6 +2164,14 @@ async def _perform_match_async(
         else:
             m["status"] = None
 
+    filter_time = time.time() - filter_start
+    filtered_candidates = top_matches
+    logger.info(
+        "✅ Candidate filtering completed in %.2fs, kept %d candidates for job %s",
+        filter_time,
+        len(filtered_candidates),
+        job_identifier,
+    )
     logger.info(
         "🎯 Filtered top matches for job %s (job_id=%s): keeping %s candidates",
         job_code,
@@ -2143,6 +2193,12 @@ async def _perform_match_async(
         job_code,
         job_identifier,
         len(top_matches),
+    )
+    final_results = top_matches
+    logger.info(
+        "💾 Persisting %d match results to Redis for job %s",
+        len(final_results),
+        job_identifier,
     )
     redis_client.set(f"match_job:{storage_id}", json.dumps(payload))
     elapsed_store = time.perf_counter() - t_store
@@ -2233,11 +2289,22 @@ async def _perform_match_async(
         pass
 
     total_elapsed = time.perf_counter() - embed_start
+    total_time = time.time() - overall_wall_start
     logger.info(
         "🚩 Finished all post-processing for job %s (job_id=%s) in %.2fs",
         job_code,
         job_identifier,
         total_elapsed,
+    )
+    logger.info(
+        "🏁 Finished match job %s in %.2fs (embeddings %.2fs, FAISS %.2fs, filtering %.2fs, distances %.2fs, total %.2fs)",
+        job_identifier,
+        total_time,
+        embedding_time,
+        faiss_time,
+        filter_time,
+        distance_time,
+        total_time,
     )
 
     return top_matches
