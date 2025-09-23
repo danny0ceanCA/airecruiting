@@ -20,6 +20,8 @@ class DummyRedis:
         self.lists = {}
         self.sets = {}
         self.expirations = {}
+        self.pipeline_history = []
+        self.mget_calls = []
 
     def _expired(self, key):
         expires = self.expirations.get(key)
@@ -79,7 +81,9 @@ class DummyRedis:
         return val
 
     def mget(self, keys):
-        return [self.store.get(k) for k in keys]
+        values = [self.store.get(k) for k in keys]
+        self.mget_calls.append(list(keys))
+        return values
 
     def smembers(self, key):
         return self.sets.get(key, set())
@@ -100,6 +104,8 @@ class DummyRedis:
         self.lists.clear()
         self.sets.clear()
         self.expirations.clear()
+        self.pipeline_history.clear()
+        self.mget_calls.clear()
 
     def hset(self, name, key, value):
         self.hashes.setdefault(name, {})[key] = value
@@ -129,6 +135,31 @@ class DummyRedis:
         if not expires:
             return -1
         return int((expires - datetime.utcnow()).total_seconds())
+
+    class _Pipeline:
+        def __init__(self, parent):
+            self.parent = parent
+            self.commands = []
+
+        def get(self, key):
+            self.commands.append(("get", key))
+            return self
+
+        def exists(self, key):
+            self.commands.append(("exists", key))
+            return self
+
+        def execute(self):
+            results = []
+            for action, key in self.commands:
+                func = getattr(self.parent, action)
+                results.append(func(key))
+            self.parent.pipeline_history.append(list(self.commands))
+            self.commands.clear()
+            return results
+
+    def pipeline(self):
+        return DummyRedis._Pipeline(self)
 
 
 main_app.redis_client = DummyRedis()
@@ -2815,6 +2846,78 @@ def test_match_metrics_increment(monkeypatch):
     queue = float(main_app.redis_client.get("metrics:match_queue_time") or 0)
     assert process > 0
     assert queue >= 0
+
+
+def test_match_worker_includes_fallback_applicants(monkeypatch):
+    main_app.redis_client.flushdb()
+    fallback_email = "fallback@example.com"
+    poster_email = "poster@example.com"
+    job_code = "job-fallback"
+
+    job = {
+        "job_title": "Test",
+        "job_description": "desc",
+        "desired_skills": [],
+        "lat": 0.0,
+        "lng": 0.0,
+        "posted_by": poster_email,
+        "uninterested_students": [],
+    }
+    main_app.redis_client.set(f"job:{job_code}", json.dumps(job))
+    poster = {"role": "recruiter", "institutional_code": "1001"}
+    main_app.redis_client.set(f"user:{poster_email}", json.dumps(poster))
+    index_key = main_app.user_index_key("1001")
+    main_app.redis_client.sadd(index_key, fallback_email)
+    applicant = {
+        "email": fallback_email,
+        "first_name": "Fall",
+        "last_name": "Back",
+        "role": "applicant",
+        "institutional_code": "1001",
+    }
+    main_app.redis_client.set(f"user:{fallback_email}", json.dumps(applicant))
+
+    class FakeEmbeddingsResp:
+        def __init__(self):
+            self.data = [type("obj", (), {"embedding": [0.1, 0.2, 0.3]})]
+
+    monkeypatch.setattr(
+        main_app.client.embeddings, "create", lambda *a, **k: FakeEmbeddingsResp()
+    )
+
+    class DummyIndex:
+        def __init__(self):
+            self.ntotal = 0
+
+    def fake_ensure_index(dim):
+        main_app.EMBEDDING_DIM = dim
+        main_app.vector_index = DummyIndex()
+        main_app.vector_emails = []
+
+    def fake_rebuild():
+        main_app.vector_emails = []
+
+    main_app.vector_index = None
+    main_app.vector_emails = []
+    main_app.EMBEDDING_DIM = None
+
+    monkeypatch.setattr(main_app, "ensure_index", fake_ensure_index)
+    monkeypatch.setattr(main_app, "rebuild_vector_index", fake_rebuild)
+
+    matches = main_app._perform_match(job_code, False)
+
+    assert any(m["email"] == fallback_email for m in matches)
+    student_key_call = main_app.student_email_key(fallback_email)
+    assert any(call == [student_key_call] for call in main_app.redis_client.mget_calls)
+    legacy_key = f"student:{main_app.normalize_email(fallback_email)}"
+    assert any(
+        ("exists", legacy_key) in commands
+        for commands in main_app.redis_client.pipeline_history
+    )
+
+    main_app.vector_index = None
+    main_app.vector_emails = []
+    main_app.EMBEDDING_DIM = None
 
 
 def test_students_by_school_fallback():

@@ -2304,23 +2304,89 @@ async def _perform_match_async(
     try:
         if fallback_keys and hasattr(redis_client, "mget"):
             raw_users = list(redis_client.mget(fallback_keys))  # type: ignore[arg-type]
+        elif fallback_keys and hasattr(redis_client, "pipeline"):
+            pipe = redis_client.pipeline()
+            for key in fallback_keys:
+                pipe.get(key)
+            raw_users = list(pipe.execute())
         else:
             raw_users = []
     except Exception:
         raw_users = []
 
     if raw_users and len(raw_users) != len(fallback_list):
-        # When mget fails to return results for all keys fall back to individual lookups
+        # When batched retrieval fails to return results for all keys fall back to individual lookups
         raw_users = []
 
     if not raw_users and fallback_list:
-        # Either there is no efficient mget available or it failed. Fetch sequentially
+        # Either there is no efficient batch retrieval available or it failed. Fetch sequentially
         raw_users = []
         for email in fallback_list:
             try:
                 raw_users.append(redis_client.get(user_key(email)))
             except Exception:
                 raw_users.append(None)
+
+    student_index_keys = [student_email_key(email) for email in fallback_list]
+    email_has_student: dict[str, bool] = {}
+    index_results: list[str | None] = []
+    if student_index_keys:
+        try:
+            if hasattr(redis_client, "mget"):
+                index_results = list(redis_client.mget(student_index_keys))  # type: ignore[arg-type]
+            elif hasattr(redis_client, "pipeline"):
+                pipe = redis_client.pipeline()
+                for key in student_index_keys:
+                    pipe.get(key)
+                index_results = list(pipe.execute())
+        except Exception:
+            index_results = []
+
+    if index_results and len(index_results) == len(fallback_list):
+        email_has_student.update(
+            {email: bool(result) for email, result in zip(fallback_list, index_results)}
+        )
+    elif student_index_keys:
+        sequential_results: list[str | None] = []
+        for key in student_index_keys:
+            try:
+                sequential_results.append(redis_client.get(key))
+            except Exception:
+                sequential_results.append(None)
+        email_has_student.update(
+            {email: bool(result) for email, result in zip(fallback_list, sequential_results)}
+        )
+
+    missing_for_legacy = [
+        email for email in fallback_list if not email_has_student.get(email, False)
+    ]
+    legacy_results: list[int | bool] = []
+    if missing_for_legacy:
+        try:
+            if hasattr(redis_client, "pipeline"):
+                pipe = redis_client.pipeline()
+                for email in missing_for_legacy:
+                    pipe.exists(f"student:{normalize_email(email)}")
+                legacy_results = list(pipe.execute())
+            else:
+                legacy_results = [
+                    redis_client.exists(f"student:{normalize_email(email)}")
+                    for email in missing_for_legacy
+                ]
+        except Exception:
+            legacy_results = []
+
+        if legacy_results and len(legacy_results) == len(missing_for_legacy):
+            for email, exists_flag in zip(missing_for_legacy, legacy_results):
+                email_has_student[email] = bool(exists_flag)
+        else:
+            for email in missing_for_legacy:
+                try:
+                    email_has_student[email] = bool(
+                        redis_client.exists(f"student:{normalize_email(email)}")
+                    )
+                except Exception:
+                    email_has_student[email] = False
 
     for email, u_raw in zip(fallback_list, raw_users):
         if not u_raw:
@@ -2346,7 +2412,7 @@ async def _perform_match_async(
             continue
         if email in job.get("uninterested_students", []):
             continue
-        if resolve_student_key(email):
+        if email_has_student.get(email, False):
             continue
         matches.append(
             {
