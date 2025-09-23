@@ -51,6 +51,7 @@ function JobPosting() {
   const [modalNotes, setModalNotes] = useState(null);
 
   const locationRef = useRef(null);
+  const pollingIntervalRef = useRef(null);
 
   const initLocationAutocomplete = () => {
     if (locationRef.current && window.google) {
@@ -129,22 +130,43 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
   };
 
   const loadMatchResults = useCallback(
-    async (code) => {
+    async (job, existingResp = null) => {
+      let jobCode = typeof job === 'string' ? job : job?.job_code;
+
+      if (typeof job === 'string') {
+        const foundJob = jobs.find(
+          (j) =>
+            j.job_code === job ||
+            String(j.id) === String(job) ||
+            String(j.job_id) === String(job)
+        );
+        jobCode = foundJob?.job_code || jobCode;
+      }
+
+      if (!jobCode) {
+        console.warn('No job code provided for loadMatchResults', job);
+        return;
+      }
+
       try {
-        const resp = await api.get(`/match/${code}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        const matchResults = resp.data.matches.map((m) => ({
+        const resp =
+          existingResp ||
+          (await api.get(`/match/${jobCode}`, {
+            headers: { Authorization: `Bearer ${token}` }
+          }));
+        const raw = resp.data.results || [];
+        console.log('🔎 Loaded match results API response:', resp.data);
+        const matchResults = raw.map((m) => ({
           ...m,
           status: m.status || null
         }));
-        setMatches((prev) => ({ ...prev, [code]: matchResults }));
-        setMatchLoaded((prev) => ({ ...prev, [code]: true }));
+        setMatches((prev) => ({ ...prev, [jobCode]: matchResults }));
+        setMatchLoaded((prev) => ({ ...prev, [jobCode]: true }));
       } catch (err) {
-        console.error(`Error loading stored matches for ${code}:`, err);
+        console.error(`Error loading stored matches for ${jobCode}:`, err);
       }
     },
-    [token]
+    [jobs, token]
   );
 
   useEffect(() => {
@@ -172,18 +194,36 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
 
   useEffect(() => {
     if (!activeJobId || !activeJobCode) {
-      return undefined;
+      return () => {
+        if (pollingIntervalRef.current) {
+          clearInterval(pollingIntervalRef.current);
+          pollingIntervalRef.current = null;
+        }
+      };
     }
 
-    const interval = setInterval(async () => {
+    if (pollingIntervalRef.current !== null) {
+      return () => {
+        if (pollingIntervalRef.current) {
+          clearInterval(pollingIntervalRef.current);
+          pollingIntervalRef.current = null;
+        }
+      };
+    }
+
+    pollingIntervalRef.current = setInterval(async () => {
       try {
         const resp = await api.get(`/has-match/${activeJobId}`, {
           headers: { Authorization: `Bearer ${token}` }
         });
+        console.log('🔄 Polling /has-match response:', resp.data);
         if (resp.data.status === 'complete') {
-          await loadMatchResults(activeJobCode);
+          await loadMatchResults(activeJobId, resp);
           setLoadingMatches((prev) => ({ ...prev, [activeJobCode]: false }));
           setMatchPresence((prev) => ({ ...prev, [activeJobCode]: true }));
+          clearInterval(pollingIntervalRef.current);
+          pollingIntervalRef.current = null;
+          console.log('🛑 Stopped polling for job', activeJobId);
           setActiveJobId(null);
           setActiveJobCode(null);
         }
@@ -192,7 +232,12 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
       }
     }, 3000);
 
-    return () => clearInterval(interval);
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+    };
   }, [activeJobId, activeJobCode, loadMatchResults, token]);
   if (shouldRedirect) {
     return <Navigate to="/dashboard" />;
@@ -261,11 +306,12 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
           headers: { Authorization: `Bearer ${token}` },
         }
       );
-      if (Array.isArray(resp.data.matches)) {
-        const matchResults = resp.data.matches.map((m) => ({ ...m, status: null }));
+      if (Array.isArray(resp.data.results)) {
+        const matchResults = resp.data.results.map((m) => ({ ...m, status: m.status || null }));
         setMatches((prev) => ({ ...prev, [code]: matchResults }));
         setLoadingMatches((prev) => ({ ...prev, [code]: false }));
         setMatchPresence((prev) => ({ ...prev, [code]: true }));
+        setMatchLoaded((prev) => ({ ...prev, [code]: true }));
       } else {
         const jobId = resp.data.job_id || code;
         setActiveJobId(jobId);
@@ -287,11 +333,12 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
         {},
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      if (Array.isArray(resp.data.matches)) {
-        const matchResults = resp.data.matches.map((m) => ({ ...m, status: null }));
+      if (Array.isArray(resp.data.results)) {
+        const matchResults = resp.data.results.map((m) => ({ ...m, status: m.status || null }));
         setMatches((prev) => ({ ...prev, [code]: matchResults }));
         setLoadingMatches((prev) => ({ ...prev, [code]: false }));
         setMatchPresence((prev) => ({ ...prev, [code]: true }));
+        setMatchLoaded((prev) => ({ ...prev, [code]: true }));
       } else {
         setActiveJobId(code);
         setActiveJobCode(code);
