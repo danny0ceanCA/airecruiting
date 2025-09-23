@@ -3124,3 +3124,20 @@ def test_students_pagination():
         )
         assert len(resp2.json()["students"]) == 1
 
+
+def test_has_match_uses_lookup_for_uuid_results():
+    main_app.redis_client.flushdb()
+
+    job_code = "legacy-job"
+    storage_id = "123e4567-e89b-12d3-a456-426614174000"
+    match_results = {"status": "complete", "results": [{"email": "stud@example.com"}]}
+
+    main_app.redis_client.set(f"match_job:{storage_id}", json.dumps(match_results))
+    main_app.redis_client.set(f"match_job_lookup:{job_code}", storage_id)
+
+    resp = client.get(f"/has-match/{job_code}")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "complete"
+    assert data["results"] == match_results["results"]
+
