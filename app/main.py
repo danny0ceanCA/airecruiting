@@ -2305,6 +2305,22 @@ async def _perform_match_async(
         len(matches),
     )
 
+    assigned = set(job.get("assigned_students", []))
+    placed = set(job.get("placed_students", []))
+    rejected = set(job.get("rejected_students", []))
+    uninterested_students = set(job.get("uninterested_students", []))
+
+    existing_emails = {m["email"] for m in matches}
+    viable_matches = [
+        m
+        for m in matches
+        if m["email"] not in assigned
+        and m["email"] not in placed
+        and m["email"] not in rejected
+    ]
+    max_results = 10
+    remaining_slots = max(max_results - len(viable_matches), 0)
+
     raw_matches = list(matches)
     logger.info(
         "⚙️ Starting candidate filtering for job %s with %d raw matches",
@@ -2314,46 +2330,49 @@ async def _perform_match_async(
     filter_start = time.time()
     # Include applicant user records with a matching institutional code when no
     # student profile exists for them
-    fallback_emails: set[str] = set()
     normalized_poster_code = _normalize_institution_code(poster_code)
-    if normalized_poster_code:
-        index_key = user_index_key(normalized_poster_code)
+    index_key = user_index_key(normalized_poster_code) if normalized_poster_code else None
+
+    fallback_emails: set[str] = set()
+    fallback_list: list[str] = []
+    raw_users: list[str | None] = []
+
+    if remaining_slots > 0 and index_key:
         try:
             emails = redis_client.smembers(index_key)
         except Exception:
             emails = set()
         fallback_emails = set(emails or [])
-    else:
-        index_key = None
+        fallback_emails.difference_update(existing_emails)
+        fallback_emails.difference_update(uninterested_students)
+        fallback_list = list(fallback_emails)[:remaining_slots]
 
-    fallback_list = list(fallback_emails)
-    fallback_keys = [user_key(email) for email in fallback_list]
-    raw_users: list[str | None]
-    try:
-        if fallback_keys and hasattr(redis_client, "mget"):
-            raw_users = list(redis_client.mget(fallback_keys))  # type: ignore[arg-type]
-        elif fallback_keys and hasattr(redis_client, "pipeline"):
-            pipe = redis_client.pipeline()
-            for key in fallback_keys:
-                pipe.get(key)
-            raw_users = list(pipe.execute())
-        else:
+        fallback_keys = [user_key(email) for email in fallback_list]
+        try:
+            if fallback_keys and hasattr(redis_client, "mget"):
+                raw_users = list(redis_client.mget(fallback_keys))  # type: ignore[arg-type]
+            elif fallback_keys and hasattr(redis_client, "pipeline"):
+                pipe = redis_client.pipeline()
+                for key in fallback_keys:
+                    pipe.get(key)
+                raw_users = list(pipe.execute())
+            else:
+                raw_users = []
+        except Exception:
             raw_users = []
-    except Exception:
-        raw_users = []
 
-    if raw_users and len(raw_users) != len(fallback_list):
-        # When batched retrieval fails to return results for all keys fall back to individual lookups
-        raw_users = []
+        if raw_users and len(raw_users) != len(fallback_list):
+            # When batched retrieval fails to return results for all keys fall back to individual lookups
+            raw_users = []
 
-    if not raw_users and fallback_list:
-        # Either there is no efficient batch retrieval available or it failed. Fetch sequentially
-        raw_users = []
-        for email in fallback_list:
-            try:
-                raw_users.append(redis_client.get(user_key(email)))
-            except Exception:
-                raw_users.append(None)
+        if not raw_users and fallback_list:
+            # Either there is no efficient batch retrieval available or it failed. Fetch sequentially
+            raw_users = []
+            for email in fallback_list:
+                try:
+                    raw_users.append(redis_client.get(user_key(email)))
+                except Exception:
+                    raw_users.append(None)
 
     student_index_keys = [student_email_key(email) for email in fallback_list]
     email_has_student: dict[str, bool] = {}
@@ -2461,9 +2480,6 @@ async def _perform_match_async(
     # students have been assigned.
     filtered_matches = [m for m in matches if m["email"] not in assigned]
     top_matches = filtered_matches[:10]
-
-    placed = set(job.get("placed_students", []))
-    rejected = set(job.get("rejected_students", []))
 
     # Only store unassigned/unplaced/unrejected matches and keep
     # the list length at a maximum of 10. Assigned candidates will be
