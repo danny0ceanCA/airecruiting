@@ -2879,6 +2879,16 @@ def test_match_worker_includes_fallback_applicants(monkeypatch):
     }
     main_app.redis_client.set(f"user:{fallback_email}", json.dumps(applicant))
 
+    smembers_calls = {"count": 0}
+
+    original_smembers = main_app.redis_client.smembers
+
+    def tracking_smembers(key):
+        smembers_calls["count"] += 1
+        return original_smembers(key)
+
+    monkeypatch.setattr(main_app.redis_client, "smembers", tracking_smembers)
+
     class FakeEmbeddingsResp:
         def __init__(self):
             self.data = [type("obj", (), {"embedding": [0.1, 0.2, 0.3]})]
@@ -2916,11 +2926,94 @@ def test_match_worker_includes_fallback_applicants(monkeypatch):
         ("exists", legacy_key) in commands
         for commands in main_app.redis_client.pipeline_history
     )
+    assert smembers_calls["count"] > 0
 
     main_app.vector_index = None
     main_app.vector_emails = []
     main_app.EMBEDDING_DIM = None
 
+
+def test_match_worker_skips_fallback_when_quota_met(monkeypatch):
+    main_app.redis_client.flushdb()
+    job_code = "job-no-fallback"
+    poster_email = "poster@example.com"
+
+    job = {
+        "job_title": "Test",
+        "job_description": "desc",
+        "desired_skills": [],
+        "lat": 0.0,
+        "lng": 0.0,
+        "posted_by": poster_email,
+        "uninterested_students": [],
+    }
+    main_app.redis_client.set(f"job:{job_code}", json.dumps(job))
+
+    poster = {"role": "recruiter", "institutional_code": "1001"}
+    main_app.redis_client.set(f"user:{poster_email}", json.dumps(poster))
+
+    index_key = main_app.user_index_key("1001")
+    main_app.redis_client.sadd(index_key, "fallback@example.com")
+
+    smembers_calls = {"count": 0}
+    original_smembers = main_app.redis_client.smembers
+
+    def tracking_smembers(key):
+        smembers_calls["count"] += 1
+        return original_smembers(key)
+
+    monkeypatch.setattr(main_app.redis_client, "smembers", tracking_smembers)
+
+    class FakeEmbeddingsResp:
+        def __init__(self):
+            self.data = [type("obj", (), {"embedding": [0.1, 0.2, 0.3]})]
+
+    monkeypatch.setattr(
+        main_app.client.embeddings, "create", lambda *a, **k: FakeEmbeddingsResp()
+    )
+
+    class DummyIndex:
+        def __init__(self):
+            self.ntotal = 0
+
+    def fake_ensure_index(dim):
+        main_app.EMBEDDING_DIM = dim
+        main_app.vector_index = DummyIndex()
+        main_app.vector_emails = []
+
+    def fake_rebuild():
+        main_app.vector_emails = []
+
+    async def fake_filter_candidates(*args, **kwargs):
+        matches = [
+            {
+                "name": f"Candidate {i}",
+                "first_name": "Candidate",
+                "last_name": str(i),
+                "email": f"student{i}@example.com",
+                "score": 1.0,
+                "distance_miles": 1.0,
+            }
+            for i in range(10)
+        ]
+        return matches, 0.0
+
+    main_app.vector_index = None
+    main_app.vector_emails = []
+    main_app.EMBEDDING_DIM = None
+
+    monkeypatch.setattr(main_app, "ensure_index", fake_ensure_index)
+    monkeypatch.setattr(main_app, "rebuild_vector_index", fake_rebuild)
+    monkeypatch.setattr(main_app, "filter_candidates", fake_filter_candidates)
+
+    matches = main_app._perform_match(job_code, False)
+
+    assert len(matches) == 10
+    assert smembers_calls["count"] == 0
+
+    main_app.vector_index = None
+    main_app.vector_emails = []
+    main_app.EMBEDDING_DIM = None
 
 def test_students_by_school_fallback():
     main_app.redis_client.flushdb()
