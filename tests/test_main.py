@@ -5,12 +5,14 @@ os.environ.setdefault("GOOGLE_KEY", "test")
 os.environ.setdefault("ADMIN_EMAIL", "admin@example.com")
 os.environ.setdefault("ADMIN_PASSWORD", "admin123")
 
+from fastapi import BackgroundTasks
 from fastapi.testclient import TestClient
 from jose import jwt
 import json
 import app.main as main_app
 from datetime import datetime, timedelta
 import hashlib
+from starlette.requests import Request
 
 
 class DummyRedis:
@@ -3243,4 +3245,81 @@ def test_has_match_uses_lookup_for_uuid_results():
     data = resp.json()
     assert data["status"] == "complete"
     assert data["results"] == match_results["results"]
+
+
+def _build_match_request() -> Request:
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/match",
+        "headers": [],
+    }
+    request = Request(scope)
+    request.state.request_id = "test-request"
+    return request
+
+
+def test_match_job_stores_pending_placeholder_before_worker_runs():
+    main_app.redis_client.flushdb()
+
+    request = _build_match_request()
+    background_tasks = BackgroundTasks()
+    result = main_app.match_job(
+        main_app.JobCodeRequest(job_code="new-job"),
+        request,
+        background_tasks,
+        current_user={"role": "admin", "email": "admin@example.com"},
+    )
+
+    job_id = result["job_id"]
+    placeholder_raw = main_app.redis_client.get(f"match_job:{job_id}")
+    assert placeholder_raw is not None
+    placeholder = json.loads(placeholder_raw)
+    assert placeholder == {"status": "pending", "results": []}
+    assert (
+        main_app.redis_client.get("match_job_lookup:new-job")
+        == job_id
+    )
+
+    resp = client.get(f"/has-match/{job_id}")
+    assert resp.status_code == 200
+    assert resp.json() == placeholder
+
+
+def test_match_job_placeholder_reuses_prior_results():
+    main_app.redis_client.flushdb()
+
+    job_code = "existing-job"
+    prior_payload = {
+        "status": "complete",
+        "results": [{"email": "a@example.com"}],
+        "extra": "value",
+    }
+    main_app.redis_client.set(
+        f"match_job:{job_code}", json.dumps(prior_payload)
+    )
+
+    request = _build_match_request()
+    background_tasks = BackgroundTasks()
+    result = main_app.match_job(
+        main_app.JobCodeRequest(job_code=job_code),
+        request,
+        background_tasks,
+        current_user={"role": "admin", "email": "admin@example.com"},
+    )
+
+    job_id = result["job_id"]
+    placeholder_raw = main_app.redis_client.get(f"match_job:{job_id}")
+    assert placeholder_raw is not None
+    placeholder = json.loads(placeholder_raw)
+    assert placeholder["status"] == "pending"
+    assert placeholder["results"] == prior_payload["results"]
+    assert placeholder["extra"] == prior_payload["extra"]
+    assert main_app.redis_client.get(f"match_job_lookup:{job_code}") == job_id
+
+    resp = client.get(f"/has-match/{job_id}")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "pending"
+    assert data["results"] == prior_payload["results"]
 
