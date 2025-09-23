@@ -2298,17 +2298,46 @@ async def _perform_match_async(
     else:
         index_key = None
 
-    for email in fallback_emails:
-        u_raw = redis_client.get(user_key(email))
+    fallback_list = list(fallback_emails)
+    fallback_keys = [user_key(email) for email in fallback_list]
+    raw_users: list[str | None]
+    try:
+        if fallback_keys and hasattr(redis_client, "mget"):
+            raw_users = list(redis_client.mget(fallback_keys))  # type: ignore[arg-type]
+        else:
+            raw_users = []
+    except Exception:
+        raw_users = []
+
+    if raw_users and len(raw_users) != len(fallback_list):
+        # When mget fails to return results for all keys fall back to individual lookups
+        raw_users = []
+
+    if not raw_users and fallback_list:
+        # Either there is no efficient mget available or it failed. Fetch sequentially
+        raw_users = []
+        for email in fallback_list:
+            try:
+                raw_users.append(redis_client.get(user_key(email)))
+            except Exception:
+                raw_users.append(None)
+
+    for email, u_raw in zip(fallback_list, raw_users):
         if not u_raw:
             if index_key:
-                redis_client.srem(index_key, email)
+                try:
+                    redis_client.srem(index_key, email)
+                except Exception:
+                    pass
             continue
         try:
             udata = json.loads(u_raw)
         except Exception:
             if index_key:
-                redis_client.srem(index_key, email)
+                try:
+                    redis_client.srem(index_key, email)
+                except Exception:
+                    pass
             continue
         if udata.get("role") != "applicant" or not poster_code:
             continue
