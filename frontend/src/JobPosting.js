@@ -51,6 +51,7 @@ function JobPosting() {
   const [modalNotes, setModalNotes] = useState(null);
 
   const locationRef = useRef(null);
+  const pollingIntervalRef = useRef(null);
 
   const initLocationAutocomplete = () => {
     if (locationRef.current && window.google) {
@@ -128,35 +129,119 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
     setMatchPresence(result);
   };
 
+  const loadMatchResults = useCallback(
+    async (job, existingResp = null) => {
+      let jobCode = typeof job === 'string' ? job : job?.job_code;
+
+      if (typeof job === 'string') {
+        const foundJob = jobs.find(
+          (j) =>
+            j.job_code === job ||
+            String(j.id) === String(job) ||
+            String(j.job_id) === String(job)
+        );
+        jobCode = foundJob?.job_code || jobCode;
+      }
+
+      if (!jobCode) {
+        console.warn('No job code provided for loadMatchResults', job);
+        return;
+      }
+
+      try {
+        const resp =
+          existingResp ||
+          (await api.get(`/match/${jobCode}`, {
+            headers: { Authorization: `Bearer ${token}` }
+          }));
+        const raw = resp.data.results || [];
+        console.log('🔎 Loaded match results API response:', resp.data);
+        const matchResults = raw.map((m) => ({
+          ...m,
+          status: m.status || null
+        }));
+        setMatches((prev) => ({ ...prev, [jobCode]: matchResults }));
+        setMatchLoaded((prev) => ({ ...prev, [jobCode]: true }));
+      } catch (err) {
+        console.error(`Error loading stored matches for ${jobCode}:`, err);
+      }
+    },
+    [jobs, token]
+  );
 
   useEffect(() => {
-  if (token) {
-    fetchJobs();
-  }
-}, [token]);
-
-
-  useEffect(() => {
-  if (jobs.length > 0) {
-    checkMatchFlags();
-  }
-}, [jobs]);
-
+    if (token) {
+      fetchJobs();
+    }
+  }, [token]);
 
   useEffect(() => {
-  const shouldLoad =
-    expandedJob &&
-    matchPresence[expandedJob] === true &&
-    !matches[expandedJob];
+    if (jobs.length > 0) {
+      checkMatchFlags();
+    }
+  }, [jobs]);
 
-  if (shouldLoad) {
-    loadMatchResults(expandedJob);
+  useEffect(() => {
+    const shouldLoad =
+      expandedJob &&
+      matchPresence[expandedJob] === true &&
+      !matches[expandedJob];
+
+    if (shouldLoad) {
+      loadMatchResults(expandedJob);
+    }
+  }, [expandedJob, matchPresence, matches, loadMatchResults]);
+
+  useEffect(() => {
+    if (!activeJobId || !activeJobCode) {
+      return () => {
+        if (pollingIntervalRef.current) {
+          clearInterval(pollingIntervalRef.current);
+          pollingIntervalRef.current = null;
+        }
+      };
+    }
+
+    if (pollingIntervalRef.current !== null) {
+      return () => {
+        if (pollingIntervalRef.current) {
+          clearInterval(pollingIntervalRef.current);
+          pollingIntervalRef.current = null;
+        }
+      };
+    }
+
+    pollingIntervalRef.current = setInterval(async () => {
+      try {
+        const resp = await api.get(`/has-match/${activeJobId}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        console.log('🔄 Polling /has-match response:', resp.data);
+        if (resp.data.status === 'complete') {
+          await loadMatchResults(activeJobId, resp);
+          setLoadingMatches((prev) => ({ ...prev, [activeJobCode]: false }));
+          setMatchPresence((prev) => ({ ...prev, [activeJobCode]: true }));
+          clearInterval(pollingIntervalRef.current);
+          pollingIntervalRef.current = null;
+          console.log('🛑 Stopped polling for job', activeJobId);
+          setActiveJobId(null);
+          setActiveJobCode(null);
+        }
+      } catch (err) {
+        console.error('Error polling match status:', err);
+      }
+    }, 3000);
+
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+    };
+  }, [activeJobId, activeJobCode, loadMatchResults, token]);
+  if (shouldRedirect) {
+    return <Navigate to="/dashboard" />;
   }
-}, [expandedJob, matchPresence, matches, loadMatchResults]);
-
-if (shouldRedirect) {
-  return <Navigate to="/dashboard" />;
-}
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -221,11 +306,12 @@ if (shouldRedirect) {
           headers: { Authorization: `Bearer ${token}` },
         }
       );
-      if (Array.isArray(resp.data.matches)) {
-        const matchResults = resp.data.matches.map((m) => ({ ...m, status: null }));
+      if (Array.isArray(resp.data.results)) {
+        const matchResults = resp.data.results.map((m) => ({ ...m, status: m.status || null }));
         setMatches((prev) => ({ ...prev, [code]: matchResults }));
         setLoadingMatches((prev) => ({ ...prev, [code]: false }));
         setMatchPresence((prev) => ({ ...prev, [code]: true }));
+        setMatchLoaded((prev) => ({ ...prev, [code]: true }));
       } else {
         const jobId = resp.data.job_id || code;
         setActiveJobId(jobId);
@@ -247,11 +333,12 @@ if (shouldRedirect) {
         {},
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      if (Array.isArray(resp.data.matches)) {
-        const matchResults = resp.data.matches.map((m) => ({ ...m, status: null }));
+      if (Array.isArray(resp.data.results)) {
+        const matchResults = resp.data.results.map((m) => ({ ...m, status: m.status || null }));
         setMatches((prev) => ({ ...prev, [code]: matchResults }));
         setLoadingMatches((prev) => ({ ...prev, [code]: false }));
         setMatchPresence((prev) => ({ ...prev, [code]: true }));
+        setMatchLoaded((prev) => ({ ...prev, [code]: true }));
       } else {
         setActiveJobId(code);
         setActiveJobCode(code);
@@ -263,47 +350,6 @@ if (shouldRedirect) {
       setActiveJobCode(null);
     }
   };
-
-  const loadMatchResults = useCallback(async (code) => {
-    try {
-      const resp = await api.get(`/match/${code}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      const matchResults = resp.data.matches.map((m) => ({
-        ...m,
-        status: m.status || null
-      }));
-      setMatches((prev) => ({ ...prev, [code]: matchResults }));
-      setMatchLoaded((prev) => ({ ...prev, [code]: true }));
-    } catch (err) {
-      console.error(`Error loading stored matches for ${code}:`, err);
-    }
-  }, [token]);
-
-  useEffect(() => {
-    if (!activeJobId || !activeJobCode) {
-      return undefined;
-    }
-
-    const interval = setInterval(async () => {
-      try {
-        const resp = await api.get(`/has-match/${activeJobId}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        if (resp.data.status === 'complete') {
-          await loadMatchResults(activeJobCode);
-          setLoadingMatches((prev) => ({ ...prev, [activeJobCode]: false }));
-          setMatchPresence((prev) => ({ ...prev, [activeJobCode]: true }));
-          setActiveJobId(null);
-          setActiveJobCode(null);
-        }
-      } catch (err) {
-        console.error('Error polling match status:', err);
-      }
-    }, 3000);
-
-    return () => clearInterval(interval);
-  }, [activeJobId, activeJobCode, loadMatchResults, token]);
 
   const handleSelect = (jobCode, email) => (e) => {
     setSelectedRows((prev) => {
