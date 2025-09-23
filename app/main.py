@@ -1818,6 +1818,113 @@ def rematch_job(
         return {"matches": matches}
 
 
+def _max_travel_distance(student: dict[str, Any]) -> float:
+    """Return the student's maximum travel distance as a float."""
+
+    value = student.get("max_travel", 0)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _evaluate_candidate(
+    student: dict[str, Any],
+    emb: list[float],
+    coord: tuple[float, float],
+    distances: dict[tuple[float, float], float],
+    job_emb: list[float],
+) -> dict[str, Any] | None:
+    """Return a match payload for a candidate if they meet requirements."""
+
+    dist = distances.get(coord)
+    if dist is None:
+        return None
+    if dist > _max_travel_distance(student):
+        return None
+    score = float(np.dot(job_emb, emb))
+    return {
+        "name": f"{student.get('first_name', '')} {student.get('last_name', '')}",
+        "first_name": student.get("first_name", ""),
+        "last_name": student.get("last_name", ""),
+        "email": student.get("email"),
+        "score": score,
+        "distance_miles": round(dist, 1),
+    }
+
+
+async def filter_candidates(
+    candidates: list[tuple[dict[str, Any], list[float], tuple[float, float]]],
+    distances: dict[tuple[float, float], float],
+    job_emb: list[float],
+    *,
+    batch_size: int = 25,
+    job_code: str | None = None,
+    job_identifier: str | None = None,
+) -> tuple[list[dict[str, Any]], float]:
+    """Filter candidate matches in asynchronous batches."""
+
+    if not candidates:
+        return [], 0.0
+
+    filtered: list[dict[str, Any]] = []
+    total_batches = (len(candidates) + batch_size - 1) // batch_size
+    start = time.perf_counter()
+
+    for batch_index in range(total_batches):
+        start_idx = batch_index * batch_size
+        end_idx = start_idx + batch_size
+        batch = candidates[start_idx:end_idx]
+        batch_start = time.perf_counter()
+        tasks = [
+            asyncio.to_thread(
+                _evaluate_candidate,
+                student,
+                emb,
+                coord,
+                distances,
+                job_emb,
+            )
+            for student, emb, coord in batch
+        ]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for result in results:
+            if isinstance(result, Exception):
+                logger.exception(
+                    "⚠️ Candidate evaluation error in batch %s: %s",
+                    batch_index + 1,
+                    result,
+                )
+                continue
+            if result:
+                filtered.append(result)
+        duration = time.perf_counter() - batch_start
+        logger.info(
+            "🏃 Filtering batch %s of %s with %s candidates took %.2fs",
+            batch_index + 1,
+            total_batches,
+            len(batch),
+            duration,
+        )
+
+    total_duration = time.perf_counter() - start
+    if job_code is not None:
+        logger.info(
+            "✅ Async candidate filtering finished with %s candidates in %.2fs for job %s (job_id=%s)",
+            len(filtered),
+            total_duration,
+            job_code,
+            job_identifier or "n/a",
+        )
+    else:
+        logger.info(
+            "✅ Async candidate filtering finished with %s candidates in %.2fs",
+            len(filtered),
+            total_duration,
+        )
+    return filtered, total_duration
+
+
 async def _perform_match_async(
     job_code: str,
     send_emails: bool = False,
@@ -1974,7 +2081,6 @@ async def _perform_match_async(
     candidate_coords: list[tuple[float, float]] = []
     filtering_wall_start = time.time()
     filtering_perf_start = time.perf_counter()
-    filter_start = filtering_perf_start
     filter_wall_start = filtering_wall_start
     logger.info(
         "🔎 Filtering candidates started at %.6f with %d raw candidates for job %s (job_id=%s)",
@@ -2075,26 +2181,14 @@ async def _perform_match_async(
         len(candidate_coords),
     )
 
-    for student, emb, coord in candidates:
-        dist = distances.get(coord)
-        if dist is None:
-            continue
-        if dist > float(student.get("max_travel", 0)):
-            continue
-        score = float(np.dot(job_emb, emb))
-        matches.append(
-            {
-                "name": f"{student.get('first_name', '')} {student.get('last_name', '')}",
-                "first_name": student.get("first_name", ""),
-                "last_name": student.get("last_name", ""),
-                "email": student.get("email"),
-                "score": score,
-                "distance_miles": round(dist, 1),
-            }
-        )
-
+    matches, filter_elapsed = await filter_candidates(
+        candidates,
+        distances,
+        job_emb,
+        job_code=job_code,
+        job_identifier=job_identifier,
+    )
     filtered_candidates = list(matches)
-    filter_elapsed = time.perf_counter() - filter_start
     logger.info(
         "✅ Candidate filtering completed for job %s (job_id=%s) in %.2fs, kept %d candidates",
         job_code,

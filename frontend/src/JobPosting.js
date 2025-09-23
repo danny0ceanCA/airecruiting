@@ -162,12 +162,32 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
         }));
         setMatches((prev) => ({ ...prev, [jobCode]: matchResults }));
         setMatchLoaded((prev) => ({ ...prev, [jobCode]: true }));
+        setMatchPresence((prev) => ({
+          ...prev,
+          [jobCode]: matchResults.length > 0 || prev[jobCode],
+        }));
       } catch (err) {
         console.error(`Error loading stored matches for ${jobCode}:`, err);
       }
     },
     [jobs, token]
   );
+
+  useEffect(() => {
+    jobs.forEach((job) => {
+      const assignedCount = job.assigned_students?.length || 0;
+      if (
+        assignedCount > 0 &&
+        !matches[job.job_code] &&
+        !matchLoaded[job.job_code]
+      ) {
+        console.debug(
+          `🧭 [debug] Preloading matches for assigned students on job ${job.job_code} (assigned count: ${assignedCount})`
+        );
+        loadMatchResults(job.job_code);
+      }
+    });
+  }, [jobs, matches, matchLoaded, loadMatchResults]);
 
   useEffect(() => {
     if (token) {
@@ -218,19 +238,24 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
         });
         console.log('🔄 Polling /has-match response:', resp.data);
         if (resp.data.status === 'complete') {
-          const hasImmediateResults = Array.isArray(resp.data.results) && resp.data.results.length > 0;
+          const results = Array.isArray(resp.data.results) ? resp.data.results : [];
+          const hasImmediateResults = results.length > 0;
           if (hasImmediateResults) {
-            console.info(`🟢 [debug] /has-match returned ${resp.data.results.length} results for job ${activeJobCode}`);
-            const immediateResults = resp.data.results.map((m) => ({
+            console.info(`🟢 [debug] /has-match returned ${results.length} results for job ${activeJobCode} [frontend-debug]`);
+            const immediateResults = results.map((m) => ({
               ...m,
               status: m.status || null,
             }));
             setMatches((prev) => ({ ...prev, [activeJobCode]: immediateResults }));
             setMatchLoaded((prev) => ({ ...prev, [activeJobCode]: true }));
+            setMatchPresence((prev) => ({ ...prev, [activeJobCode]: true }));
+            console.info(
+              `🟢 [debug] Skipping /match fetch, already injected ${results.length} results for job ${activeJobCode} [frontend-debug]`
+            );
+          } else {
+            await loadMatchResults(activeJobId);
           }
-          await loadMatchResults(activeJobId, resp);
           setLoadingMatches((prev) => ({ ...prev, [activeJobCode]: false }));
-          setMatchPresence((prev) => ({ ...prev, [activeJobCode]: true }));
           clearInterval(pollingIntervalRef.current);
           pollingIntervalRef.current = null;
           console.log('🛑 Stopped polling for job', activeJobId);
@@ -770,82 +795,86 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
             )}
           </tbody>
         </table>
-        {matches[job.job_code] && matches[job.job_code].some((m) => m.status === 'assigned') && (
-          <div className="assigned-subtable">
-            <h4>Assigned Students</h4>
-            <table>
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Email</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {matches[job.job_code]
-                  .filter((m) => m.status === 'assigned')
-                  .map((m) => (
-                    <tr key={m.email}>
-                      <td>
-                        {m.first_name} {m.last_name}
-                      </td>
-                      <td>{m.email}</td>
-                      <td>
-                        <span className="badge assigned">Assigned</span>
-                      </td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        {matches[job.job_code] &&
+          matches[job.job_code].some((m) => m.status === 'assigned') &&
+          renderAssigned(job)}
       </>
     );
   };
 
   const renderAssigned = (job) => {
     const matchList = matches[job.job_code] || [];
-    const assignedMatches = matchList.filter((m) => m.status === 'assigned');
-    console.log('📌 Assigned subtable for', job.job_code, matches[job.job_code]);
+    const jobAssigned = job.assigned_students || [];
+    const assignedMap = new Map();
 
-    if (assignedMatches.length > 0) {
+    matchList.forEach((m) => {
+      if (m.status === 'assigned' || jobAssigned.includes(m.email)) {
+        assignedMap.set(m.email, m);
+      }
+    });
+
+    jobAssigned.forEach((email) => {
+      if (!assignedMap.has(email)) {
+        assignedMap.set(email, {
+          email,
+          first_name: '',
+          last_name: '',
+          name: '',
+          score: null,
+          status: 'assigned',
+          notes: [],
+        });
+      }
+    });
+
+    const assignedRows = Array.from(assignedMap.values());
+
+    console.debug(
+      `🧾 [debug] Rendering assigned table for job ${job.job_code} with ${assignedRows.length} rows (assigned_students length: ${jobAssigned.length})`
+    );
+
+    if (assignedRows.length === 0) {
       return (
         <div className="assigned-subtable">
           <h4>Assigned Students</h4>
-          <table className="matches-table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Email</th>
-                <th>Score</th>
-                <th>Resume</th>
-                <th>Note</th>
-                <th>Status</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {assignedMatches.map((row) => (
+          <p>No assigned students yet.</p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="assigned-subtable">
+        <h4>Assigned Students</h4>
+        <table className="matches-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Score</th>
+              <th>Resume</th>
+              <th>Note</th>
+              <th>Status</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {assignedRows.map((row) => {
+              const displayName = `${
+                row.first_name || row.name?.split(' ')[0] || ''
+              } ${row.last_name || row.name?.split(' ')[1] || ''}`.trim();
+              const status = row.status || 'assigned';
+              return (
                 <tr key={row.email}>
-                  <td>
-                    {row.first_name || row.name?.split(' ')[0]}{' '}
-                    {row.last_name || row.name?.split(' ')[1]}
-                  </td>
-                  <td>{row.email}</td>
+                  <td>{displayName || row.email}</td>
                   <td>{formatScore(row.score)}</td>
                   <td>
-                    {generatingResumes[`${job.job_code}:${row.email}`] ? (
-                      <span className="spinner">⏳</span>
-                    ) : generatedResumes[`${job.job_code}:${row.email}`] ? (
-                      <button
-                        className="resume-icon-button"
-                        onClick={() => viewResume(row.email, job.job_code)}
-                      >
-                        📥
-                      </button>
+                    {previewingResumes[`${job.job_code}:${row.email}`] ? (
+                      <span className="spinner" />
                     ) : (
-                      <button onClick={() => generateResume(row.email, job.job_code)}>
-                        Generate Resume
+                      <button
+                        className="preview-button"
+                        onClick={() => previewResume(row.email, job.job_code)}
+                      >
+                        View Resume
                       </button>
                     )}
                   </td>
@@ -855,7 +884,13 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
                     </button>
                   </td>
                   <td className="status-cell">
-                    <span className="badge assigned inline">Assigned</span>
+                    {status === 'placed' ? (
+                      <span className="badge placed inline">Placed</span>
+                    ) : status === 'rejected' ? (
+                      <span className="badge rejected inline">Rejected</span>
+                    ) : (
+                      <span className="badge assigned inline">Assigned</span>
+                    )}
                   </td>
                   <td>
                     {isRecruiter ? (
@@ -880,57 +915,13 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
                     </button>
                   </td>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      );
-    }
-
-    if (job.assigned_students?.length) {
-      return (
-        <div className="assigned-subtable">
-          <h4>Assigned Students</h4>
-          <table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Email</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {job.assigned_students.map((email) => {
-                const match = matchList.find((m) => m.email === email);
-                const displayName = match
-                  ? `${match.first_name || match.name?.split(' ')[0] || ''} ${
-                      match.last_name || match.name?.split(' ')[1] || ''
-                    }`.trim()
-                  : '';
-                return (
-                  <tr key={email}>
-                    <td>{displayName || email}</td>
-                    <td>{email}</td>
-                    <td>
-                      <span className="badge assigned">Assigned</span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      );
-    }
-
-    return (
-      <div className="assigned-subtable">
-        <h4>Assigned Students</h4>
-        <p>No assigned students yet.</p>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
     );
   };
-
   const renderPlaced = (job) => {
     const matchList = matches[job.job_code] || [];
     const placedMatches = matchList.filter((m) => m.status === 'placed');
@@ -1242,13 +1233,21 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
                   )}
                   <td>
                     {(() => {
+                      const matchListLength = matches[job.job_code]?.length || 0;
                       const hasMatchInRedis = matchPresence[job.job_code] === true;
+                      const hasStoredMatches = hasMatchInRedis || matchListLength > 0;
+                      console.debug(
+                        `🧠 [debug] Job ${job.job_code} button render -> matchPresence: ${hasMatchInRedis}, stored length: ${matchListLength}. Showing ${hasStoredMatches ? 'View Matches + Match Again' : 'Match only'} buttons.`
+                      );
 
-                      return hasMatchInRedis ? (
+                      return hasStoredMatches ? (
                         <>
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
+                              if (!matches[job.job_code]) {
+                                loadMatchResults(job.job_code);
+                              }
                               setExpandedJob(job.job_code);
                               setActiveSubtab((prev) => ({
                                 ...prev,
