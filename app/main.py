@@ -193,6 +193,49 @@ def user_key(email: str) -> str:
     return f"user:{normalize_email(email)}"
 
 
+USER_INDEX_PREFIX = "user_index"
+
+
+def _normalize_institution_code(code: str | None) -> str | None:
+    """Normalize an institutional code for consistent redis indexing."""
+
+    if not code:
+        return None
+    return code.strip().lower()
+
+
+def user_index_key(code: str) -> str:
+    """Return the redis key for an institutional-code user index."""
+
+    return f"{USER_INDEX_PREFIX}:{code}"
+
+
+def sync_applicant_index(
+    email: str,
+    previous: dict[str, Any] | None,
+    updated: dict[str, Any] | None,
+) -> None:
+    """Ensure the applicant institutional-code index reflects the latest state."""
+
+    prev = previous or {}
+    new = updated or {}
+    prev_role = prev.get("role")
+    new_role = new.get("role")
+    prev_code = _normalize_institution_code(
+        prev.get("institutional_code") or prev.get("school_code")
+    )
+    new_code = _normalize_institution_code(
+        new.get("institutional_code") or new.get("school_code")
+    )
+
+    if prev_role == "applicant" and prev_code:
+        if new_role != "applicant" or new_code != prev_code:
+            redis_client.srem(user_index_key(prev_code), normalize_email(email))
+
+    if new_role == "applicant" and new_code:
+        redis_client.sadd(user_index_key(new_code), normalize_email(email))
+
+
 def _hash_refresh_token(token: str) -> str:
     """Return a deterministic hash for a refresh token."""
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
@@ -206,6 +249,18 @@ def _set_with_ttl(key: str, ttl: int, value: str) -> None:
         redis_client.set(key, value)
 
 
+def redis_delete(key: str) -> None:
+    """Delete a key from redis, tolerating simplified test doubles."""
+
+    if hasattr(redis_client, "delete"):
+        redis_client.delete(key)
+        return
+    for attr in ("store", "sets", "hashes", "lists"):
+        container = getattr(redis_client, attr, None)
+        if isinstance(container, dict):
+            container.pop(key, None)
+
+
 def issue_refresh_token(email: str) -> str:
     """Generate and persist a refresh token for a user, rotating old values."""
     normalized = normalize_email(email)
@@ -213,7 +268,7 @@ def issue_refresh_token(email: str) -> str:
     hashed = _hash_refresh_token(raw_token)
     current = redis_client.get(f"{REFRESH_TOKEN_USER_PREFIX}:{normalized}")
     if current:
-        redis_client.delete(f"{REFRESH_TOKEN_LOOKUP_PREFIX}:{current}")
+        redis_delete(f"{REFRESH_TOKEN_LOOKUP_PREFIX}:{current}")
     _set_with_ttl(f"{REFRESH_TOKEN_USER_PREFIX}:{normalized}", REFRESH_TOKEN_TTL_SECONDS, hashed)
     _set_with_ttl(f"{REFRESH_TOKEN_LOOKUP_PREFIX}:{hashed}", REFRESH_TOKEN_TTL_SECONDS, normalized)
     return raw_token
@@ -224,8 +279,8 @@ def revoke_refresh_token(email: str, hashed: str | None = None) -> None:
     normalized = normalize_email(email)
     stored_hash = hashed or redis_client.get(f"{REFRESH_TOKEN_USER_PREFIX}:{normalized}")
     if stored_hash:
-        redis_client.delete(f"{REFRESH_TOKEN_LOOKUP_PREFIX}:{stored_hash}")
-    redis_client.delete(f"{REFRESH_TOKEN_USER_PREFIX}:{normalized}")
+        redis_delete(f"{REFRESH_TOKEN_LOOKUP_PREFIX}:{stored_hash}")
+    redis_delete(f"{REFRESH_TOKEN_USER_PREFIX}:{normalized}")
 
 
 def generate_access_token(email: str, role: str) -> str:
@@ -718,21 +773,18 @@ def _seed_admin_user(email: str, password: str, first: str, last: str, role: str
     if redis_client.exists(key):
         return
     hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-    redis_client.set(
-        key,
-        json.dumps(
-            {
-                "first_name": first,
-                "last_name": last,
-                "institutional_code": "Admin School",
-                "password": hashed,
-                "active": True,
-                "role": role,
-                "approved": True,
-                "rejected": False,
-            }
-        ),
-    )
+    payload = {
+        "first_name": first,
+        "last_name": last,
+        "institutional_code": "Admin School",
+        "password": hashed,
+        "active": True,
+        "role": role,
+        "approved": True,
+        "rejected": False,
+    }
+    redis_client.set(key, json.dumps(payload))
+    sync_applicant_index(email, None, payload)
     logger.info("%s user %s created", role, email)
 
 
@@ -913,22 +965,19 @@ def register(req: RegisterRequest):
             )
 
     hashed = bcrypt.hashpw(req.password.encode(), bcrypt.gensalt()).decode()
-    redis_client.set(
-        key,
-        json.dumps(
-            {
-                "first_name": req.first_name,
-                "last_name": req.last_name,
-                "institutional_code": req.institutional_code,
-                "school_label": label,
-                "password": hashed,
-                "active": True,
-                "role": req.role,
-                "approved": False,
-                "rejected": False,
-            }
-        ),
-    )
+    payload = {
+        "first_name": req.first_name,
+        "last_name": req.last_name,
+        "institutional_code": req.institutional_code,
+        "school_label": label,
+        "password": hashed,
+        "active": True,
+        "role": req.role,
+        "approved": False,
+        "rejected": False,
+    }
+    redis_client.set(key, json.dumps(payload))
+    sync_applicant_index(email, None, payload)
     if student_key_existing:
         raw = redis_client.get(student_key_existing)
         try:
@@ -1127,10 +1176,12 @@ def approve(req: ApproveRequest, current_user: dict = Depends(get_current_user))
     if not raw:
         raise HTTPException(status_code=404, detail="User not found")
     user = json.loads(raw)
+    previous = dict(user)
     user["approved"] = True
     if req.role is not None:
         user["role"] = req.role
     redis_client.set(key, json.dumps(user))
+    sync_applicant_index(email, previous, user)
     return {"message": f"{email} approved as {user['role']}"}
 
 @app.post("/reject")
@@ -1218,6 +1269,7 @@ def update_user(email: str, req: UpdateUserRequest, current_user: dict = Depends
     if not raw:
         raise HTTPException(status_code=404, detail="User not found")
     user = json.loads(raw)
+    previous = dict(user)
     if req.role is not None:
         user["role"] = req.role
     if req.institutional_code is not None:
@@ -1229,6 +1281,7 @@ def update_user(email: str, req: UpdateUserRequest, current_user: dict = Depends
     if req.active is not None:
         user["active"] = req.active
     redis_client.set(key, json.dumps(user))
+    sync_applicant_index(email, previous, user)
     return {"message": "User updated"}
 
 
@@ -1244,7 +1297,15 @@ def delete_user(email: str, current_user: dict = Depends(get_current_user)):
     if not key or not redis_client.exists(key):
         raise HTTPException(status_code=404, detail="User not found")
 
-    redis_client.delete(key)
+    raw = redis_client.get(key)
+    if raw:
+        try:
+            user = json.loads(raw)
+        except Exception:
+            user = None
+        if user:
+            sync_applicant_index(email, user, {})
+    redis_delete(key)
     return {"message": f"Deleted {email}"}
 
 
@@ -1291,7 +1352,7 @@ def delete_school_code(code: str, current_user: dict = Depends(get_current_user)
     key = f"school_code:{code}"
     if not redis_client.exists(key):
         raise HTTPException(status_code=404, detail="Code not found")
-    redis_client.delete(key)
+    redis_delete(key)
     return {"message": "School code deleted"}
 
 
@@ -1339,7 +1400,7 @@ def delete_license(code: str, current_user: dict = Depends(get_current_user)):
     key = f"license:{code}"
     if not redis_client.exists(key):
         raise HTTPException(status_code=404, detail="License not found")
-    redis_client.delete(key)
+    redis_delete(key)
     return {"message": "License deleted"}
 
 
@@ -1387,7 +1448,7 @@ def delete_rss_feed(name: str, current_user: dict = Depends(get_current_user)):
     key = f"rss_feed:{name}"
     if not redis_client.exists(key):
         raise HTTPException(status_code=404, detail="Feed not found")
-    redis_client.delete(key)
+    redis_delete(key)
     return {"message": "Feed deleted"}
 
 @app.post("/students")
@@ -1593,7 +1654,7 @@ def update_student(
         data["created_at"] = created_at
 
     if key and key != student_key(inst_code, student_id):
-        redis_client.delete(key)
+        redis_delete(key)
     persist_student_record(email, data, inst_code, student_id)
     rebuild_vector_index()
     return {"message": "Student updated successfully"}
@@ -1637,9 +1698,9 @@ def upload_students(file: UploadFile = File(...), current_user: dict = Depends(g
 
         existing_key = resolve_student_key(student.email)
         if existing_key:
-            redis_client.delete(existing_key)
-        redis_client.delete(f"student:{student.email}")
-        redis_client.delete(student_email_key(student.email))
+            redis_delete(existing_key)
+        redis_delete(f"student:{student.email}")
+        redis_delete(student_email_key(student.email))
 
         combined = " ".join([
             ", ".join(student.skills),
@@ -1828,31 +1889,6 @@ def _max_travel_distance(student: dict[str, Any]) -> float:
         return 0.0
 
 
-def _evaluate_candidate(
-    student: dict[str, Any],
-    emb: list[float],
-    coord: tuple[float, float],
-    distances: dict[tuple[float, float], float],
-    job_emb: list[float],
-) -> dict[str, Any] | None:
-    """Return a match payload for a candidate if they meet requirements."""
-
-    dist = distances.get(coord)
-    if dist is None:
-        return None
-    if dist > _max_travel_distance(student):
-        return None
-    score = float(np.dot(job_emb, emb))
-    return {
-        "name": f"{student.get('first_name', '')} {student.get('last_name', '')}",
-        "first_name": student.get("first_name", ""),
-        "last_name": student.get("last_name", ""),
-        "email": student.get("email"),
-        "score": score,
-        "distance_miles": round(dist, 1),
-    }
-
-
 async def filter_candidates(
     candidates: list[tuple[dict[str, Any], list[float], tuple[float, float]]],
     distances: dict[tuple[float, float], float],
@@ -1862,55 +1898,77 @@ async def filter_candidates(
     job_code: str | None = None,
     job_identifier: str | None = None,
 ) -> tuple[list[dict[str, Any]], float]:
-    """Filter candidate matches in asynchronous batches."""
+    """Filter candidate matches using vectorized similarity scoring."""
 
     if not candidates:
         return [], 0.0
 
-    filtered: list[dict[str, Any]] = []
-    total_batches = (len(candidates) + batch_size - 1) // batch_size
     start = time.perf_counter()
+    job_vector = np.asarray(job_emb, dtype=np.float32)
 
-    for batch_index in range(total_batches):
-        start_idx = batch_index * batch_size
-        end_idx = start_idx + batch_size
-        batch = candidates[start_idx:end_idx]
-        batch_start = time.perf_counter()
-        tasks = [
-            asyncio.to_thread(
-                _evaluate_candidate,
-                student,
-                emb,
-                coord,
-                distances,
-                job_emb,
-            )
-            for student, emb, coord in batch
-        ]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        for result in results:
-            if isinstance(result, Exception):
-                logger.exception(
-                    "⚠️ Candidate evaluation error in batch %s: %s",
-                    batch_index + 1,
-                    result,
-                )
-                continue
-            if result:
-                filtered.append(result)
-        duration = time.perf_counter() - batch_start
-        logger.info(
-            "🏃 Filtering batch %s of %s with %s candidates took %.2fs",
-            batch_index + 1,
-            total_batches,
-            len(batch),
-            duration,
+    filtered: list[dict[str, Any]] = []
+    embeddings: list[np.ndarray] = []
+    student_payloads: list[dict[str, Any]] = []
+    distance_values: list[float] = []
+
+    skipped_no_distance = 0
+    skipped_travel = 0
+    skipped_embedding = 0
+
+    for student, emb, coord in candidates:
+        dist = distances.get(coord)
+        if dist is None:
+            skipped_no_distance += 1
+            continue
+        if dist > _max_travel_distance(student):
+            skipped_travel += 1
+            continue
+        try:
+            emb_vec = np.asarray(emb, dtype=np.float32)
+        except Exception:
+            skipped_embedding += 1
+            continue
+        if emb_vec.shape != job_vector.shape:
+            skipped_embedding += 1
+            continue
+        embeddings.append(emb_vec)
+        student_payloads.append(student)
+        distance_values.append(dist)
+
+    if embeddings:
+        candidate_matrix = np.vstack(embeddings)
+        scores = candidate_matrix @ job_vector
+    else:
+        scores = np.empty(0, dtype=np.float32)
+
+    for idx, student in enumerate(student_payloads):
+        score = float(scores[idx]) if idx < len(scores) else 0.0
+        filtered.append(
+            {
+                "name": f"{student.get('first_name', '')} {student.get('last_name', '')}",
+                "first_name": student.get("first_name", ""),
+                "last_name": student.get("last_name", ""),
+                "email": student.get("email"),
+                "score": score,
+                "distance_miles": round(distance_values[idx], 1),
+            }
         )
 
     total_duration = time.perf_counter() - start
+
+    logger.info(
+        "🏃 Vectorized candidate filtering evaluated %s candidates (kept %s, skipped %s distance / %s travel / %s embedding) in %.2fs",
+        len(candidates),
+        len(filtered),
+        skipped_no_distance,
+        skipped_travel,
+        skipped_embedding,
+        total_duration,
+    )
+
     if job_code is not None:
         logger.info(
-            "✅ Async candidate filtering finished with %s candidates in %.2fs for job %s (job_id=%s)",
+            "✅ Candidate filtering finished with %s candidates in %.2fs for job %s (job_id=%s)",
             len(filtered),
             total_duration,
             job_code,
@@ -1918,7 +1976,7 @@ async def filter_candidates(
         )
     else:
         logger.info(
-            "✅ Async candidate filtering finished with %s candidates in %.2fs",
+            "✅ Candidate filtering finished with %s candidates in %.2fs",
             len(filtered),
             total_duration,
         )
@@ -2228,23 +2286,35 @@ async def _perform_match_async(
     filter_start = time.time()
     # Include applicant user records with a matching institutional code when no
     # student profile exists for them
-    for ukey in redis_client.scan_iter("user:*"):
-        u_raw = redis_client.get(ukey)
+    fallback_emails: set[str] = set()
+    normalized_poster_code = _normalize_institution_code(poster_code)
+    if normalized_poster_code:
+        index_key = user_index_key(normalized_poster_code)
+        try:
+            emails = redis_client.smembers(index_key)
+        except Exception:
+            emails = set()
+        fallback_emails = set(emails or [])
+    else:
+        index_key = None
+
+    for email in fallback_emails:
+        u_raw = redis_client.get(user_key(email))
         if not u_raw:
+            if index_key:
+                redis_client.srem(index_key, email)
             continue
         try:
             udata = json.loads(u_raw)
         except Exception:
+            if index_key:
+                redis_client.srem(index_key, email)
             continue
         if udata.get("role") != "applicant" or not poster_code:
-            continue
-        ucode = udata.get("institutional_code") or udata.get("school_code")
-        if ucode != poster_code:
             continue
         user_license = license_to_code(udata.get("license") or udata.get("education_level"))
         if required_license and user_license != required_license:
             continue
-        email = ukey.split("user:", 1)[1]
         if email in job.get("uninterested_students", []):
             continue
         if resolve_student_key(email):
@@ -2356,7 +2426,7 @@ async def _perform_match_async(
         len(top_matches),
     )
     if job_id and job_id != job_code:
-        redis_client.delete(f"match_job:{job_code}")
+        redis_delete(f"match_job:{job_code}")
     if progress_callback:
         try:
             progress_callback(
@@ -2751,13 +2821,13 @@ def delete_job(job_code: str, token_data: dict = Depends(get_current_user)):
     if not redis_client.exists(job_key):
         raise HTTPException(status_code=404, detail="Job not found")
 
-    redis_client.delete(job_key)
-    redis_client.delete(match_key)
+    redis_delete(job_key)
+    redis_delete(match_key)
     match_id = redis_client.get(lookup_key)
     if match_id:
-        redis_client.delete(f"match_job:{match_id}")
-    redis_client.delete(lookup_key)
-    redis_client.delete(f"match_results:{job_code}")
+        redis_delete(f"match_job:{match_id}")
+    redis_delete(lookup_key)
+    redis_delete(f"match_results:{job_code}")
 
     return {"message": f"Job {job_code} deleted successfully"}
 
@@ -3796,14 +3866,14 @@ def reset_jobs(current_user: dict = Depends(get_current_user)):
 
     deleted = 0
     for key in list(redis_client.scan_iter("job:*")):
-        redis_client.delete(key)
+        redis_delete(key)
         deleted += 1
     for key in list(redis_client.scan_iter("match_job:*")):
-        redis_client.delete(key)
+        redis_delete(key)
     for key in list(redis_client.scan_iter("match_job_lookup:*")):
-        redis_client.delete(key)
+        redis_delete(key)
     for key in list(redis_client.scan_iter("match_results:*")):
-        redis_client.delete(key)
+        redis_delete(key)
 
     return {"message": f"Deleted {deleted} jobs and match data"}
 
@@ -3829,7 +3899,7 @@ def clear_student_claim(email: str, current_user: dict = Depends(get_current_use
         k = token_key if isinstance(token_key, str) else token_key.decode()
         val = redis_client.get(k)
         if email in k or (isinstance(val, str) and normalize_email(val) == email):
-            redis_client.delete(k)
+            redis_delete(k)
 
     return {"message": f"Cleared claim for {email}"}
 
@@ -3845,13 +3915,13 @@ def delete_student(email: str, current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="Student not found")
 
     # Delete student profile
-    redis_client.delete(skey)
-    redis_client.delete(student_email_key(email))
+    redis_delete(skey)
+    redis_delete(student_email_key(email))
 
     # Remove any lingering user record to avoid bogus admin entries
     ukey = find_user_key(email)
     if ukey:
-        redis_client.delete(ukey)
+        redis_delete(ukey)
 
     # Clean up from job assignments/placements
     for job_key in redis_client.scan_iter("job:*"):
@@ -3879,11 +3949,11 @@ def delete_student(email: str, current_user: dict = Depends(get_current_user)):
 
     # Remove resume if it exists
     for key in redis_client.scan_iter(f"resume:*:{email}"):
-        redis_client.delete(key)
+        redis_delete(key)
 
     # Remove job descriptions if any
     for key in redis_client.scan_iter(f"job_description:*:{email}"):
-        redis_client.delete(key)
+        redis_delete(key)
 
     # (Optional) Clean match results if student appears
     for match_key in redis_client.scan_iter("match_job:*"):
