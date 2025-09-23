@@ -1826,6 +1826,7 @@ async def _perform_match_async(
     job_id: str | None = None,
 ):
     overall_start = time.perf_counter()
+    job_start = overall_start
     overall_wall_start = time.time()
     job_identifier = job_id or "n/a"
     logger.info(
@@ -1897,6 +1898,8 @@ async def _perform_match_async(
     faiss_time = 0.0
     filter_time = 0.0
     distance_time = 0.0
+    filter_elapsed = 0.0
+    elapsed_store = 0.0
     if vector_index is None:
         if progress_callback:
             try:
@@ -1971,6 +1974,8 @@ async def _perform_match_async(
     candidate_coords: list[tuple[float, float]] = []
     filtering_wall_start = time.time()
     filtering_perf_start = time.perf_counter()
+    filter_start = filtering_perf_start
+    filter_wall_start = filtering_wall_start
     logger.info(
         "🔎 Filtering candidates started at %.6f with %d raw candidates for job %s (job_id=%s)",
         filtering_wall_start,
@@ -2088,6 +2093,15 @@ async def _perform_match_async(
             }
         )
 
+    filtered_candidates = list(matches)
+    filter_elapsed = time.perf_counter() - filter_start
+    logger.info(
+        "✅ Candidate filtering completed for job %s (job_id=%s) in %.2fs, kept %d candidates",
+        job_code,
+        job_identifier,
+        filter_elapsed,
+        len(filtered_candidates),
+    )
     filtering_wall_end = time.time()
     filtering_perf_elapsed = time.perf_counter() - filtering_perf_start
     logger.info(
@@ -2185,7 +2199,7 @@ async def _perform_match_async(
         else:
             m["status"] = None
 
-    filter_time = time.time() - filter_start
+    filter_time = time.time() - filter_wall_start
     filtered_candidates = top_matches
     logger.info(
         "✅ Candidate filtering completed in %.2fs, kept %d candidates for job %s",
@@ -2212,12 +2226,21 @@ async def _perform_match_async(
         job_identifier,
     )
     final_results = top_matches
+    t_store = time.perf_counter()
     logger.info(
-        "💾 Persisting %d match results to Redis for job %s",
+        "💾 Storing %d match results to Redis for job %s (job_id=%s)",
         len(final_results),
+        job_code,
         job_identifier,
     )
     redis_client.set(f"match_job:{storage_id}", json.dumps(payload))
+    elapsed_store = time.perf_counter() - t_store
+    logger.info(
+        "✅ Redis store completed for job %s (job_id=%s) in %.2fs",
+        job_code,
+        job_identifier,
+        elapsed_store,
+    )
     store_perf_elapsed = time.perf_counter() - store_perf_start
     store_wall_end = time.time()
     logger.info(
@@ -2307,23 +2330,24 @@ async def _perform_match_async(
     except Exception:
         pass
 
-    total_elapsed = time.perf_counter() - embed_start
-    total_time = time.time() - overall_wall_start
+    post_processing_elapsed = time.perf_counter() - embed_start
     logger.info(
         "🚩 Finished all post-processing for job %s (job_id=%s) in %.2fs",
         job_code,
         job_identifier,
-        total_elapsed,
+        post_processing_elapsed,
     )
+    total_elapsed = time.perf_counter() - job_start
     logger.info(
-        "🏁 Finished match job %s in %.2fs (embeddings %.2fs, FAISS %.2fs, filtering %.2fs, distances %.2fs, total %.2fs)",
+        "🏁 Match job %s (job_id=%s) fully completed in %.2fs (embeddings %.2fs, FAISS %.2fs, filtering %.2fs, distances %.2fs, persistence %.2fs)",
+        job_code,
         job_identifier,
-        total_time,
+        total_elapsed,
         embedding_time,
         faiss_time,
-        filter_time,
+        filter_elapsed,
         distance_time,
-        total_time,
+        elapsed_store,
     )
 
     return top_matches
