@@ -128,35 +128,75 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
     setMatchPresence(result);
   };
 
+  const loadMatchResults = useCallback(
+    async (code) => {
+      try {
+        const resp = await api.get(`/match/${code}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const matchResults = resp.data.matches.map((m) => ({
+          ...m,
+          status: m.status || null
+        }));
+        setMatches((prev) => ({ ...prev, [code]: matchResults }));
+        setMatchLoaded((prev) => ({ ...prev, [code]: true }));
+      } catch (err) {
+        console.error(`Error loading stored matches for ${code}:`, err);
+      }
+    },
+    [token]
+  );
 
   useEffect(() => {
-  if (token) {
-    fetchJobs();
-  }
-}, [token]);
-
-
-  useEffect(() => {
-  if (jobs.length > 0) {
-    checkMatchFlags();
-  }
-}, [jobs]);
-
+    if (token) {
+      fetchJobs();
+    }
+  }, [token]);
 
   useEffect(() => {
-  const shouldLoad =
-    expandedJob &&
-    matchPresence[expandedJob] === true &&
-    !matches[expandedJob];
+    if (jobs.length > 0) {
+      checkMatchFlags();
+    }
+  }, [jobs]);
 
-  if (shouldLoad) {
-    loadMatchResults(expandedJob);
+  useEffect(() => {
+    const shouldLoad =
+      expandedJob &&
+      matchPresence[expandedJob] === true &&
+      !matches[expandedJob];
+
+    if (shouldLoad) {
+      loadMatchResults(expandedJob);
+    }
+  }, [expandedJob, matchPresence, matches, loadMatchResults]);
+
+  useEffect(() => {
+    if (!activeJobId || !activeJobCode) {
+      return undefined;
+    }
+
+    const interval = setInterval(async () => {
+      try {
+        const resp = await api.get(`/has-match/${activeJobId}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (resp.data.status === 'complete') {
+          await loadMatchResults(activeJobCode);
+          setLoadingMatches((prev) => ({ ...prev, [activeJobCode]: false }));
+          setMatchPresence((prev) => ({ ...prev, [activeJobCode]: true }));
+          setActiveJobId(null);
+          setActiveJobCode(null);
+        }
+      } catch (err) {
+        console.error('Error polling match status:', err);
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [activeJobId, activeJobCode, loadMatchResults, token]);
+  if (shouldRedirect) {
+    return <Navigate to="/dashboard" />;
   }
-}, [expandedJob, matchPresence, matches, loadMatchResults]);
-
-if (shouldRedirect) {
-  return <Navigate to="/dashboard" />;
-}
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -263,47 +303,6 @@ if (shouldRedirect) {
       setActiveJobCode(null);
     }
   };
-
-  const loadMatchResults = useCallback(async (code) => {
-    try {
-      const resp = await api.get(`/match/${code}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      const matchResults = resp.data.matches.map((m) => ({
-        ...m,
-        status: m.status || null
-      }));
-      setMatches((prev) => ({ ...prev, [code]: matchResults }));
-      setMatchLoaded((prev) => ({ ...prev, [code]: true }));
-    } catch (err) {
-      console.error(`Error loading stored matches for ${code}:`, err);
-    }
-  }, [token]);
-
-  useEffect(() => {
-    if (!activeJobId || !activeJobCode) {
-      return undefined;
-    }
-
-    const interval = setInterval(async () => {
-      try {
-        const resp = await api.get(`/has-match/${activeJobId}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        if (resp.data.status === 'complete') {
-          await loadMatchResults(activeJobCode);
-          setLoadingMatches((prev) => ({ ...prev, [activeJobCode]: false }));
-          setMatchPresence((prev) => ({ ...prev, [activeJobCode]: true }));
-          setActiveJobId(null);
-          setActiveJobCode(null);
-        }
-      } catch (err) {
-        console.error('Error polling match status:', err);
-      }
-    }, 3000);
-
-    return () => clearInterval(interval);
-  }, [activeJobId, activeJobCode, loadMatchResults, token]);
 
   const handleSelect = (jobCode, email) => (e) => {
     setSelectedRows((prev) => {
