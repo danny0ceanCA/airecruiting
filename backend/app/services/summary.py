@@ -236,6 +236,38 @@ def compile_weekly_stats(user_email: str, now: datetime) -> Dict[str, Any]:
         email: {"sent": 0, "opened": False, "clicked": False}
         for email in user_students
     }
+
+    def _ensure_owned_student(email: str) -> bool:
+        """Ensure the student belongs to the user before including analytics."""
+        if email in stats_per_student:
+            return True
+
+        student_key = f"student:{email}"
+        try:
+            raw_student = _decode(redis_client.get(student_key))
+        except Exception:
+            raw_student = None
+        if not raw_student:
+            return False
+        try:
+            student_obj = json.loads(raw_student)
+        except Exception:
+            return False
+
+        creator = (student_obj.get("created_by") or "").strip().lower()
+        if creator != user_lc:
+            return False
+
+        user_students.add(email)
+        stats_per_student[email] = {
+            "assigned_jobs": 0,
+            "placed_jobs": 0,
+            "latest_note": None,
+            "notes": [],
+            "note_in_window": False,
+        }
+        per_student_email[email] = {"sent": 0, "opened": False, "clicked": False}
+        return True
     sent_count = 0
     opened_students: set[str] = set()
     clicked_students: set[str] = set()
@@ -258,19 +290,8 @@ def compile_weekly_stats(user_email: str, now: datetime) -> Dict[str, Any]:
         email = (info.get("student_email") or "").strip()
         if not email:
             continue
-        if email not in user_students:
-            user_students.add(email)
-            stats_per_student.setdefault(
-                email,
-                {
-                    "assigned_jobs": 0,
-                    "placed_jobs": 0,
-                    "latest_note": None,
-                    "notes": [],
-                    "note_in_window": False,
-                },
-            )
-            per_student_email[email] = {"sent": 0, "opened": False, "clicked": False}
+        if email not in user_students and not _ensure_owned_student(email):
+            continue
 
         email_tokens[token] = {
             "student_email": email,
@@ -332,16 +353,17 @@ def compile_weekly_stats(user_email: str, now: datetime) -> Dict[str, Any]:
         )
 
         email_metrics = per_student_email.get(email, {"sent": 0, "opened": False, "clicked": False})
-        stats_students.append(
-            {
-                "email": email,
-                "assigned_jobs": assigned,
-                "placed_jobs": placed,
-                "latest_note": latest_note,
-                "notes": all_notes,
-                "email_metrics": email_metrics,
-            }
-        )
+        if note_in_window:
+            stats_students.append(
+                {
+                    "email": email,
+                    "assigned_jobs": assigned,
+                    "placed_jobs": placed,
+                    "latest_note": latest_note,
+                    "notes": all_notes,
+                    "email_metrics": email_metrics,
+                }
+            )
 
     email_analytics = {
         "sent_count": sent_count,
@@ -419,14 +441,11 @@ def compile_all_weekly_stats(now: datetime) -> Dict[str, Any]:
     }
 
 
-def build_summary_narrative(stats: Dict[str, Any], user_name: str) -> str:
-    """Generate a narrative summary of the week's activity via OpenAI."""
-    # Use the computed Friday in the subject
+def build_summary_prompt(stats: Dict[str, Any], user_name: str) -> str:
+    """Compose the OpenAI prompt for a weekly summary email."""
     now = _parse_ts(stats.get("window_end")) or datetime.now(timezone.utc)
-    # Recompute for safety; but window_end already reflects Fri 23:59:59.999999
     week_ending_str = now.strftime("%Y-%m-%d")
 
-    # Concrete numbers for the “Key Numbers” section (no guessing)
     created_count = stats.get("created_count", 0)
     engaged_count = stats.get("engaged_count", 0)
     assignment_count = stats.get("assignment_count", 0)
@@ -444,42 +463,60 @@ def build_summary_narrative(stats: Dict[str, Any], user_name: str) -> str:
         else f"• Apply link clicks: {click_count}"
     )
 
-    prompt = f"""
-You are generating a concise, upbeat weekly activity summary email for {user_name}.
-Do NOT ask for replies, follow-ups, or include any calls to action other than the provided action items.
-Return ONLY the formatted summary. Tone: professional and encouraging.
+    prompt_lines = [
+        f"You are generating a concise, upbeat weekly activity summary email for {user_name}.",
+        "Do NOT ask for replies, follow-ups, or include any calls to action other than the provided action items.",
+        "Return ONLY the formatted summary. Tone: professional and encouraging.",
+        "",
+        f"Subject: Weekly Activity Summary — {week_ending_str}",
+        "",
+        "Hello,",
+        "",
+        f"Here’s your snapshot for the week ending {week_ending_str}:",
+        "",
+        "Key Numbers",
+        f"• {created_count} new student profiles created",
+        f"• {engaged_count} students currently engaged",
+        f"• {assignment_count} job assignments",
+        f"• {placement_count} job placements",
+        f"• Notes recorded for {notes_count} students this week",
+        "",
+        "Email Analytics",
+        f"• {sent_count} outreach emails sent",
+        f"• {open_count} unique opens",
+        f"{click_line}",
+        "",
+        "Short Insights",
+        "• 1–3 short bullet points highlighting notable trends or outcomes based on the Stats JSON.",
+    ]
 
-Subject: Weekly Activity Summary — {week_ending_str}
+    if stats.get("students"):
+        prompt_lines.extend(
+            [
+                "",
+                "Student Notes Summary",
+                "• Summarize the note history for each student listed in the Stats JSON,",
+                "  highlighting any notes created during this week’s window. Do not mention students without notes.",
+            ]
+        )
 
-Hello,
+    prompt_lines.extend(
+        [
+            "",
+            "Action Items",
+            "• 1–3 concrete actions based on the Stats JSON. Do not invite replies.",
+            "",
+            "Stats JSON:",
+            json.dumps(stats),
+        ]
+    )
 
-Here’s your snapshot for the week ending {week_ending_str}:
+    return "\n".join(prompt_lines).strip()
 
-Key Numbers
-• {created_count} new student profiles created
-• {engaged_count} students currently engaged
-• {assignment_count} job assignments
-• {placement_count} job placements
-• Notes recorded for {notes_count} students this week
 
-Email Analytics
-• {sent_count} outreach emails sent
-• {open_count} unique opens
-{click_line}
-
-Short Insights
-• 1–3 short bullet points highlighting notable trends or outcomes based on the Stats JSON.
-
-Student Notes Summary
-• For each student in the stats, list their email and a one-line summary of their entire note history,
-  mentioning any new notes from this week in context. If the student has no notes, write: “No note activity recorded.”
-
-Action Items
-• 1–3 concrete actions based on the Stats JSON. Do not invite replies.
-
-Stats JSON:
-{json.dumps(stats)}
-""".strip()
+def build_summary_narrative(stats: Dict[str, Any], user_name: str) -> str:
+    """Generate a narrative summary of the week's activity via OpenAI."""
+    prompt = build_summary_prompt(stats, user_name)
 
     model = os.getenv("SUMMARY_MODEL", "gpt-4o")
     logger.info("Generating weekly summary with model %s", model)

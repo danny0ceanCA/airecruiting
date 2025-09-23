@@ -240,7 +240,129 @@ def test_preexisting_student_assignments_counted():
     assert stats["email_analytics"]["unique_click_count"] == 0
     assert stats["placement_count"] == 1
     assert stats["engaged_count"] == 1
-    assert any(
-        s["email"] == "old@example.com" and s["assigned_jobs"] == 1 and s["placed_jobs"] == 1
-        for s in stats["students"]
+    assert stats["students"] == []
+
+
+def test_compile_weekly_stats_excludes_unowned_email_tokens():
+    summary.redis_client = DummyRedis()
+    now = datetime(2025, 8, 8, tzinfo=timezone.utc)
+
+    owned_student = {
+        "email": "owned@example.com",
+        "created_by": "career@example.com",
+        "created_at": now.isoformat(),
+    }
+    summary.redis_client.set("student:owned@example.com", json.dumps(owned_student))
+
+    other_student = {
+        "email": "other@example.com",
+        "created_by": "other@example.com",
+        "created_at": now.isoformat(),
+    }
+    summary.redis_client.set("student:other@example.com", json.dumps(other_student))
+
+    job = {
+        "assigned_students": [],
+        "placed_students": [],
+        "student_notes": {
+            "owned@example.com": [{"text": "weekly", "timestamp": now.isoformat()}]
+        },
+    }
+    summary.redis_client.set("job:1", json.dumps(job))
+
+    summary.redis_client.hset(
+        summary.EMAIL_OPEN_TOKENS_KEY,
+        "tok-owned",
+        json.dumps(
+            {
+                "student_email": "owned@example.com",
+                "job_code": "1",
+                "sent": now.isoformat(),
+            }
+        ),
     )
+
+    summary.redis_client.hset(
+        summary.EMAIL_OPEN_TOKENS_KEY,
+        "tok-other",
+        json.dumps(
+            {
+                "student_email": "other@example.com",
+                "job_code": "2",
+                "sent": now.isoformat(),
+            }
+        ),
+    )
+
+    stats = summary.compile_weekly_stats("career@example.com", now)
+
+    assert [student["email"] for student in stats["students"]] == ["owned@example.com"]
+    email_stats = stats["email_analytics"]
+    assert email_stats["sent_count"] == 1
+    assert email_stats["per_student"][0]["email"] == "owned@example.com"
+
+
+def test_build_summary_prompt_omits_notes_section_when_no_notes():
+    now = datetime(2025, 8, 8, tzinfo=timezone.utc)
+
+    stats = {
+        "created_count": 0,
+        "engaged_count": 0,
+        "assignment_count": 0,
+        "placement_count": 0,
+        "notes_count": 0,
+        "students": [],
+        "window_end": now.isoformat(),
+        "email_analytics": {
+            "sent_count": 0,
+            "unique_open_count": 0,
+            "unique_click_count": 0,
+            "click_students": [],
+            "open_students": [],
+            "per_student": [],
+        },
+    }
+
+    prompt = summary.build_summary_prompt(stats, "Career Coach")
+    assert "Student Notes Summary" not in prompt
+
+
+def test_build_summary_prompt_includes_notes_section_when_notes_present():
+    now = datetime(2025, 8, 8, tzinfo=timezone.utc)
+
+    stats = {
+        "created_count": 1,
+        "engaged_count": 1,
+        "assignment_count": 2,
+        "placement_count": 1,
+        "notes_count": 1,
+        "students": [
+            {
+                "email": "owned@example.com",
+                "assigned_jobs": 0,
+                "placed_jobs": 0,
+                "latest_note": {"text": "weekly", "timestamp": now.isoformat()},
+                "notes": [{"text": "weekly", "timestamp": now.isoformat()}],
+                "email_metrics": {"sent": 1, "opened": True, "clicked": False},
+            }
+        ],
+        "window_end": now.isoformat(),
+        "email_analytics": {
+            "sent_count": 1,
+            "unique_open_count": 1,
+            "unique_click_count": 0,
+            "click_students": [],
+            "open_students": ["owned@example.com"],
+            "per_student": [
+                {
+                    "email": "owned@example.com",
+                    "sent": 1,
+                    "opened": True,
+                    "clicked": False,
+                }
+            ],
+        },
+    }
+
+    prompt = summary.build_summary_prompt(stats, "Career Coach")
+    assert "Student Notes Summary" in prompt
