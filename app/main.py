@@ -2598,18 +2598,25 @@ def has_match_data(job_id: str):
         payload = json.loads(results_json)
     except json.JSONDecodeError:
         logger.warning("⚠️ Match payload for job %s was not JSON", job_id)
-        return {"has_match": True, "results": []}
+        return {"status": "complete", "results": []}
 
-    results: list[Any]
     if isinstance(payload, dict):
-        results = payload.get("results", [])
+        status = payload.get("status", "complete")
+        results: list[Any] = payload.get("results", [])
     elif isinstance(payload, list):
+        status = "complete"
         results = payload
     else:
+        status = "complete"
         results = []
 
-    logger.info(f"✅ Returning {len(results)} results for job {job_id}")
-    return {"has_match": True, "results": results}
+    logger.info(
+        "✅ Returning %s results with status %s for job %s",
+        len(results),
+        status,
+        job_id,
+    )
+    return {"status": status, "results": results}
 
 @app.get("/jobs")
 def list_jobs(current_user: dict = Depends(get_current_user)):
