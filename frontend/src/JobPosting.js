@@ -218,6 +218,16 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
         });
         console.log('🔄 Polling /has-match response:', resp.data);
         if (resp.data.status === 'complete') {
+          const hasImmediateResults = Array.isArray(resp.data.results) && resp.data.results.length > 0;
+          if (hasImmediateResults) {
+            console.info(`🟢 [debug] /has-match returned ${resp.data.results.length} results for job ${activeJobCode}`);
+            const immediateResults = resp.data.results.map((m) => ({
+              ...m,
+              status: m.status || null,
+            }));
+            setMatches((prev) => ({ ...prev, [activeJobCode]: immediateResults }));
+            setMatchLoaded((prev) => ({ ...prev, [activeJobCode]: true }));
+          }
           await loadMatchResults(activeJobId, resp);
           setLoadingMatches((prev) => ({ ...prev, [activeJobCode]: false }));
           setMatchPresence((prev) => ({ ...prev, [activeJobCode]: true }));
@@ -760,79 +770,164 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
             )}
           </tbody>
         </table>
+        {matches[job.job_code] && matches[job.job_code].some((m) => m.status === 'assigned') && (
+          <div className="assigned-subtable">
+            <h4>Assigned Students</h4>
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Email</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {matches[job.job_code]
+                  .filter((m) => m.status === 'assigned')
+                  .map((m) => (
+                    <tr key={m.email}>
+                      <td>
+                        {m.first_name} {m.last_name}
+                      </td>
+                      <td>{m.email}</td>
+                      <td>
+                        <span className="badge assigned">Assigned</span>
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </>
-      );
+    );
   };
 
   const renderAssigned = (job) => {
     const matchList = matches[job.job_code] || [];
     const assignedMatches = matchList.filter((m) => m.status === 'assigned');
+    console.log('📌 Assigned subtable for', job.job_code, matches[job.job_code]);
+
+    if (assignedMatches.length > 0) {
+      return (
+        <div className="assigned-subtable">
+          <h4>Assigned Students</h4>
+          <table className="matches-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Score</th>
+                <th>Resume</th>
+                <th>Note</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {assignedMatches.map((row) => (
+                <tr key={row.email}>
+                  <td>
+                    {row.first_name || row.name?.split(' ')[0]}{' '}
+                    {row.last_name || row.name?.split(' ')[1]}
+                  </td>
+                  <td>{row.email}</td>
+                  <td>{formatScore(row.score)}</td>
+                  <td>
+                    {generatingResumes[`${job.job_code}:${row.email}`] ? (
+                      <span className="spinner">⏳</span>
+                    ) : generatedResumes[`${job.job_code}:${row.email}`] ? (
+                      <button
+                        className="resume-icon-button"
+                        onClick={() => viewResume(row.email, job.job_code)}
+                      >
+                        📥
+                      </button>
+                    ) : (
+                      <button onClick={() => generateResume(row.email, job.job_code)}>
+                        Generate Resume
+                      </button>
+                    )}
+                  </td>
+                  <td>
+                    <button onClick={() => openNotes(job, row)}>
+                      View Notes{row.notes && ` (${row.notes.length})`}
+                    </button>
+                  </td>
+                  <td className="status-cell">
+                    <span className="badge assigned inline">Assigned</span>
+                  </td>
+                  <td>
+                    {isRecruiter ? (
+                      <>
+                        <button onClick={() => notifyInterest(job.job_code, row.email)}>
+                          Notify Candidate
+                        </button>
+                        <button onClick={() => notifyInterest(job.job_code, row.email)}>
+                          Resend Job Description
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button onClick={() => handlePlace(job, row)}>Place</button>
+                        <button onClick={() => notifyInterest(job.job_code, row.email)}>
+                          Resend Job Description
+                        </button>
+                      </>
+                    )}
+                    <button onClick={() => rejectAssigned(job.job_code, row.email)}>
+                      Not Interested
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    }
+
+    if (job.assigned_students?.length) {
+      return (
+        <div className="assigned-subtable">
+          <h4>Assigned Students</h4>
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {job.assigned_students.map((email) => {
+                const match = matchList.find((m) => m.email === email);
+                const displayName = match
+                  ? `${match.first_name || match.name?.split(' ')[0] || ''} ${
+                      match.last_name || match.name?.split(' ')[1] || ''
+                    }`.trim()
+                  : '';
+                return (
+                  <tr key={email}>
+                    <td>{displayName || email}</td>
+                    <td>{email}</td>
+                    <td>
+                      <span className="badge assigned">Assigned</span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      );
+    }
+
     return (
-      <table className="matches-table">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Email</th>
-            <th>Score</th>
-            <th>Resume</th>
-            <th>Note</th>
-            <th>Status</th>
-            <th>Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          {assignedMatches.map((row) => (
-            <tr key={row.email}>
-              <td>{row.first_name || row.name?.split(' ')[0]} {row.last_name || row.name?.split(' ')[1]}</td>
-              <td>{row.email}</td>
-              <td>{formatScore(row.score)}</td>
-              <td>
-                {generatingResumes[`${job.job_code}:${row.email}`] ? (
-                  <span className="spinner">⏳</span>
-                ) : generatedResumes[`${job.job_code}:${row.email}`] ? (
-                  <button className="resume-icon-button" onClick={() => viewResume(row.email, job.job_code)}>
-                    📥
-                  </button>
-                ) : (
-                  <button onClick={() => generateResume(row.email, job.job_code)}>
-                    Generate Resume
-                  </button>
-                )}
-              </td>
-              <td>
-                <button onClick={() => openNotes(job, row)}>
-                  View Notes{row.notes && ` (${row.notes.length})`}
-                </button>
-              </td>
-              <td className="status-cell">
-                <span className="badge assigned inline">Assigned</span>
-              </td>
-              <td>
-                {isRecruiter ? (
-                  <>
-                    <button onClick={() => notifyInterest(job.job_code, row.email)}>
-                      Notify Candidate
-                    </button>
-                    <button onClick={() => notifyInterest(job.job_code, row.email)}>
-                      Resend Job Description
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <button onClick={() => handlePlace(job, row)}>Place</button>
-                    <button onClick={() => notifyInterest(job.job_code, row.email)}>
-                      Resend Job Description
-                    </button>
-                  </>
-                )}
-                <button onClick={() => rejectAssigned(job.job_code, row.email)}>
-                  Not Interested
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="assigned-subtable">
+        <h4>Assigned Students</h4>
+        <p>No assigned students yet.</p>
+      </div>
     );
   };
 
