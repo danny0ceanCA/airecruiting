@@ -2588,8 +2588,17 @@ def get_match_results(job_code: str, current_user: dict = Depends(get_current_us
 
 @app.get("/has-match/{job_id}")
 def has_match_data(job_id: str):
-    key = f"match_job:{job_id}"
+    storage_id = job_id
+    key = f"match_job:{storage_id}"
     results_json = redis_client.get(key)
+
+    if results_json is None:
+        lookup_key = f"match_job_lookup:{job_id}"
+        lookup_id = redis_client.get(lookup_key)
+        if lookup_id:
+            storage_id = lookup_id
+            key = f"match_job:{storage_id}"
+            results_json = redis_client.get(key)
 
     if results_json is None:
         return {"status": "pending"}
@@ -2611,10 +2620,11 @@ def has_match_data(job_id: str):
         results = []
 
     logger.info(
-        "✅ Returning %s results with status %s for job %s",
+        "✅ Returning %s results with status %s for job %s (storage id %s)",
         len(results),
         status,
         job_id,
+        storage_id,
     )
     return {"status": status, "results": results}
 
