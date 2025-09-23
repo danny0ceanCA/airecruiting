@@ -1818,6 +1818,34 @@ def match_job(
 
     job_id = str(uuid.uuid4())
 
+    lookup_id = redis_client.get(f"match_job_lookup:{req.job_code}")
+    raw_payload: str | None = None
+    if lookup_id:
+        raw_payload = redis_client.get(f"match_job:{lookup_id}")
+    if raw_payload is None:
+        raw_payload = redis_client.get(f"match_job:{req.job_code}")
+
+    placeholder_payload: dict[str, Any] = {"status": "pending", "results": []}
+    if raw_payload:
+        try:
+            parsed_payload = json.loads(raw_payload)
+        except json.JSONDecodeError:
+            parsed_payload = None
+
+        if isinstance(parsed_payload, dict):
+            placeholder_payload = parsed_payload.copy()
+        elif isinstance(parsed_payload, list):
+            placeholder_payload["results"] = list(parsed_payload)
+
+    placeholder_payload["status"] = "pending"
+    results = placeholder_payload.get("results", [])
+    if not isinstance(results, list):
+        results = []
+    placeholder_payload["results"] = results
+
+    redis_client.set(f"match_job:{job_id}", json.dumps(placeholder_payload))
+    redis_client.set(f"match_job_lookup:{req.job_code}", job_id)
+
     def _run_match_job(job_code: str, job_id: str, enqueued_at: float) -> None:
         redis_key = f"match_job:{job_id}"
         try:
