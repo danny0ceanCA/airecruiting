@@ -218,6 +218,16 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
         });
         console.log('🔄 Polling /has-match response:', resp.data);
         if (resp.data.status === 'complete') {
+          const hasImmediateResults = Array.isArray(resp.data.results) && resp.data.results.length > 0;
+          if (hasImmediateResults) {
+            console.info(`🟢 [debug] /has-match returned ${resp.data.results.length} results for job ${activeJobCode}`);
+            const immediateResults = resp.data.results.map((m) => ({
+              ...m,
+              status: m.status || null,
+            }));
+            setMatches((prev) => ({ ...prev, [activeJobCode]: immediateResults }));
+            setMatchLoaded((prev) => ({ ...prev, [activeJobCode]: true }));
+          }
           await loadMatchResults(activeJobId, resp);
           setLoadingMatches((prev) => ({ ...prev, [activeJobCode]: false }));
           setMatchPresence((prev) => ({ ...prev, [activeJobCode]: true }));
