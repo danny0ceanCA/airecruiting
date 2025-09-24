@@ -27,6 +27,7 @@ function JobPosting() {
   const [codeFilter, setCodeFilter] = useState('');
   const [titleFilter, setTitleFilter] = useState('');
   const [sourceFilter, setSourceFilter] = useState('');
+  const [createdFilter, setCreatedFilter] = useState('');
   const [expandedJob, setExpandedJob] = useState(null);
   const [activeSubtab, setActiveSubtab] = useState({}); // keyed by job_code
   const [selectedRows, setSelectedRows] = useState({});
@@ -96,6 +97,21 @@ const isRecruiter = userRole === 'recruiter';
 const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && userRole !== 'recruiter';
 
 
+  const formatJobDate = (value) => {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return '';
+    }
+    return date.toLocaleString(undefined, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit'
+    });
+  };
+
   const fetchJobs = async () => {
     try {
       const resp = await api.get('/jobs', {
@@ -105,7 +121,14 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
       const filtered = isRecruiter
         ? allJobs.filter((job) => job.posted_by === email)
         : allJobs;
-      setJobs(filtered);
+      const sorted = [...filtered].sort((a, b) => {
+        const aTime = a?.timestamp ? new Date(a.timestamp).getTime() : 0;
+        const bTime = b?.timestamp ? new Date(b.timestamp).getTime() : 0;
+        const safeATime = Number.isNaN(aTime) ? 0 : aTime;
+        const safeBTime = Number.isNaN(bTime) ? 0 : bTime;
+        return safeBTime - safeATime;
+      });
+      setJobs(sorted);
     } catch (err) {
       console.error('Error fetching jobs:', err);
       setJobs([]);
@@ -957,7 +980,10 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
     const codeMatch = j.job_code?.toLowerCase().includes(codeFilter.toLowerCase());
     const titleMatch = j.job_title?.toLowerCase().includes(titleFilter.toLowerCase());
     const sourceMatch = j.source?.toLowerCase().includes(sourceFilter.toLowerCase());
-    return codeMatch && titleMatch && sourceMatch;
+    const createdMatch = formatJobDate(j.timestamp)
+      .toLowerCase()
+      .includes(createdFilter.toLowerCase());
+    return codeMatch && titleMatch && sourceMatch && createdMatch;
   };
   const filteredJobs = jobs.filter(matchFilter);
 
@@ -1137,17 +1163,54 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
                 <th>License</th>
                 <th>Source</th>
                 <th>Pay Range</th>
+                <th>Created</th>
                 <th>Assigned</th>
                 {!isRecruiter && <th>Placed</th>}
                 <th>Action</th>
               </tr>
               <tr className="filter-row">
                 <th></th>
-                <th><input className="column-filter" type="text" value={codeFilter} onChange={(e) => setCodeFilter(e.target.value)} placeholder="Filter" /></th>
-                <th><input className="column-filter" type="text" value={titleFilter} onChange={(e) => setTitleFilter(e.target.value)} placeholder="Filter" /></th>
+                <th>
+                  <input
+                    className="column-filter"
+                    type="text"
+                    value={codeFilter}
+                    onChange={(e) => setCodeFilter(e.target.value)}
+                    placeholder="Filter"
+                  />
+                </th>
+                <th>
+                  <input
+                    className="column-filter"
+                    type="text"
+                    value={titleFilter}
+                    onChange={(e) => setTitleFilter(e.target.value)}
+                    placeholder="Filter"
+                  />
+                </th>
                 <th></th>
-                <th><input className="column-filter" type="text" value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)} placeholder="Filter" /></th>
-                <th colSpan={!isRecruiter ? 4 : 3}></th>
+                <th>
+                  <input
+                    className="column-filter"
+                    type="text"
+                    value={sourceFilter}
+                    onChange={(e) => setSourceFilter(e.target.value)}
+                    placeholder="Filter"
+                  />
+                </th>
+                <th></th>
+                <th>
+                  <input
+                    className="column-filter"
+                    type="text"
+                    value={createdFilter}
+                    onChange={(e) => setCreatedFilter(e.target.value)}
+                    placeholder="Filter"
+                  />
+                </th>
+                <th></th>
+                {!isRecruiter && <th></th>}
+                <th></th>
               </tr>
           </thead>
           <tbody>
@@ -1198,6 +1261,7 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
                       ? `${job.min_pay} - ${job.max_pay}`
                       : ''}
                   </td>
+                  <td>{formatJobDate(job.timestamp)}</td>
                   <td className="status-cell">
                     {job.assigned_students?.length > 0 && (
                       <span
@@ -1235,7 +1299,9 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
                     {(() => {
                       const matchListLength = matches[job.job_code]?.length || 0;
                       const hasMatchInRedis = matchPresence[job.job_code] === true;
-                      const hasStoredMatches = hasMatchInRedis || matchListLength > 0;
+                      const assignedCount = job.assigned_students?.length || 0;
+                      const hasStoredMatches =
+                        hasMatchInRedis || matchListLength > 0 || assignedCount > 0;
                       console.debug(
                         `🧠 [debug] Job ${job.job_code} button render -> matchPresence: ${hasMatchInRedis}, stored length: ${matchListLength}. Showing ${hasStoredMatches ? 'View Matches + Match Again' : 'Match only'} buttons.`
                       );
@@ -1245,13 +1311,17 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              if (!matches[job.job_code]) {
+                              if (hasMatchInRedis && !matches[job.job_code]) {
                                 loadMatchResults(job.job_code);
                               }
                               setExpandedJob(job.job_code);
+                              const nextTab =
+                                hasMatchInRedis || matchListLength > 0
+                                  ? 'matches'
+                                  : 'assigned';
                               setActiveSubtab((prev) => ({
                                 ...prev,
-                                [job.job_code]: 'matches',
+                                [job.job_code]: nextTab,
                               }));
                             }}
                           >
@@ -1282,7 +1352,7 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
                 {expandedJob === job.job_code && (
                   activeSubtab[job.job_code] === 'details' ? (
                     <tr className="job-details-row">
-                      <td colSpan={!isRecruiter ? 9 : 8}>
+                      <td colSpan={!isRecruiter ? 10 : 9}>
                         <div className="job-description-panel">
                           <h3>{job.job_title}</h3>
                           {editMode[job.job_code] ? (
@@ -1453,7 +1523,7 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
                     </tr>
                   ) : (
                     <tr className="match-table-row">
-                      <td colSpan={!isRecruiter ? 9 : 8}>
+                      <td colSpan={!isRecruiter ? 10 : 9}>
                         {activeSubtab[job.job_code] === 'matches' && renderMatches(job)}
                         {activeSubtab[job.job_code] === 'assigned' && renderAssigned(job)}
                         {activeSubtab[job.job_code] === 'placed' && renderPlaced(job)}
