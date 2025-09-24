@@ -2041,10 +2041,20 @@ async def _perform_match_async(
     job = json.loads(raw)
     job.setdefault("uninterested_students", [])
     lookup_id = redis_client.get(f"match_job_lookup:{job_code}")
-    was_matched_before = bool(
-        redis_client.exists(f"match_job:{job_code}")
-        or (lookup_id and redis_client.exists(f"match_job:{lookup_id}"))
-    )
+    was_matched_before = False
+    if redis_client.exists(f"match_job:{job_code}"):
+        was_matched_before = True
+    elif lookup_id:
+        existing_payload: str | None = redis_client.get(f"match_job:{lookup_id}")
+        if existing_payload:
+            try:
+                parsed_payload = json.loads(existing_payload)
+            except json.JSONDecodeError:
+                was_matched_before = True
+            else:
+                status = str(parsed_payload.get("status", "")).lower()
+                if status != "pending":
+                    was_matched_before = True
 
     required_license = license_to_code(job.get("required_license"))
 
@@ -2944,13 +2954,24 @@ def list_jobs(current_user: dict = Depends(get_current_user)):
             job.setdefault("rejected_students", [])
             job.setdefault("student_notes", {})
             jobs.append(job)
+
+    def _timestamp_value(job: dict[str, Any]) -> float:
+        raw = job.get("timestamp")
+        if not raw:
+            return 0.0
+        try:
+            return datetime.fromisoformat(raw).timestamp()
+        except (ValueError, TypeError):
+            return 0.0
+
+    jobs.sort(key=_timestamp_value, reverse=True)
     logger.info("Returning %s jobs from Redis", len(jobs))
     return {"jobs": jobs}
 
 
 @app.delete("/jobs/{job_code}")
 def delete_job(job_code: str, token_data: dict = Depends(get_current_user)):
-    if token_data.get("role") != "admin":
+    if token_data.get("role") not in ADMIN_ROLES:
         raise HTTPException(status_code=403, detail="Admin access required")
 
     job_key = f"job:{job_code}"
