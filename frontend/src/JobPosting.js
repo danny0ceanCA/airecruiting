@@ -1410,13 +1410,9 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
                                 loadMatchResults(job.job_code);
                               }
                               setExpandedJob(job.job_code);
-                              const nextTab =
-                                hasMatchInRedis || matchListLength > 0
-                                  ? 'matches'
-                                  : 'assigned';
                               setActiveSubtab((prev) => ({
                                 ...prev,
-                                [job.job_code]: nextTab,
+                                [job.job_code]: 'matches',
                               }));
                             }}
                           >
