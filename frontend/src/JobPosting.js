@@ -191,6 +191,7 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
         }));
       } catch (err) {
         console.error(`Error loading stored matches for ${jobCode}:`, err);
+        setMatchLoaded((prev) => ({ ...prev, [jobCode]: true }));
       }
     },
     [jobs, token]
@@ -225,15 +226,17 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
   }, [jobs]);
 
   useEffect(() => {
-    const shouldLoad =
-      expandedJob &&
-      matchPresence[expandedJob] === true &&
-      !matches[expandedJob];
+    if (!expandedJob) {
+      return;
+    }
 
-    if (shouldLoad) {
+    const alreadyLoaded = matchLoaded[expandedJob];
+    const currentlyLoading = loadingMatches[expandedJob];
+
+    if (!alreadyLoaded && !currentlyLoading) {
       loadMatchResults(expandedJob);
     }
-  }, [expandedJob, matchPresence, matches, loadMatchResults]);
+  }, [expandedJob, matchLoaded, loadingMatches, loadMatchResults]);
 
   useEffect(() => {
     if (!activeJobId || !activeJobCode) {
