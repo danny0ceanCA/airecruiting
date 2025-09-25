@@ -295,6 +295,19 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
   }, [stopPollingJob]);
 
   useEffect(() => {
+    Object.entries(pollingMetadataRef.current).forEach(([jobKey, metadata]) => {
+      const jobCode = metadata?.jobCode || jobKey;
+      const isLoading = Boolean(loadingMatches[jobCode]);
+      const hasLoaded = Boolean(matchLoaded[jobCode]);
+      const hasResults = Array.isArray(matches[jobCode]) && matches[jobCode].length > 0;
+
+      if (!isLoading && (hasLoaded || hasResults)) {
+        stopPollingJob(jobKey);
+      }
+    });
+  }, [matches, matchLoaded, loadingMatches, stopPollingJob]);
+
+  useEffect(() => {
     const activeIdentifiers = new Set(
       jobs.map((job) => String(job.job_id ?? job.id ?? job.job_code ?? ''))
     );
