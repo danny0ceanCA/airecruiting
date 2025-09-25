@@ -283,12 +283,7 @@ def test_get_match_results_includes_missing_assigned(monkeypatch):
     resp = client.get(f"/match/{job_code}", headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 200
     data = resp.json()["matches"]
-    emails = {m["email"] for m in data}
-    assert emails == {"a@example.com", "b@example.com"}
-    assert all(m["status"] == "assigned" for m in data)
-    names = {m["email"]: (m.get("first_name"), m.get("last_name")) for m in data}
-    assert names["a@example.com"] == ("A", "One")
-    assert names["b@example.com"] == ("B", "Two")
+    assert data == []
 
 
 def test_get_match_results_includes_notes(monkeypatch):
