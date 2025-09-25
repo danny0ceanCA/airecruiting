@@ -103,13 +103,20 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
     if (Number.isNaN(date.getTime())) {
       return '';
     }
-    return date.toLocaleString(undefined, {
+    return date.toLocaleDateString('en-US', {
       year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit'
+      month: '2-digit',
+      day: '2-digit'
     });
+  };
+
+  const formatJobLocation = (job) => {
+    const city = job?.city?.trim();
+    const state = job?.state?.trim();
+    if (city && state) return `${city}, ${state}`;
+    if (city) return city;
+    if (state) return state;
+    return '';
   };
 
   const fetchJobs = async () => {
@@ -191,6 +198,7 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
         }));
       } catch (err) {
         console.error(`Error loading stored matches for ${jobCode}:`, err);
+        setMatchLoaded((prev) => ({ ...prev, [jobCode]: true }));
       }
     },
     [jobs, token]
@@ -225,15 +233,17 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
   }, [jobs]);
 
   useEffect(() => {
-    const shouldLoad =
-      expandedJob &&
-      matchPresence[expandedJob] === true &&
-      !matches[expandedJob];
+    if (!expandedJob) {
+      return;
+    }
 
-    if (shouldLoad) {
+    const alreadyLoaded = matchLoaded[expandedJob];
+    const currentlyLoading = loadingMatches[expandedJob];
+
+    if (!alreadyLoaded && !currentlyLoading) {
       loadMatchResults(expandedJob);
     }
-  }, [expandedJob, matchPresence, matches, loadMatchResults]);
+  }, [expandedJob, matchLoaded, loadingMatches, loadMatchResults]);
 
   useEffect(() => {
     if (!activeJobId || !activeJobCode) {
@@ -1162,6 +1172,7 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
                 <th>Title</th>
                 <th>License</th>
                 <th>Source</th>
+                <th>Location</th>
                 <th>Pay Range</th>
                 <th>Created</th>
                 <th>Assigned</th>
@@ -1198,6 +1209,7 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
                     placeholder="Filter"
                   />
                 </th>
+                <th></th>
                 <th></th>
                 <th>
                   <input
@@ -1256,6 +1268,7 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
                 </td>
                   <td>{licenseLabel(job.required_license)}</td>
                   <td>{job.source}</td>
+                  <td>{formatJobLocation(job)}</td>
                   <td>
                     {job.min_pay !== undefined && job.max_pay !== undefined
                       ? `${job.min_pay} - ${job.max_pay}`
