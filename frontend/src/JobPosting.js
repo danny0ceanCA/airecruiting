@@ -42,11 +42,8 @@ function JobPosting() {
   const [previewingResumes, setPreviewingResumes] = useState({});
   const [activeTab, setActiveTab] = useState('jobs');
   const [licenses, setLicenses] = useState([]);
-  const [pollingJobs, setPollingJobs] = useState({});
-  const pollingTimeoutsRef = useRef({});
-  const pollingDelaysRef = useRef({});
-  const pollingActiveRef = useRef({});
-  const pollingJobsRef = useRef({});
+  const pollingIntervalsRef = useRef({});
+  const pollingMetadataRef = useRef({});
   const isMountedRef = useRef(true);
 
   const licenseLabel = (code) => {
@@ -213,33 +210,105 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
     [jobs, token]
   );
 
-  const queuePollingJob = useCallback((jobId, jobCode) => {
-    if (!jobId || !jobCode) {
-      console.warn('Missing job identifiers for polling', jobId, jobCode);
+  const stopPollingJob = useCallback((jobKey) => {
+    if (!jobKey) {
       return;
     }
 
-    const jobKey = String(jobId);
-
-    const existingTimeout = pollingTimeoutsRef.current[jobKey];
-    if (existingTimeout) {
-      clearTimeout(existingTimeout);
-      delete pollingTimeoutsRef.current[jobKey];
+    const intervalId = pollingIntervalsRef.current[jobKey];
+    if (intervalId) {
+      clearInterval(intervalId);
+      delete pollingIntervalsRef.current[jobKey];
+      console.debug(`[frontend-debug] Stopped polling for job ${jobKey}`);
     }
 
-    delete pollingDelaysRef.current[jobKey];
-    delete pollingActiveRef.current[jobKey];
-
-    setPollingJobs((prev) => {
-      const next = { ...prev, [jobKey]: { jobCode } };
-      pollingJobsRef.current = next;
-      return next;
-    });
+    if (pollingMetadataRef.current[jobKey]) {
+      delete pollingMetadataRef.current[jobKey];
+    }
   }, []);
 
+  const startPollingJob = useCallback(
+    (jobId, jobCode) => {
+      const jobKey = String(jobId || jobCode || '');
+
+      if (!jobKey) {
+        console.warn('Cannot start polling without job identifier', jobId, jobCode);
+        return;
+      }
+
+      const resolvedJobCode = jobCode || jobKey;
+
+      stopPollingJob(jobKey);
+
+      pollingMetadataRef.current[jobKey] = { jobCode: resolvedJobCode };
+
+      console.debug(`[frontend-debug] Started polling /has-match for job ${jobKey}`);
+
+      const poll = async () => {
+        try {
+          const resp = await api.get(`/has-match/${jobKey}`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+
+          if (resp.data.status === 'complete') {
+            if (!isMountedRef.current) {
+              stopPollingJob(jobKey);
+              return;
+            }
+
+            const results = Array.isArray(resp.data.results) ? resp.data.results : [];
+
+            if (results.length > 0) {
+              console.debug(`[frontend-debug] Job ${jobKey} complete with ${results.length} results`);
+              const mappedResults = results.map((m) => ({
+                ...m,
+                status: m.status || null,
+              }));
+              setMatches((prev) => ({ ...prev, [resolvedJobCode]: mappedResults }));
+              setMatchLoaded((prev) => ({ ...prev, [resolvedJobCode]: true }));
+              setMatchPresence((prev) => ({ ...prev, [resolvedJobCode]: true }));
+            } else {
+              await loadMatchResults(resolvedJobCode);
+            }
+
+            setLoadingMatches((prev) => ({ ...prev, [resolvedJobCode]: false }));
+            stopPollingJob(jobKey);
+          }
+        } catch (err) {
+          console.error(`Error polling match status for ${jobKey}:`, err);
+        }
+      };
+
+      poll();
+      const intervalId = setInterval(poll, 2000);
+      pollingIntervalsRef.current[jobKey] = intervalId;
+    },
+    [loadMatchResults, stopPollingJob, token]
+  );
+
   useEffect(() => {
-    pollingJobsRef.current = pollingJobs;
-  }, [pollingJobs]);
+    return () => {
+      Object.keys(pollingIntervalsRef.current).forEach((jobKey) => {
+        stopPollingJob(jobKey);
+      });
+    };
+  }, [stopPollingJob]);
+
+  useEffect(() => {
+    const activeIdentifiers = new Set(
+      jobs.map((job) => String(job.job_id ?? job.id ?? job.job_code ?? ''))
+    );
+    const activeCodes = new Set(jobs.map((job) => job.job_code));
+
+    Object.keys(pollingMetadataRef.current).forEach((jobKey) => {
+      const jobCode = pollingMetadataRef.current[jobKey]?.jobCode;
+      const stillExists = activeIdentifiers.has(jobKey) || (jobCode && activeCodes.has(jobCode));
+
+      if (!stillExists) {
+        stopPollingJob(jobKey);
+      }
+    });
+  }, [jobs, stopPollingJob]);
 
   useEffect(() => {
     jobs.forEach((job) => {
@@ -282,115 +351,6 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
     }
   }, [expandedJob, matchLoaded, loadingMatches, loadMatchResults]);
 
-  useEffect(() => {
-    if (!token) {
-      return undefined;
-    }
-
-    const cleanupJob = (jobKey, options = {}) => {
-      const timeoutId = pollingTimeoutsRef.current[jobKey];
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-        delete pollingTimeoutsRef.current[jobKey];
-      }
-      delete pollingDelaysRef.current[jobKey];
-      delete pollingActiveRef.current[jobKey];
-
-      if (jobKey in pollingJobsRef.current) {
-        const nextRef = { ...pollingJobsRef.current };
-        delete nextRef[jobKey];
-        pollingJobsRef.current = nextRef;
-      }
-
-      if (options.skipState || !isMountedRef.current) {
-        return;
-      }
-
-      setPollingJobs((prev) => {
-        if (!(jobKey in prev)) {
-          return prev;
-        }
-        const next = { ...prev };
-        delete next[jobKey];
-        pollingJobsRef.current = next;
-        return next;
-      });
-    };
-
-    const startPolling = (jobKey, info) => {
-      const { jobCode } = info;
-      pollingActiveRef.current[jobKey] = true;
-      const baseDelay = 1000;
-
-      const poll = async (currentDelay) => {
-        try {
-          const resp = await api.get(`/has-match/${jobKey}`, {
-            headers: { Authorization: `Bearer ${token}` }
-          });
-          console.log('🔄 Polling /has-match response:', resp.data);
-          if (resp.data.status === 'complete') {
-            if (!isMountedRef.current) {
-              cleanupJob(jobKey, { skipState: true });
-              return;
-            }
-
-            const results = Array.isArray(resp.data.results) ? resp.data.results : [];
-            const hasImmediateResults = results.length > 0;
-            if (hasImmediateResults) {
-              console.info(`🟢 [debug] /has-match returned ${results.length} results for job ${jobCode} [frontend-debug]`);
-              const immediateResults = results.map((m) => ({
-                ...m,
-                status: m.status || null,
-              }));
-              setMatches((prev) => ({ ...prev, [jobCode]: immediateResults }));
-              setMatchLoaded((prev) => ({ ...prev, [jobCode]: true }));
-              setMatchPresence((prev) => ({ ...prev, [jobCode]: true }));
-              console.info(
-                `🟢 [debug] Skipping /match fetch, already injected ${results.length} results for job ${jobCode} [frontend-debug]`
-              );
-            } else {
-              await loadMatchResults(jobCode);
-            }
-            setLoadingMatches((prev) => ({ ...prev, [jobCode]: false }));
-            cleanupJob(jobKey);
-            console.log('🛑 Stopped polling for job', jobKey);
-            return;
-          }
-        } catch (err) {
-          console.error(`Error polling match status for ${jobKey}:`, err);
-        }
-
-        if (!pollingJobsRef.current[jobKey]) {
-          cleanupJob(jobKey, { skipState: true });
-          return;
-        }
-
-        const previousDelay = pollingDelaysRef.current[jobKey] || currentDelay || baseDelay;
-        const nextDelay = Math.min(Math.round(previousDelay * 1.5), 5000);
-        pollingDelaysRef.current[jobKey] = nextDelay;
-        const timeoutId = setTimeout(() => poll(nextDelay), nextDelay);
-        pollingTimeoutsRef.current[jobKey] = timeoutId;
-      };
-
-      pollingDelaysRef.current[jobKey] = baseDelay;
-      poll(baseDelay);
-    };
-
-    Object.entries(pollingJobs).forEach(([jobKey, info]) => {
-      if (!pollingActiveRef.current[jobKey]) {
-        startPolling(jobKey, info);
-      }
-    });
-
-    return () => {
-      Object.entries(pollingTimeoutsRef.current).forEach(([jobKey, timeoutId]) => {
-        clearTimeout(timeoutId);
-        delete pollingTimeoutsRef.current[jobKey];
-        delete pollingDelaysRef.current[jobKey];
-        delete pollingActiveRef.current[jobKey];
-      });
-    };
-  }, [pollingJobs, token, loadMatchResults]);
   if (shouldRedirect) {
     return <Navigate to="/dashboard" />;
   }
@@ -466,7 +426,7 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
         setMatchLoaded((prev) => ({ ...prev, [code]: true }));
       } else {
         const jobId = resp.data.job_id || code;
-        queuePollingJob(jobId, code);
+        startPollingJob(jobId, code);
       }
     } catch (err) {
       console.error('Error matching job:', err);
@@ -489,7 +449,8 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
         setMatchPresence((prev) => ({ ...prev, [code]: true }));
         setMatchLoaded((prev) => ({ ...prev, [code]: true }));
       } else {
-        queuePollingJob(code, code);
+        const jobId = resp.data.job_id || code;
+        startPollingJob(jobId, code);
       }
     } catch (err) {
       console.error('Error rematching job:', err);
