@@ -761,6 +761,13 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
                   Press <strong>Match</strong> to find your candidates.
                 </td>
               </tr>
+            ) : unassignedMatches.length === 0 ? (
+              <tr>
+                <td colSpan="100%" className="match-prompt">
+                  No new matches available. Check the Assigned tab to review previously
+                  matched students.
+                </td>
+              </tr>
             ) : (
               unassignedMatches.map((row) => {
                 const selectedCount = selectedRows[job.job_code]?.length || 0;
@@ -828,9 +835,6 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
             )}
           </tbody>
         </table>
-        {matches[job.job_code] &&
-          matches[job.job_code].some((m) => m.status === 'assigned') &&
-          renderAssigned(job)}
       </>
     );
   };
