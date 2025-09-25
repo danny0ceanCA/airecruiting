@@ -2705,21 +2705,6 @@ def get_match_results(job_code: str, current_user: dict = Depends(get_current_us
         placed = set(job.get("placed_students", []))
         rejected = set(job.get("rejected_students", []))
 
-        existing = set(matches)
-        for email in assigned | placed | rejected:
-            if email not in existing:
-                udata = json.loads(redis_client.get(f"user:{email}") or "{}")
-                first = udata.get("first_name", "")
-                last = udata.get("last_name", "")
-                name = f"{first} {last}".strip()
-                matches[email] = {
-                    "name": name,
-                    "first_name": first,
-                    "last_name": last,
-                    "email": email,
-                    "score": None,
-                }
-
         for email, m in matches.items():
             if email in placed:
                 m["status"] = "placed"
