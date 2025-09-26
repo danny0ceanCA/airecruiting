@@ -2123,6 +2123,21 @@ async def _perform_match_async(
             distance_time,
             total_time,
         )
+        payload = {"status": "complete", "results": []}
+        storage_id = job_id or job_code
+        redis_client.set(f"match_job:{storage_id}", json.dumps(payload))
+        if job_id:
+            redis_client.set(f"match_job_lookup:{job_code}", storage_id)
+        if job_id and job_id != job_code:
+            redis_delete(f"match_job:{job_code}")
+        if progress_callback:
+            try:
+                progress_callback(
+                    "stored",
+                    {"job_code": job_code, "match_count": 0},
+                )
+            except Exception:
+                logger.exception("Progress callback failed during stored event")
         return []
 
     matches = []
