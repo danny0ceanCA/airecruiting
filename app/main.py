@@ -7,7 +7,7 @@ import json
 import csv
 import os
 import uuid
-from typing import Optional, Callable, Any
+from typing import Optional, Callable, Any, Iterable
 import smtplib
 import logging
 import sys
@@ -21,6 +21,8 @@ from fastapi import (
     HTTPException,
     Request,
     UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
 )
 from fastapi.responses import HTMLResponse, Response, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -45,6 +47,7 @@ from zoneinfo import ZoneInfo
 from urllib.parse import urlparse
 import secrets
 import hashlib
+from contextlib import suppress
 from backend.app.schemas.resume import ResumeRequest
 from backend.app.schemas.description import DescriptionRequest
 from backend.app.services.resume import generate_resume_text
@@ -71,6 +74,10 @@ logger = get_logger(__name__)
 ADMIN_ROLES = {"admin", "junior_admin"}
 CAREER_DIRECTOR_ROLE = "career_director"
 CAREER_STAFF_ROLES = {"career", CAREER_DIRECTOR_ROLE}
+
+match_websocket_connections: dict[str, set[WebSocket]] = {}
+match_ws_lock: asyncio.Lock | None = None
+server_event_loop: asyncio.AbstractEventLoop | None = None
 
 REFRESH_TOKEN_TTL_SECONDS = int(os.getenv("REFRESH_TOKEN_TTL_SECONDS", str(60 * 60 * 24 * 7)))
 REFRESH_TOKEN_LOOKUP_PREFIX = "refresh_token_lookup"
@@ -297,6 +304,87 @@ def redis_delete(key: str) -> None:
         container = getattr(redis_client, attr, None)
         if isinstance(container, dict):
             container.pop(key, None)
+
+
+async def _get_match_ws_lock() -> asyncio.Lock:
+    global match_ws_lock
+    if match_ws_lock is None:
+        match_ws_lock = asyncio.Lock()
+    return match_ws_lock
+
+
+async def _register_match_websocket(job_id: str, websocket: WebSocket) -> None:
+    lock = await _get_match_ws_lock()
+    job_key = str(job_id)
+    async with lock:
+        connections = match_websocket_connections.setdefault(job_key, set())
+        connections.add(websocket)
+
+
+async def _unregister_match_websocket(job_id: str, websocket: WebSocket) -> None:
+    lock = await _get_match_ws_lock()
+    job_key = str(job_id)
+    async with lock:
+        connections = match_websocket_connections.get(job_key)
+        if not connections:
+            return
+        connections.discard(websocket)
+        if not connections:
+            match_websocket_connections.pop(job_key, None)
+
+
+async def _notify_match_websockets(job_ids: Iterable[str], payload: dict[str, Any]) -> None:
+    targets = [str(job_id) for job_id in job_ids]
+    lock = await _get_match_ws_lock()
+    to_close: list[tuple[str, WebSocket]] = []
+    async with lock:
+        for job_key in targets:
+            connections = match_websocket_connections.get(job_key)
+            if not connections:
+                continue
+            to_close.extend((job_key, ws) for ws in list(connections))
+
+    if not to_close:
+        return
+
+    for job_key, websocket in to_close:
+        try:
+            await websocket.send_json(payload)
+        except Exception:
+            logger.exception(
+                "⚠️ Failed to send match results over WebSocket for job %s", job_key
+            )
+        finally:
+            with suppress(Exception):
+                await websocket.close(code=1000)
+            await _unregister_match_websocket(job_key, websocket)
+
+
+async def _dispatch_match_websocket_results(
+    job_code: str, storage_id: str, payload: dict[str, Any]
+) -> None:
+    target_ids: set[str] = {storage_id}
+    if job_code and job_code != storage_id:
+        target_ids.add(job_code)
+
+    if not target_ids or server_event_loop is None:
+        return
+
+    current_loop: asyncio.AbstractEventLoop | None = None
+    try:
+        current_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        current_loop = None
+
+    if server_event_loop and current_loop is not server_event_loop:
+        future = asyncio.run_coroutine_threadsafe(
+            _notify_match_websockets(target_ids, payload),
+            server_event_loop,
+        )
+        await asyncio.wrap_future(future)
+        return
+
+    await _notify_match_websockets(target_ids, payload)
 
 
 def issue_refresh_token(email: str) -> str:
@@ -651,6 +739,13 @@ JWT_SECRET = "secret"
 ALGORITHM = "HS256"
 
 app = FastAPI()
+
+# Capture the main server event loop for cross-thread notifications
+@app.on_event("startup")
+async def _store_server_event_loop() -> None:
+    global server_event_loop, match_ws_lock
+    server_event_loop = asyncio.get_running_loop()
+    match_ws_lock = asyncio.Lock()
 
 # Simple request logging and activity tracking
 @app.middleware("http")
@@ -2537,6 +2632,14 @@ async def _perform_match_async(
     )
     if job_id and job_id != job_code:
         redis_delete(f"match_job:{job_code}")
+    try:
+        await _dispatch_match_websocket_results(job_code, storage_id, payload)
+    except Exception:
+        logger.exception(
+            "⚠️ Failed to dispatch match results via WebSocket for job %s (job_id=%s)",
+            job_code,
+            job_identifier,
+        )
     if progress_callback:
         try:
             progress_callback(
@@ -2886,6 +2989,32 @@ def has_match_data(job_id: str):
         storage_id,
     )
     return {"status": status, "results": results}
+
+
+@app.websocket("/ws/matches/{job_id}")
+async def match_results_websocket(websocket: WebSocket, job_id: str):
+    job_key = str(job_id)
+    await websocket.accept()
+    await _register_match_websocket(job_key, websocket)
+
+    try:
+        initial = has_match_data(job_key)
+        if initial.get("status") == "complete":
+            await websocket.send_json(initial)
+            with suppress(Exception):
+                await websocket.close(code=1000)
+            return
+
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        logger.info("🔌 WebSocket disconnected for job %s", job_key)
+    except Exception:
+        logger.exception("⚠️ Unexpected WebSocket error for job %s", job_key)
+    finally:
+        await _unregister_match_websocket(job_key, websocket)
+        with suppress(Exception):
+            await websocket.close(code=1000)
 
 @app.get("/jobs")
 def list_jobs(current_user: dict = Depends(get_current_user)):
