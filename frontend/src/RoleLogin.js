@@ -5,7 +5,7 @@ import LoginForm from './LoginForm';
 const roleInfo = {
   career: (
     <>
-      <h2>Career Services Departments</h2>
+      <h2>Career Services & Directors</h2>
       <p>
         Create student profiles by entering their training, credentials, and career goals.
       </p>
@@ -14,8 +14,13 @@ const roleInfo = {
         suitable roles.
       </p>
       <p>
-        You’ll be able to track job activity, monitor which students are matched or assigned,
+        Career counselors can track job activity, monitor which students are matched or assigned,
         and access real-time metrics to support program outcomes and reporting.
+      </p>
+      <p>
+        Career directors use the same portal to oversee multiple partner programs, keep counselors
+        aligned on outreach and placement goals, and review every approved student across their
+        institutional network from a single dashboard.
       </p>
     </>
   ),
@@ -55,7 +60,8 @@ const roleInfo = {
 
 function RoleLogin() {
   const { role } = useParams();
-  return <LoginForm infoContent={roleInfo[role]} />;
+  const normalizedRole = role === 'career_director' ? 'career' : role;
+  return <LoginForm infoContent={roleInfo[normalizedRole]} />;
 }
 
 export default RoleLogin;

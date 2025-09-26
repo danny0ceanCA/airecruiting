@@ -65,7 +65,7 @@ def weekly_summary_worker() -> None:
         except Exception:
             continue
         role = user.get("role")
-        if role in {"career", "admin", "junior_admin"}:
+        if role in {"career", "career_director", "admin", "junior_admin"}:
             raw_email = key.split("user:", 1)[1]
             email = normalize_email(raw_email)
             logger.info("Sending weekly summary to %s (normalized %s)", raw_email, email)
