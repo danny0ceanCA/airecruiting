@@ -3425,45 +3425,19 @@ def _build_match_request() -> Request:
     return request
 
 
-def test_match_job_stores_pending_placeholder_before_worker_runs():
+def test_match_job_returns_results_without_placeholder(monkeypatch):
     main_app.redis_client.flushdb()
 
-    request = _build_match_request()
-    background_tasks = BackgroundTasks()
-    result = main_app.match_job(
-        main_app.JobCodeRequest(job_code="new-job"),
-        request,
-        background_tasks,
-        current_user={"role": "admin", "email": "admin@example.com"},
-    )
+    job_code = "new-job"
+    expected = [{"email": "stud@example.com"}]
 
-    job_id = result["job_id"]
-    placeholder_raw = main_app.redis_client.get(f"match_job:{job_id}")
-    assert placeholder_raw is not None
-    placeholder = json.loads(placeholder_raw)
-    assert placeholder == {"status": "pending", "results": []}
-    assert (
-        main_app.redis_client.get("match_job_lookup:new-job")
-        == job_id
-    )
+    def fake_worker(job_code_arg, send_emails, enq_time, job_id=None):
+        assert job_code_arg == job_code
+        payload = {"status": "complete", "results": expected}
+        main_app.redis_client.set(f"match_job:{job_id}", json.dumps(payload))
+        return expected
 
-    resp = client.get(f"/has-match/{job_id}")
-    assert resp.status_code == 200
-    assert resp.json() == placeholder
-
-
-def test_match_job_placeholder_reuses_prior_results():
-    main_app.redis_client.flushdb()
-
-    job_code = "existing-job"
-    prior_payload = {
-        "status": "complete",
-        "results": [{"email": "a@example.com"}],
-        "extra": "value",
-    }
-    main_app.redis_client.set(
-        f"match_job:{job_code}", json.dumps(prior_payload)
-    )
+    monkeypatch.setattr(main_app, "match_worker", fake_worker)
 
     request = _build_match_request()
     background_tasks = BackgroundTasks()
@@ -3475,19 +3449,52 @@ def test_match_job_placeholder_reuses_prior_results():
     )
 
     job_id = result["job_id"]
-    placeholder_raw = main_app.redis_client.get(f"match_job:{job_id}")
-    assert placeholder_raw is not None
-    placeholder = json.loads(placeholder_raw)
-    assert placeholder["status"] == "pending"
-    assert placeholder["results"] == prior_payload["results"]
-    assert placeholder["extra"] == prior_payload["extra"]
+    assert result["status"] == "complete"
+    assert result["results"] == expected
+    assert result["matches"] == expected
+
+    stored_raw = main_app.redis_client.get(f"match_job:{job_id}")
+    assert stored_raw is not None
+    stored = json.loads(stored_raw)
+    assert stored["results"] == expected
+    assert stored["status"] == "complete"
     assert main_app.redis_client.get(f"match_job_lookup:{job_code}") == job_id
 
     resp = client.get(f"/has-match/{job_id}")
     assert resp.status_code == 200
-    data = resp.json()
-    assert data["status"] == "pending"
-    assert data["results"] == prior_payload["results"]
+    assert resp.json()["results"] == expected
+
+
+def test_match_job_stores_results_when_worker_does_not_persist(monkeypatch):
+    main_app.redis_client.flushdb()
+
+    job_code = "no-persist"
+    expected = [{"email": "a@example.com"}]
+
+    def fake_worker(job_code_arg, send_emails, enq_time, job_id=None):
+        assert job_code_arg == job_code
+        return expected
+
+    monkeypatch.setattr(main_app, "match_worker", fake_worker)
+
+    request = _build_match_request()
+    background_tasks = BackgroundTasks()
+    result = main_app.match_job(
+        main_app.JobCodeRequest(job_code=job_code),
+        request,
+        background_tasks,
+        current_user={"role": "admin", "email": "admin@example.com"},
+    )
+
+    job_id = result["job_id"]
+    assert result["status"] == "complete"
+    assert result["results"] == expected
+
+    stored_raw = main_app.redis_client.get(f"match_job:{job_id}")
+    assert stored_raw is not None
+    stored = json.loads(stored_raw)
+    assert stored["results"] == expected
+    assert stored["status"] == "complete"
 
 
 def test_match_completes_when_index_missing(monkeypatch):
