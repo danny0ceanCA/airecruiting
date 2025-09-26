@@ -33,7 +33,10 @@ test('renders landing page', () => {
   render(<App />);
   const heading = screen.getByRole('heading', { name: /who are you/i });
   expect(heading).toBeInTheDocument();
-  expect(screen.getByRole('link', { name: /career director login/i })).toBeInTheDocument();
+  expect(
+    screen.getByRole('link', { name: /career services login/i })
+  ).toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: /career director login/i })).not.toBeInTheDocument();
 });
 
 test('admin metrics shows placement rate', async () => {
