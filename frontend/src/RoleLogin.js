@@ -5,7 +5,7 @@ import LoginForm from './LoginForm';
 const roleInfo = {
   career: (
     <>
-      <h2>Career Services & Directors</h2>
+      <h2>Career Services Login</h2>
       <p>
         Create student profiles by entering their training, credentials, and career goals.
       </p>
@@ -16,28 +16,6 @@ const roleInfo = {
       <p>
         Career counselors can track job activity, monitor which students are matched or assigned,
         and access real-time metrics to support program outcomes and reporting.
-      </p>
-      <p>
-        Career directors use the same portal to oversee multiple partner programs, keep counselors
-        aligned on outreach and placement goals, and review every approved student across their
-        institutional network from a single dashboard.
-      </p>
-    </>
-  ),
-  career_director: (
-    <>
-      <h2>Career Directors</h2>
-      <p>
-        Monitor outcomes across multiple partner programs and keep counselors aligned on outreach,
-        student engagement, and placement goals.
-      </p>
-      <p>
-        Review every approved student within your network, track assignments and placements, and
-        study weekly performance metrics from a consolidated dashboard.
-      </p>
-      <p>
-        Directors collaborate with individual career staff while maintaining a unified view of
-        program impact.
       </p>
     </>
   ),
