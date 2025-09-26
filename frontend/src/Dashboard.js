@@ -38,7 +38,7 @@ function Dashboard() {
           </>
         )}
 
-        {role === 'career' && (
+        {(role === 'career' || role === 'career_director') && (
           <>
             <Link to="/students" className="dashboard-tile">Student Profiles</Link>
             <Link to="/metrics" className="dashboard-tile">School Metrics</Link>

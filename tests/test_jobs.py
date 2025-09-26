@@ -723,7 +723,7 @@ def test_match_ignores_label_changes(monkeypatch):
     assert applicant["email"] in emails
 
 
-def test_match_includes_applicant_records_without_student(monkeypatch):
+def test_match_includes_applicant_records_once_profile_exists(monkeypatch):
     main_app.redis_client.flushdb()
     init_default_admin()
 
@@ -769,6 +769,28 @@ def test_match_includes_applicant_records_without_student(monkeypatch):
     client.post(
         "/login", json={"email": applicant["email"], "password": applicant["password"]}
     )
+
+    profile = {
+        "first_name": "No",
+        "last_name": "Student",
+        "email": applicant["email"],
+        "phone": "555-0000",
+        "license": "lvn",
+        "skills": ["python"],
+        "experience_summary": "Entry level",
+        "interests": "Tech",
+        "city": "C",
+        "state": "ST",
+        "lat": 0.0,
+        "lng": 0.0,
+        "max_travel": 50.0,
+    }
+    create_resp = client.post(
+        "/students",
+        json=profile,
+        headers={"Authorization": f"Bearer {recruiter_token}"},
+    )
+    assert create_resp.status_code == 200
 
     job = {
         "job_title": "Dev",

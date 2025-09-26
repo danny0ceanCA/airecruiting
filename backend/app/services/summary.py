@@ -16,6 +16,7 @@ ACTIVITY_LOG_KEY = "activity_logs"
 EMAIL_OPEN_TOKENS_KEY = "email_open_tokens"
 redis_client = None
 send_email = None
+CAREER_DIRECTOR_ROLE = "career_director"
 
 # Reuse a single OpenAI client; reads OPENAI_API_KEY from env
 openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -84,7 +85,45 @@ def _in_window(ts_str: str | None, start: datetime, end: datetime) -> bool:
     return bool(ts and (start <= ts <= end))
 
 
-def compile_weekly_stats(user_email: str, now: datetime) -> Dict[str, Any]:
+def _extract_institutional_codes(user: Dict[str, Any] | None) -> list[str]:
+    """Return a list of distinct institutional codes associated with a user."""
+
+    if not isinstance(user, dict):
+        return []
+
+    codes: list[str] = []
+    raw_codes = user.get("institutional_codes")
+    if isinstance(raw_codes, (list, tuple)):
+        for code in raw_codes:
+            if not isinstance(code, str):
+                continue
+            cleaned = code.strip()
+            if cleaned and cleaned not in codes:
+                codes.append(cleaned)
+    else:
+        single = user.get("institutional_code") or user.get("school_code")
+        if isinstance(single, str):
+            cleaned = single.strip()
+            if cleaned:
+                codes.append(cleaned)
+    return codes
+
+
+def _student_institutional_code(student: Dict[str, Any] | None) -> str | None:
+    """Extract the institutional code for a stored student profile."""
+
+    if not isinstance(student, dict):
+        return None
+    code = student.get("institutional_code") or student.get("school_code")
+    if isinstance(code, str):
+        trimmed = code.strip()
+        return trimmed or None
+    return None
+
+
+def compile_weekly_stats(
+    user_email: str, now: datetime, user: Dict[str, Any] | None = None
+) -> Dict[str, Any]:
     """
     Aggregate stats for a career user over the last Mon–Fri window:
       - created_count: # students created in-window
@@ -97,6 +136,17 @@ def compile_weekly_stats(user_email: str, now: datetime) -> Dict[str, Any]:
     _ensure_dependencies()
     window_start, window_end = _week_window(now)
     user_lc = (user_email or "").strip().lower()
+    if user is None:
+        raw_user = _decode(redis_client.get(f"user:{user_lc}"))
+        if raw_user:
+            try:
+                user = json.loads(raw_user)
+            except Exception:
+                user = None
+
+    role = (user or {}).get("role") if isinstance(user, dict) else None
+    director_mode = role == CAREER_DIRECTOR_ROLE
+    director_codes = {code.lower() for code in _extract_institutional_codes(user)}
 
     # ---- Discover all students owned by this user & track creations in-window ----
     created_emails: set[str] = set()
@@ -112,7 +162,13 @@ def compile_weekly_stats(user_email: str, now: datetime) -> Dict[str, Any]:
         except Exception:
             continue
 
-        if (student.get("created_by") or "").strip().lower() != user_lc:
+        created_by = (student.get("created_by") or "").strip().lower()
+        student_code = _student_institutional_code(student)
+
+        if director_mode:
+            if director_codes and (not student_code or student_code.lower() not in director_codes):
+                continue
+        elif created_by != user_lc:
             continue
 
         email = student.get("email") or key.split("student:", 1)[1]
@@ -154,7 +210,8 @@ def compile_weekly_stats(user_email: str, now: datetime) -> Dict[str, Any]:
         if not email:
             continue
 
-        user_students.add(email)
+        if email:
+            user_students.add(email)
         if _in_window(entry.get("timestamp"), window_start, window_end):
             created_emails.add(email)
 
@@ -415,10 +472,10 @@ def compile_all_weekly_stats(now: datetime) -> Dict[str, Any]:
             user = json.loads(raw)
         except Exception:
             continue
-        if user.get("role") != "career":
+        if user.get("role") not in {"career", CAREER_DIRECTOR_ROLE}:
             continue
         email = key.split("user:", 1)[1]
-        stats = compile_weekly_stats(email, now)
+        stats = compile_weekly_stats(email, now, user=user)
         users[email] = stats
         email_stats = stats.get("email_analytics", {})
         agg_email["sent_count"] += email_stats.get("sent_count", 0)
@@ -571,15 +628,15 @@ def send_weekly_summary(user_email: str) -> bool:
         return False
 
     role = user.get("role")
-    if role not in {"career", "admin", "junior_admin"}:
+    if role not in {"career", CAREER_DIRECTOR_ROLE, "admin", "junior_admin"}:
         return False
 
     display_name = f"{user.get('first_name', '')} {user.get('last_name', '')}".strip() or user_email
     now = datetime.now(timezone.utc)
 
     stats = (
-        compile_weekly_stats(user_email, now)
-        if role == "career"
+        compile_weekly_stats(user_email, now, user=user)
+        if role in {"career", CAREER_DIRECTOR_ROLE}
         else compile_all_weekly_stats(now)
     )
 
