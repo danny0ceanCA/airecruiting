@@ -302,6 +302,55 @@ def test_compile_weekly_stats_excludes_unowned_email_tokens():
     assert email_stats["per_student"][0]["email"] == "owned@example.com"
 
 
+def test_compile_weekly_stats_for_director_codes():
+    summary.redis_client = DummyRedis()
+    now = datetime(2025, 8, 8, tzinfo=timezone.utc)
+
+    director = {
+        "role": summary.CAREER_DIRECTOR_ROLE,
+        "institutional_codes": ["1001", "2002"],
+    }
+    summary.redis_client.set("user:director@example.com", json.dumps(director))
+
+    student_one = {
+        "email": "one@example.com",
+        "institutional_code": "1001",
+        "created_by": "other@example.com",
+        "created_at": now.isoformat(),
+    }
+    student_two = {
+        "email": "two@example.com",
+        "institutional_code": "2002",
+        "created_by": "third@example.com",
+        "created_at": now.isoformat(),
+    }
+    student_three = {
+        "email": "three@example.com",
+        "institutional_code": "3003",
+        "created_by": "third@example.com",
+        "created_at": now.isoformat(),
+    }
+    summary.redis_client.set("student:one@example.com", json.dumps(student_one))
+    summary.redis_client.set("student:two@example.com", json.dumps(student_two))
+    summary.redis_client.set("student:three@example.com", json.dumps(student_three))
+
+    job = {
+        "assigned_students": ["one@example.com", "two@example.com"],
+        "placed_students": ["two@example.com"],
+        "student_notes": {
+            "one@example.com": [{"text": "note", "timestamp": now.isoformat()}],
+            "two@example.com": [{"text": "note2", "timestamp": now.isoformat()}],
+        },
+    }
+    summary.redis_client.set("job:dir", json.dumps(job))
+
+    stats = summary.compile_weekly_stats("director@example.com", now)
+    assert stats["created_count"] == 2
+    assert len(stats["students"]) == 2
+    emails = {entry["email"] for entry in stats["students"]}
+    assert emails == {"one@example.com", "two@example.com"}
+
+
 def test_build_summary_prompt_omits_notes_section_when_no_notes():
     now = datetime(2025, 8, 8, tzinfo=timezone.utc)
 

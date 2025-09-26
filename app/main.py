@@ -69,6 +69,8 @@ for handler in logging.getLogger().handlers:
 logger = get_logger(__name__)
 
 ADMIN_ROLES = {"admin", "junior_admin"}
+CAREER_DIRECTOR_ROLE = "career_director"
+CAREER_STAFF_ROLES = {"career", CAREER_DIRECTOR_ROLE}
 
 REFRESH_TOKEN_TTL_SECONDS = int(os.getenv("REFRESH_TOKEN_TTL_SECONDS", str(60 * 60 * 24 * 7)))
 REFRESH_TOKEN_LOOKUP_PREFIX = "refresh_token_lookup"
@@ -208,6 +210,42 @@ def user_index_key(code: str) -> str:
     """Return the redis key for an institutional-code user index."""
 
     return f"{USER_INDEX_PREFIX}:{code}"
+
+
+def _extract_institutional_codes(user: dict | None) -> list[str]:
+    """Return a de-duplicated list of institutional codes for a user."""
+
+    if not isinstance(user, dict):
+        return []
+
+    codes: list[str] = []
+    raw_codes = user.get("institutional_codes")
+    if isinstance(raw_codes, (list, tuple)):
+        for code in raw_codes:
+            if not isinstance(code, str):
+                continue
+            normalized = code.strip()
+            if normalized and normalized not in codes:
+                codes.append(normalized)
+    else:
+        single = user.get("institutional_code") or user.get("school_code")
+        if isinstance(single, str):
+            normalized = single.strip()
+            if normalized:
+                codes.append(normalized)
+    return codes
+
+
+def _student_institutional_code(student: dict | None) -> str | None:
+    """Extract the institutional code from a stored student profile."""
+
+    if not isinstance(student, dict):
+        return None
+    code = student.get("institutional_code") or student.get("school_code")
+    if isinstance(code, str):
+        stripped = code.strip()
+        return stripped or None
+    return None
 
 
 def sync_applicant_index(
@@ -810,6 +848,90 @@ def init_default_admin():
     init_default_school_codes()
     init_default_licenses()
 
+
+def init_career_directors() -> None:
+    """Seed configured career director accounts from environment variables."""
+
+    raw = os.getenv("CAREER_DIRECTOR_ACCOUNTS")
+    if not raw:
+        return
+
+    try:
+        entries = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("CAREER_DIRECTOR_ACCOUNTS must contain valid JSON") from exc
+
+    if not isinstance(entries, list):
+        raise RuntimeError("CAREER_DIRECTOR_ACCOUNTS must be a JSON array of accounts")
+
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise RuntimeError("Each career director entry must be an object")
+
+        email_raw = entry.get("email")
+        password = entry.get("password")
+        codes_raw = entry.get("institutional_codes")
+
+        if not isinstance(email_raw, str) or not email_raw.strip():
+            raise RuntimeError("Career director entries require an email")
+        if not isinstance(password, str) or not password:
+            raise RuntimeError("Career director entries require a password")
+        if not isinstance(codes_raw, list) or not codes_raw:
+            raise RuntimeError(
+                "Career director entries require an institutional_codes list"
+            )
+
+        codes: list[str] = []
+        for code in codes_raw:
+            if not isinstance(code, str):
+                continue
+            cleaned = code.strip()
+            if cleaned and cleaned not in codes:
+                codes.append(cleaned)
+
+        if not codes:
+            raise RuntimeError(
+                "Career director institutional_codes entries must include at least one code"
+            )
+
+        email = normalize_email(email_raw)
+        _validate_admin_password(password)
+        hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+
+        first_code = codes[0]
+        first_name = (entry.get("first_name") or "Career").strip() or "Career"
+        last_name = (entry.get("last_name") or "Director").strip() or "Director"
+        label = get_school_label(first_code)
+
+        key = user_key(email)
+        previous_raw = redis_client.get(key)
+        previous: dict[str, Any] | None = None
+        if previous_raw:
+            try:
+                previous = json.loads(previous_raw)
+            except Exception:
+                previous = None
+
+        payload: dict[str, Any] = previous.copy() if isinstance(previous, dict) else {}
+        payload.update(
+            {
+                "first_name": first_name,
+                "last_name": last_name,
+                "institutional_code": first_code,
+                "institutional_codes": codes,
+                "school_label": label,
+                "password": hashed,
+                "active": True,
+                "role": CAREER_DIRECTOR_ROLE,
+                "approved": True,
+                "rejected": False,
+            }
+        )
+
+        redis_client.set(key, json.dumps(payload))
+        sync_applicant_index(email, previous, payload)
+        logger.info("career_director user %s configured for codes %s", email, codes)
+
 @app.on_event("startup")
 def on_startup():
     # Verify Redis connection and seed the default admin
@@ -826,6 +948,7 @@ def on_startup():
     init_default_admin()
     init_default_school_codes()
     init_default_licenses()
+    init_career_directors()
     init_default_rss_feeds()
     keys = redis_client.keys("match_job:*")
     logger.info("🔎 Found %s saved match sets at startup.", len(keys))
@@ -952,8 +1075,11 @@ def register(req: RegisterRequest):
     student_key_existing = resolve_student_key(email)
     key = user_key(email)
 
-    if req.role in {"career", "recruiter"} and not req.institutional_code:
-        raise HTTPException(status_code=400, detail="Institutional code required for career staff and recruiters")
+    if req.role in CAREER_STAFF_ROLES.union({"recruiter"}) and not req.institutional_code:
+        raise HTTPException(
+            status_code=400,
+            detail="Institutional code required for career staff, directors, and recruiters",
+        )
 
     label = None
     if req.institutional_code:
@@ -2975,10 +3101,37 @@ class PlacementRequest(BaseModel):
 
 @app.post("/place")
 def place_student(data: dict, token_data: dict = Depends(get_current_user)):
-    if token_data.get("role") not in {"admin", "junior_admin", "career"}:
+    role = token_data.get("role")
+    if role not in ADMIN_ROLES.union(CAREER_STAFF_ROLES):
         raise HTTPException(status_code=403, detail="Not authorized to place students")
     job_code = data["job_code"]
     student_email = normalize_email(data["student_email"])
+    student_key_resolved = resolve_student_key(student_email)
+    student_raw = redis_client.get(student_key_resolved) if student_key_resolved else None
+    if not student_raw:
+        raise HTTPException(status_code=404, detail="Student not found")
+    try:
+        student = json.loads(student_raw)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Corrupted profile data")
+
+    if role in CAREER_STAFF_ROLES:
+        user_raw = redis_client.get(user_key(token_data.get("sub")))
+        if not user_raw:
+            raise HTTPException(status_code=404, detail="User not found")
+        try:
+            user = json.loads(user_raw)
+        except Exception:
+            raise HTTPException(status_code=500, detail="Corrupted user data")
+        codes = _extract_institutional_codes(user)
+        if not codes:
+            raise HTTPException(status_code=400, detail="Institutional code required")
+        st_code = _student_institutional_code(student)
+        if not st_code or st_code.lower() not in {code.lower() for code in codes}:
+            raise HTTPException(status_code=403, detail="Not authorized")
+        if role == "career" and student.get("created_by") != token_data.get("sub"):
+            raise HTTPException(status_code=403, detail="Not authorized")
+
     key = f"job:{job_code}"
     raw = redis_client.get(key)
     if not raw:
@@ -4227,9 +4380,10 @@ def students_by_school(
     except Exception:
         raise HTTPException(status_code=500, detail="Corrupted user data")
 
-    institutional_code = user.get("institutional_code") or user.get("school_code")
-    if not institutional_code:
+    codes = _extract_institutional_codes(user)
+    if not codes:
         raise HTTPException(status_code=400, detail="Institutional code required")
+    normalized_codes = {code.lower() for code in codes}
 
     cur = int(cursor or 0)
     students: list[dict] = []
@@ -4244,10 +4398,14 @@ def students_by_school(
             except Exception:
                 continue
 
-            if (student.get("institutional_code") or student.get("school_code")) != institutional_code:
+            student_code = _student_institutional_code(student)
+            if not student_code or student_code.lower() not in normalized_codes:
                 continue
 
-            if current_user.get("role") == "career" and student.get("created_by") != current_user.get("sub"):
+            if (
+                current_user.get("role") == "career"
+                and student.get("created_by") != current_user.get("sub")
+            ):
                 continue
 
             email = student.get("email")
@@ -4293,12 +4451,22 @@ def student_job_stats(email: str, current_user: dict = Depends(get_current_user)
         except Exception:
             raise HTTPException(status_code=500, detail="Corrupted profile data")
         user_raw = redis_client.get(user_key(current_user.get("sub")))
-        user = json.loads(user_raw) if user_raw else {}
-        st_code = student.get("institutional_code") or student.get("school_code")
-        u_code = user.get("institutional_code") or user.get("school_code")
-        if st_code != u_code:
+        if not user_raw:
+            raise HTTPException(status_code=404, detail="User not found")
+        try:
+            user = json.loads(user_raw)
+        except Exception:
+            raise HTTPException(status_code=500, detail="Corrupted user data")
+        codes = _extract_institutional_codes(user)
+        if not codes:
+            raise HTTPException(status_code=400, detail="Institutional code required")
+        st_code = _student_institutional_code(student)
+        if not st_code or st_code.lower() not in {code.lower() for code in codes}:
             raise HTTPException(status_code=403, detail="Not authorized")
-        if current_user.get("role") == "career" and student.get("created_by") != current_user.get("sub"):
+        if (
+            current_user.get("role") == "career"
+            and student.get("created_by") != current_user.get("sub")
+        ):
             raise HTTPException(status_code=403, detail="Not authorized")
 
     return {
@@ -4326,12 +4494,22 @@ def student_jobs(email: str, current_user: dict = Depends(get_current_user)):
         except Exception:
             raise HTTPException(status_code=500, detail="Corrupted profile data")
         user_raw = redis_client.get(user_key(current_user.get("sub")))
-        user = json.loads(user_raw) if user_raw else {}
-        st_code = student.get("institutional_code") or student.get("school_code")
-        u_code = user.get("institutional_code") or user.get("school_code")
-        if st_code != u_code:
+        if not user_raw:
+            raise HTTPException(status_code=404, detail="User not found")
+        try:
+            user = json.loads(user_raw)
+        except Exception:
+            raise HTTPException(status_code=500, detail="Corrupted user data")
+        codes = _extract_institutional_codes(user)
+        if not codes:
+            raise HTTPException(status_code=400, detail="Institutional code required")
+        st_code = _student_institutional_code(student)
+        if not st_code or st_code.lower() not in {code.lower() for code in codes}:
             raise HTTPException(status_code=403, detail="Not authorized")
-        if current_user.get("role") == "career" and student.get("created_by") != current_user.get("sub"):
+        if (
+            current_user.get("role") == "career"
+            and student.get("created_by") != current_user.get("sub")
+        ):
             raise HTTPException(status_code=403, detail="Not authorized")
 
     return {"jobs": _fetch_student_jobs(norm)}

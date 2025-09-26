@@ -9,6 +9,7 @@ from fastapi import BackgroundTasks
 from fastapi.testclient import TestClient
 from jose import jwt
 import json
+import bcrypt
 import app.main as main_app
 from datetime import datetime, timedelta
 import hashlib
@@ -165,7 +166,14 @@ class DummyRedis:
 
 
 main_app.redis_client = DummyRedis()
-from app.main import app, JWT_SECRET, ALGORITHM, init_default_admin
+from app.main import (
+    app,
+    JWT_SECRET,
+    ALGORITHM,
+    init_default_admin,
+    init_career_directors,
+    CAREER_DIRECTOR_ROLE,
+)
 import backend.app.main  # register additional routes
 
 client = TestClient(app)
@@ -200,6 +208,29 @@ def test_junior_admin_exists():
     del os.environ["JUNIOR_ADMIN_PASSWORD"]
 
 
+def test_init_career_directors_seeds_accounts():
+    main_app.redis_client.flushdb()
+    payload = json.dumps(
+        [
+            {
+                "email": "director@example.com",
+                "password": "Director123",
+                "institutional_codes": ["1001", "2002"],
+            }
+        ]
+    )
+    os.environ["CAREER_DIRECTOR_ACCOUNTS"] = payload
+    init_career_directors()
+    raw = main_app.redis_client.get("user:director@example.com")
+    user = json.loads(raw)
+    assert user["role"] == CAREER_DIRECTOR_ROLE
+    assert user["approved"] is True
+    assert user["institutional_codes"] == ["1001", "2002"]
+    assert user["institutional_code"] == "1001"
+    assert bcrypt.checkpw("Director123".encode(), user["password"].encode())
+    del os.environ["CAREER_DIRECTOR_ACCOUNTS"]
+
+
 def test_applicant_registration_without_code():
     main_app.redis_client.flushdb()
     init_default_admin()
@@ -226,6 +257,24 @@ def test_non_applicant_requires_code():
     }
     resp = client.post("/register", json=user)
     assert resp.status_code == 400
+
+
+def test_career_director_registration_requires_code():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+    user = {
+        "email": "director2@example.com",
+        "first_name": "Di",
+        "last_name": "Rect",
+        "password": "pw",
+        "role": CAREER_DIRECTOR_ROLE,
+    }
+    resp = client.post("/register", json=user)
+    assert resp.status_code == 400
+    assert (
+        resp.json()["detail"]
+        == "Institutional code required for career staff, directors, and recruiters"
+    )
 
 
 def test_registration_flow():
@@ -2360,6 +2409,70 @@ def test_recruiter_cannot_place_student():
     assert resp.status_code == 403
 
 
+def test_career_director_place_student_within_codes():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    job = {"job_code": "J1", "assigned_students": [], "placed_students": []}
+    main_app.redis_client.set("job:J1", json.dumps(job))
+
+    allowed = {
+        "first_name": "Allow",
+        "last_name": "Ed",
+        "email": "allow@example.com",
+        "institutional_code": "2002",
+        "student_id": "allow1",
+        "created_by": "other@example.com",
+    }
+    blocked = {
+        "first_name": "Block",
+        "last_name": "Ed",
+        "email": "block@example.com",
+        "institutional_code": "3003",
+        "student_id": "block1",
+        "created_by": "other@example.com",
+    }
+    main_app.persist_student_record(
+        allowed["email"], allowed, allowed["institutional_code"], allowed["student_id"]
+    )
+    main_app.persist_student_record(
+        blocked["email"], blocked, blocked["institutional_code"], blocked["student_id"]
+    )
+
+    director = {
+        "role": CAREER_DIRECTOR_ROLE,
+        "approved": True,
+        "institutional_code": "2002",
+        "institutional_codes": ["2002", "2004"],
+        "password": bcrypt.hashpw("pass123".encode(), bcrypt.gensalt()).decode(),
+    }
+    main_app.redis_client.set("user:director@example.com", json.dumps(director))
+
+    token = jwt.encode(
+        {
+            "sub": "director@example.com",
+            "role": CAREER_DIRECTOR_ROLE,
+            "exp": datetime.utcnow() + timedelta(hours=1),
+        },
+        JWT_SECRET,
+        algorithm=ALGORITHM,
+    )
+
+    resp_allowed = client.post(
+        "/place",
+        json={"job_code": "J1", "student_email": allowed["email"]},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp_allowed.status_code == 200
+
+    resp_blocked = client.post(
+        "/place",
+        json={"job_code": "J1", "student_email": blocked["email"]},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp_blocked.status_code == 403
+
+
 def test_students_me_endpoint(monkeypatch):
     main_app.redis_client.flushdb()
     init_default_admin()
@@ -2929,6 +3042,67 @@ def test_students_by_school_requires_code():
     assert resp.json()["detail"] == "Institutional code required"
 
 
+def test_career_director_by_school_includes_multiple_codes():
+    main_app.redis_client.flushdb()
+
+    director = {
+        "role": CAREER_DIRECTOR_ROLE,
+        "approved": True,
+        "institutional_code": "1001",
+        "institutional_codes": ["1001", "2002"],
+        "password": bcrypt.hashpw("pass123".encode(), bcrypt.gensalt()).decode(),
+    }
+    main_app.redis_client.set("user:director@example.com", json.dumps(director))
+
+    students = [
+        {
+            "first_name": "Stu",
+            "last_name": "One",
+            "email": "one@example.com",
+            "institutional_code": "1001",
+            "student_id": "multi1",
+            "created_by": "career@example.com",
+        },
+        {
+            "first_name": "Stu",
+            "last_name": "Two",
+            "email": "two@example.com",
+            "institutional_code": "2002",
+            "student_id": "multi2",
+            "created_by": "another@example.com",
+        },
+        {
+            "first_name": "Stu",
+            "last_name": "Three",
+            "email": "three@example.com",
+            "institutional_code": "3003",
+            "student_id": "multi3",
+            "created_by": "career@example.com",
+        },
+    ]
+
+    for st in students:
+        main_app.persist_student_record(st["email"], st, st["institutional_code"], st["student_id"])
+
+    token = jwt.encode(
+        {
+            "sub": "director@example.com",
+            "role": CAREER_DIRECTOR_ROLE,
+            "exp": datetime.utcnow() + timedelta(hours=1),
+        },
+        JWT_SECRET,
+        algorithm=ALGORITHM,
+    )
+
+    resp = client.get(
+        "/students/by-school",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    emails = {s["email"] for s in resp.json()["students"]}
+    assert emails == {"one@example.com", "two@example.com"}
+
+
 def test_student_endpoints_handle_string_notes():
     main_app.redis_client.flushdb()
     init_default_admin()
@@ -3042,6 +3216,70 @@ def test_student_endpoints_handle_string_notes():
     assert entry["notes"] == [{"text": "legacy"}]
     assert entry["note"] == "legacy"
     assert "posted_by" in entry
+
+
+def test_career_director_student_job_endpoints():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    student = {
+        "first_name": "Dir",
+        "last_name": "Student",
+        "email": "dir_student@example.com",
+        "institutional_code": "2002",
+        "student_id": "dir1",
+        "created_by": "someone@example.com",
+    }
+    main_app.persist_student_record(
+        student["email"], student, student["institutional_code"], student["student_id"]
+    )
+
+    job = {
+        "job_code": "JDIR",
+        "job_title": "Role",
+        "assigned_students": [student["email"]],
+        "placed_students": [],
+        "student_notes": {student["email"]: [{"text": "note"}]},
+    }
+    main_app.redis_client.set("job:JDIR", json.dumps(job))
+    main_app.redis_client.sadd(
+        f"student_jobs:{student['email']}:assigned", job["job_code"]
+    )
+
+    director = {
+        "role": CAREER_DIRECTOR_ROLE,
+        "approved": True,
+        "institutional_code": "2002",
+        "institutional_codes": ["2002", "2003"],
+        "password": bcrypt.hashpw("pass123".encode(), bcrypt.gensalt()).decode(),
+    }
+    main_app.redis_client.set("user:director@example.com", json.dumps(director))
+
+    token = jwt.encode(
+        {
+            "sub": "director@example.com",
+            "role": CAREER_DIRECTOR_ROLE,
+            "exp": datetime.utcnow() + timedelta(hours=1),
+        },
+        JWT_SECRET,
+        algorithm=ALGORITHM,
+    )
+
+    stats_resp = client.get(
+        f"/students/{student['email']}/job-stats",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert stats_resp.status_code == 200
+    stats = stats_resp.json()
+    assert stats["assigned"] == [job["job_code"]]
+
+    jobs_resp = client.get(
+        f"/students/{student['email']}/jobs",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert jobs_resp.status_code == 200
+    jobs = jobs_resp.json()["jobs"]
+    assert jobs[0]["job_code"] == job["job_code"]
 
 
 def test_malformed_user_skipped_in_listings():

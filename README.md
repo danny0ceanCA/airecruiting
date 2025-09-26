@@ -83,6 +83,7 @@ ADMIN_PASSWORD=changeMe123
 JUNIOR_ADMIN_EMAIL=junior@example.com
 JUNIOR_ADMIN_PASSWORD=changeMe123
 SITE_BASE_URL=https://yourdomain.com
+CAREER_DIRECTOR_ACCOUNTS=[{"email":"director@example.com","password":"StrongPass123","institutional_codes":["1001","2002"]}]
 ```
 
 `SITE_BASE_URL` is used when building links in notification emails. It **must**
@@ -96,6 +97,11 @@ Career services staff and recruiters must supply an institutional code when regi
 Codes can be requested from the `/request-code` page or by contacting
 `support@talentmatch-ai.com`. Applicants do not need a code and may
 register directly.
+
+`CAREER_DIRECTOR_ACCOUNTS` is optional and accepts a JSON array of pre-approved
+career director accounts. Each entry must provide an `email`, `password`, and a
+list of `institutional_codes`. Passwords are hashed at startup and directors are
+seeded as approved users for the specified school codes.
 
 ## Students Endpoint
 

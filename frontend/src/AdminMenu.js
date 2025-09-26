@@ -41,7 +41,7 @@ function AdminMenu({ children }) {
           {userRole === 'applicant' && (
             <Link to="/applicant/profile">Applicant Profile</Link>
           )}
-          {userRole === 'career' && (
+          {(userRole === 'career' || userRole === 'career_director') && (
             <>
               <Link to="/students">Student Profiles</Link>
               <Link to="/career-info">Career Staff Info</Link>
