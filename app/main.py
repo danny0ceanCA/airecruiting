@@ -1142,6 +1142,7 @@ class JobRequest(BaseModel):
 
 class JobCodeRequest(BaseModel):
     job_code: str
+    skip_filtering: bool = False
 
 # -------- Auth -------- #
 def get_current_user(authorization: str = Header(..., alias="Authorization")):
@@ -2081,7 +2082,13 @@ def match_job(
         job_id,
         request_id,
     )
-    matches = match_worker(req.job_code, False, enqueue_time, job_id=job_id)
+    matches = match_worker(
+        req.job_code,
+        False,
+        enqueue_time,
+        job_id=job_id,
+        skip_filtering=req.skip_filtering,
+    )
     return _build_match_response(req.job_code, job_id, matches)
 
 
@@ -2209,12 +2216,14 @@ async def filter_candidates(
     return filtered, total_duration
 
 
+
 async def _perform_match_async(
     job_code: str,
     send_emails: bool = False,
     enq_time: float | None = None,
     progress_callback: Callable[[str, dict[str, Any]], None] | None = None,
     job_id: str | None = None,
+    skip_filtering: bool = False,
 ):
     overall_start = time.perf_counter()
     job_start = overall_start
@@ -2338,7 +2347,10 @@ async def _perform_match_async(
                 logger.exception("Progress callback failed during stored event")
         return []
 
-    matches = []
+    matches: list[dict[str, Any]] = []
+    top_matches: list[dict[str, Any]] = []
+    faiss_results: list[tuple[str, float]] = []
+
     if vector_index.ntotal == 0:
         rebuild_vector_index()
     search_vec = np.array([job_emb], dtype="float32")
@@ -2360,9 +2372,14 @@ async def _perform_match_async(
             len(similarities),
             job_identifier,
         )
-        candidate_emails = [vector_emails[i] for i in idxs[0] if i != -1]
+        faiss_results = [
+            (vector_emails[idx], float(score))
+            for score, idx in zip(similarities, idxs[0])
+            if idx != -1
+        ]
     else:
-        candidate_emails = []
+        similarities = []
+    candidate_emails = [email for email, _ in faiss_results]
     search_end = time.perf_counter()
     search_elapsed = search_end - search_start
     logger.info(
@@ -2386,202 +2403,220 @@ async def _perform_match_async(
         except Exception:
             logger.exception("Progress callback failed during search event")
 
-    candidates: list[tuple[dict, list, tuple[float, float]]] = []
-    candidate_coords: list[tuple[float, float]] = []
-    filtering_wall_start = time.time()
-    filtering_perf_start = time.perf_counter()
-    filter_wall_start = filtering_wall_start
-    logger.info(
-        "🔎 Filtering candidates started at %.6f with %d raw candidates for job %s (job_id=%s)",
-        filtering_wall_start,
-        len(candidate_emails),
-        job_code,
-        job_identifier,
-    )
-
-    for email in candidate_emails:
-        skey = resolve_student_key(email)
-        student_raw = redis_client.get(skey) if skey else None
-        if not student_raw:
-            continue
-        try:
-            student = json.loads(student_raw)
-            emb = student.get("embedding")
-            if not emb:
-                continue
-            if student.get("email") in job.get("uninterested_students", []):
-                continue
-            student_license = license_to_code(student.get("license") or student.get("education_level"))
-            if required_license and student_license != required_license:
-                continue
-            student_user_raw = redis_client.get(f"user:{student.get('email')}")
-            if student_user_raw and poster_code:
-                try:
-                    su = json.loads(student_user_raw)
-                    stu_code = su.get("institutional_code") or su.get("school_code")
-                    if su.get("role") == "applicant" and stu_code != poster_code:
-                        continue
-                except Exception:
-                    pass
-            coord = (float(student.get("lat")), float(student.get("lng")))
-            candidate_coords.append(coord)
-            candidates.append((student, emb, coord))
-        except Exception:
-            continue
-
-    logger.info(
-        "🗺️ Preparing distance lookups for job %s (job_id=%s) with %s origins",
-        job_code,
-        job_identifier,
-        len(candidate_coords),
-    )
-    if progress_callback:
-        try:
-            progress_callback(
-                "start",
-                {"job_code": job_code, "candidate_count": len(candidates)},
-            )
-        except Exception:
-            logger.exception("Progress callback failed during start event")
-
-    distances: dict[tuple[float, float], float] = {}
-    distance_elapsed = 0.0
-    if candidate_coords:
-        try:
-            logger.info(
-                f"🛠️ Preparing distance batches for job {job_code} ({len(candidate_coords)} origins)"
-            )
-            distance_start = time.perf_counter()
-            distance_wall_start = time.time()
-            coro = get_driving_distance_miles(
-                candidate_coords,
-                dest_lat=job.get("lat"),
-                dest_lng=job.get("lng"),
-                job_code=job_code,
-                job_id=job_identifier,
-            )
-            result = await coro if asyncio.iscoroutine(coro) else coro
-            if isinstance(result, dict):
-                distances = result
-            elif isinstance(result, (int, float)):
-                distances = {coord: float(result) for coord in candidate_coords}
-        except Exception:
-            distances = {}
-        finally:
-            distance_elapsed = time.perf_counter() - distance_start
-            distance_time = time.time() - distance_wall_start
-    if progress_callback:
-        try:
-            progress_callback(
-                "distances_complete",
-                {
-                    "job_code": job_code,
-                    "elapsed": distance_elapsed,
-                    "candidate_count": len(candidate_coords),
-                },
-            )
-        except Exception:
-            logger.exception("Progress callback failed during distance completion event")
-    logger.info(
-        "⏱️ Distance lookups completed in %.2fs for job %s (job_id=%s) (%s origins)",
-        distance_elapsed,
-        job_code,
-        job_identifier,
-        len(candidate_coords),
-    )
-
-    matches, filter_elapsed = await filter_candidates(
-        candidates,
-        distances,
-        job_emb,
-        job_code=job_code,
-        job_identifier=job_identifier,
-    )
-    filtered_candidates = list(matches)
-    logger.info(
-        "✅ Candidate filtering completed for job %s (job_id=%s) in %.2fs, kept %d candidates",
-        job_code,
-        job_identifier,
-        filter_elapsed,
-        len(filtered_candidates),
-    )
-    filtering_wall_end = time.time()
-    filtering_perf_elapsed = time.perf_counter() - filtering_perf_start
-    logger.info(
-        "✅ Filtering completed at %.6f, kept %d candidates, duration=%.2fs for job %s (job_id=%s)",
-        filtering_wall_end,
-        len(matches),
-        filtering_perf_elapsed,
-        job_code,
-        job_identifier,
-    )
-
-    # Deduplicate by email
-    dedup: dict[str, dict] = {}
-    for m in matches:
-        dedup[m["email"]] = m
-    matches = list(dedup.values())
-    logger.info(
-        "🧮 Raw matches ready for filtering for job %s (job_id=%s): %s candidates",
-        job_code,
-        job_identifier,
-        len(matches),
-    )
-
     assigned = set(job.get("assigned_students", []))
     placed = set(job.get("placed_students", []))
     rejected = set(job.get("rejected_students", []))
+    distance_elapsed = 0.0
 
-    logger.info(
-        "⚙️ Starting candidate filtering for job %s with %d raw matches",
-        job_identifier,
-        len(matches),
-    )
-    filter_wall_start = time.time()
+    if skip_filtering:
+        logger.info(
+            "⏭️ Skip filtering enabled for job %s (job_id=%s); returning %s FAISS candidates",
+            job_code,
+            job_identifier,
+            len(candidate_emails),
+        )
+        for email, score in faiss_results:
+            status = None
+            if email in placed:
+                status = "placed"
+            elif email in rejected:
+                status = "rejected"
+            matches.append(
+                {
+                    "name": email,
+                    "first_name": "",
+                    "last_name": "",
+                    "email": email,
+                    "score": float(score),
+                    "distance_miles": None,
+                    "status": status,
+                }
+            )
+        top_matches = list(matches)
+    else:
+        candidates: list[tuple[dict, list, tuple[float, float]]] = []
+        candidate_coords: list[tuple[float, float]] = []
+        filtering_wall_start = time.time()
+        filtering_perf_start = time.perf_counter()
+        logger.info(
+            "🔎 Filtering candidates started at %.6f with %d raw candidates for job %s (job_id=%s)",
+            filtering_wall_start,
+            len(candidate_emails),
+            job_code,
+            job_identifier,
+        )
 
-    matches.sort(key=lambda x: x["score"], reverse=True)
+        for email in candidate_emails:
+            skey = resolve_student_key(email)
+            student_raw = redis_client.get(skey) if skey else None
+            if not student_raw:
+                continue
+            try:
+                student = json.loads(student_raw)
+                emb = student.get("embedding")
+                if not emb:
+                    continue
+                if student.get("email") in job.get("uninterested_students", []):
+                    continue
+                student_license = license_to_code(student.get("license") or student.get("education_level"))
+                if required_license and student_license != required_license:
+                    continue
+                student_user_raw = redis_client.get(f"user:{student.get('email')}")
+                if student_user_raw and poster_code:
+                    try:
+                        su = json.loads(student_user_raw)
+                        stu_code = su.get("institutional_code") or su.get("school_code")
+                        if su.get("role") == "applicant" and stu_code != poster_code:
+                            continue
+                    except Exception:
+                        pass
+                coord = (float(student.get("lat")), float(student.get("lng")))
+                candidate_coords.append(coord)
+                candidates.append((student, emb, coord))
+            except Exception:
+                continue
 
-    # Exclude already assigned students from the match limit so recruiters
-    # can always receive up to 10 new candidates regardless of how many
-    # students have been assigned.
-    filtered_matches = [m for m in matches if m["email"] not in assigned]
-    top_matches = filtered_matches[:10]
+        logger.info(
+            "🗺️ Preparing distance lookups for job %s (job_id=%s) with %s origins",
+            job_code,
+            job_identifier,
+            len(candidate_coords),
+        )
+        if progress_callback:
+            try:
+                progress_callback(
+                    "start",
+                    {"job_code": job_code, "candidate_count": len(candidates)},
+                )
+            except Exception:
+                logger.exception("Progress callback failed during start event")
 
-    # Only store unassigned/unplaced/unrejected matches and keep
-    # the list length at a maximum of 10. Assigned candidates will be
-    # reattached when retrieving match results.
-    filtered = [
-        m
-        for m in matches
-        if m["email"] not in assigned
-        and m["email"] not in placed
-        and m["email"] not in rejected
-    ]
+        distances: dict[tuple[float, float], float] = {}
+        if candidate_coords:
+            try:
+                logger.info(
+                    f"🛠️ Preparing distance batches for job {job_code} ({len(candidate_coords)} origins)"
+                )
+                distance_start = time.perf_counter()
+                distance_wall_start = time.time()
+                coro = get_driving_distance_miles(
+                    candidate_coords,
+                    dest_lat=job.get("lat"),
+                    dest_lng=job.get("lng"),
+                    job_code=job_code,
+                    job_id=job_identifier,
+                )
+                result = await coro if asyncio.iscoroutine(coro) else coro
+                if isinstance(result, dict):
+                    distances = result
+                elif isinstance(result, (int, float)):
+                    distances = {coord: float(result) for coord in candidate_coords}
+            except Exception:
+                distances = {}
+            finally:
+                distance_elapsed = time.perf_counter() - distance_start
+                distance_time = time.time() - distance_wall_start
+        if progress_callback:
+            try:
+                progress_callback(
+                    "distances_complete",
+                    {
+                        "job_code": job_code,
+                        "elapsed": distance_elapsed,
+                        "candidate_count": len(candidate_coords),
+                    },
+                )
+            except Exception:
+                logger.exception("Progress callback failed during distance completion event")
+        logger.info(
+            "⏱️ Distance lookups completed in %.2fs for job %s (job_id=%s) (%s origins)",
+            distance_elapsed,
+            job_code,
+            job_identifier,
+            len(candidate_coords),
+        )
 
-    top_matches = filtered[:10]
+        matches, filter_elapsed = await filter_candidates(
+            candidates,
+            distances,
+            job_emb,
+            job_code=job_code,
+            job_identifier=job_identifier,
+        )
+        filtered_candidates = list(matches)
+        logger.info(
+            "✅ Candidate filtering completed for job %s (job_id=%s) in %.2fs, kept %d candidates",
+            job_code,
+            job_identifier,
+            filter_elapsed,
+            len(filtered_candidates),
+        )
+        filtering_wall_end = time.time()
+        filtering_perf_elapsed = time.perf_counter() - filtering_perf_start
+        logger.info(
+            "✅ Filtering completed at %.6f, kept %d candidates, duration=%.2fs for job %s (job_id=%s)",
+            filtering_wall_end,
+            len(matches),
+            filtering_perf_elapsed,
+            job_code,
+            job_identifier,
+        )
 
-    for m in top_matches:
-        if m["email"] in placed:
-            m["status"] = "placed"
-        elif m["email"] in rejected:
-            m["status"] = "rejected"
-        else:
-            m["status"] = None
+        dedup: dict[str, dict] = {}
+        for m in matches:
+            dedup[m["email"]] = m
+        matches = list(dedup.values())
+        logger.info(
+            "🧮 Raw matches ready for filtering for job %s (job_id=%s): %s candidates",
+            job_code,
+            job_identifier,
+            len(matches),
+        )
 
-    filter_time = time.time() - filter_wall_start
-    filtered_candidates = top_matches
-    logger.info(
-        "✅ Candidate filtering completed in %.2fs, kept %d candidates for job %s",
-        filter_time,
-        len(filtered_candidates),
-        job_identifier,
-    )
-    logger.info(
-        "🎯 Filtered top matches for job %s (job_id=%s): keeping %s candidates",
-        job_code,
-        job_identifier,
-        len(top_matches),
-    )
+        logger.info(
+            "⚙️ Starting candidate filtering for job %s with %d raw matches",
+            job_identifier,
+            len(matches),
+        )
+        filter_wall_start = time.time()
+
+        matches.sort(key=lambda x: x["score"], reverse=True)
+
+        filtered_matches = [m for m in matches if m["email"] not in assigned]
+        top_matches = filtered_matches[:10]
+
+        filtered = [
+            m
+            for m in matches
+            if m["email"] not in assigned
+            and m["email"] not in placed
+            and m["email"] not in rejected
+        ]
+
+        top_matches = filtered[:10]
+
+        for m in top_matches:
+            if m["email"] in placed:
+                m["status"] = "placed"
+            elif m["email"] in rejected:
+                m["status"] = "rejected"
+            else:
+                m["status"] = None
+
+        filter_time = time.time() - filter_wall_start
+        filtered_candidates = top_matches
+        logger.info(
+            "✅ Candidate filtering completed in %.2fs, kept %d candidates for job %s",
+            filter_time,
+            len(filtered_candidates),
+            job_identifier,
+        )
+        logger.info(
+            "🎯 Filtered top matches for job %s (job_id=%s): keeping %s candidates",
+            job_code,
+            job_identifier,
+            len(top_matches),
+        )
 
     payload = {"status": "complete", "results": top_matches}
     storage_id = job_id or job_code
@@ -2689,7 +2724,6 @@ async def _perform_match_async(
             job_identifier,
         )
 
-    # Metrics tracking
     try:
         avg_score = (
             sum(m["score"] for m in matches) / len(matches)
@@ -2736,6 +2770,7 @@ def _perform_match(
     enq_time: float | None = None,
     progress_callback: Callable[[str, dict[str, Any]], None] | None = None,
     job_id: str | None = None,
+    skip_filtering: bool = False,
 ):
     """Synchronous wrapper for background execution."""
     return asyncio.run(
@@ -2745,6 +2780,7 @@ def _perform_match(
             enq_time,
             progress_callback,
             job_id=job_id,
+            skip_filtering=skip_filtering,
         )
     )
 
@@ -2754,6 +2790,7 @@ def match_worker(
     send_emails: bool = False,
     enq_time: float | None = None,
     job_id: str | None = None,
+    skip_filtering: bool = False,
 ):
     job_identifier = job_id or "n/a"
     start = datetime.now()
@@ -2832,6 +2869,7 @@ def match_worker(
         enq_time,
         progress_callback,
         job_id=job_id,
+        skip_filtering=skip_filtering,
     )
     after_match = time.perf_counter()
     logger.info(
