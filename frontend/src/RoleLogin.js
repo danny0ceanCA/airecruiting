@@ -19,6 +19,23 @@ const roleInfo = {
       </p>
     </>
   ),
+  career_director: (
+    <>
+      <h2>Career Directors</h2>
+      <p>
+        Monitor outcomes across multiple partner programs and keep counselors aligned on outreach,
+        student engagement, and placement goals.
+      </p>
+      <p>
+        Review every approved student within your network, track assignments and placements, and
+        study weekly performance metrics from a consolidated dashboard.
+      </p>
+      <p>
+        Directors collaborate with individual career staff while maintaining a unified view of
+        program impact.
+      </p>
+    </>
+  ),
   recruiter: (
     <>
       <h2>Recruiters & Employers</h2>
