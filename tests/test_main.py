@@ -3251,3 +3251,54 @@ def test_match_job_placeholder_reuses_prior_results():
     assert data["status"] == "pending"
     assert data["results"] == prior_payload["results"]
 
+
+def test_match_completes_when_index_missing(monkeypatch):
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    login_resp = client.post(
+        "/login", json={"email": "admin@example.com", "password": "admin123"}
+    )
+    token = login_resp.json()["token"]
+
+    job_code = "no-index-job"
+    job = {
+        "job_code": job_code,
+        "job_title": "Test Role",
+        "job_description": "Example description",
+        "desired_skills": [],
+        "lat": 0.0,
+        "lng": 0.0,
+        "posted_by": "admin@example.com",
+    }
+    main_app.redis_client.set(f"job:{job_code}", json.dumps(job))
+
+    class FakeEmbeddingsResponse:
+        def __init__(self):
+            self.data = [type("Embedding", (), {"embedding": [0.0] * 1536})()]
+
+    monkeypatch.setattr(
+        main_app.client.embeddings, "create", lambda *args, **kwargs: FakeEmbeddingsResponse()
+    )
+
+    main_app.EMBEDDING_DIM = 1536
+    main_app.vector_index = None
+    main_app.vector_emails = []
+
+    match_resp = client.post(
+        "/match",
+        json={"job_code": job_code},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert match_resp.status_code == 200
+    job_id = match_resp.json()["job_id"]
+
+    status_resp = client.get(f"/has-match/{job_id}")
+    assert status_resp.status_code == 200
+    assert status_resp.json() == {"status": "complete", "results": []}
+
+    lookup_id = main_app.redis_client.get(f"match_job_lookup:{job_code}")
+    assert lookup_id == job_id
+    stored_payload = json.loads(main_app.redis_client.get(f"match_job:{job_id}"))
+    assert stored_payload == {"status": "complete", "results": []}
+
