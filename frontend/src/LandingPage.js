@@ -18,7 +18,6 @@ function LandingPage() {
       <h1 className="landing-title">Who Are You?</h1>
       <div className="landing-buttons">
         <Link to="/login/career" className="landing-btn">Career Services Login</Link>
-        <Link to="/login/career_director" className="landing-btn">Career Director Login</Link>
         <Link to="/login/recruiter" className="landing-btn">Recruiter</Link>
         <Link to="/login/applicant" className="landing-btn">Job Seekers</Link>
       </div>
