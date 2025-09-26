@@ -1933,81 +1933,61 @@ def update_job(job_code: str, updated: dict, token_data: dict = Depends(get_curr
     logger.info("✏️ Updated job %s", job_code)
     return {"message": "Job updated"}
 
+def _build_match_response(
+    job_code: str, job_id: str, matches: list[Any] | Any
+) -> dict[str, Any]:
+    """Return a standardized response payload for match endpoints."""
+
+    status = "complete"
+    results: list[Any] = matches if isinstance(matches, list) else []
+    stored_payload_raw = redis_client.get(f"match_job:{job_id}")
+    if stored_payload_raw is not None:
+        try:
+            stored_payload = json.loads(stored_payload_raw)
+        except json.JSONDecodeError:
+            stored_payload = None
+        if isinstance(stored_payload, dict):
+            status = stored_payload.get("status", status)
+            stored_results = stored_payload.get("results")
+            if isinstance(stored_results, list):
+                results = stored_results
+        elif isinstance(stored_payload, list):
+            results = stored_payload
+    else:
+        payload = {"status": status, "results": results}
+        redis_client.set(f"match_job:{job_id}", json.dumps(payload))
+
+    redis_client.set(f"match_job_lookup:{job_code}", job_id)
+
+    return {
+        "job_id": job_id,
+        "status": status,
+        "results": results,
+        "matches": results,
+    }
+
+
 @app.post("/match")
 def match_job(
     req: JobCodeRequest,
     request: Request,
-    background_tasks: BackgroundTasks,
+    _background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_user),
 ):
     """Launch a background matching job and return immediately."""
 
     job_id = str(uuid.uuid4())
 
-    lookup_id = redis_client.get(f"match_job_lookup:{req.job_code}")
-    raw_payload: str | None = None
-    if lookup_id:
-        raw_payload = redis_client.get(f"match_job:{lookup_id}")
-    if raw_payload is None:
-        raw_payload = redis_client.get(f"match_job:{req.job_code}")
-
-    placeholder_payload: dict[str, Any] = {"status": "pending", "results": []}
-    if raw_payload:
-        try:
-            parsed_payload = json.loads(raw_payload)
-        except json.JSONDecodeError:
-            parsed_payload = None
-
-        if isinstance(parsed_payload, dict):
-            placeholder_payload = parsed_payload.copy()
-        elif isinstance(parsed_payload, list):
-            placeholder_payload["results"] = list(parsed_payload)
-
-    placeholder_payload["status"] = "pending"
-    results = placeholder_payload.get("results", [])
-    if not isinstance(results, list):
-        results = []
-    placeholder_payload["results"] = results
-
-    redis_client.set(f"match_job:{job_id}", json.dumps(placeholder_payload))
-    redis_client.set(f"match_job_lookup:{req.job_code}", job_id)
-
-    def _run_match_job(job_code: str, job_id: str, enqueued_at: float) -> None:
-        redis_key = f"match_job:{job_id}"
-        try:
-            logger.info("🚀 Starting background match job %s", job_code)
-            match_worker(job_code, False, enqueued_at, job_id=job_id)
-        except Exception as exc:  # pragma: no cover - defensive
-            logger.exception("❌ Match job %s failed", job_code)
-            payload = {
-                "status": "failed",
-                "results": [],
-                "error": str(exc),
-            }
-            redis_client.set(redis_key, json.dumps(payload))
-            redis_client.set(f"match_job_lookup:{job_code}", job_id)
-
     enqueue_time = datetime.now().timestamp()
-    if hasattr(redis_client, "pipeline"):
-        background_tasks.add_task(
-            _run_match_job,
-            req.job_code,
-            job_id,
-            enqueue_time,
-        )
-        logger.info(
-            "📨 Dispatched background task for job %s with id %s (request_id=%s)",
-            req.job_code,
-            job_id,
-            getattr(request.state, "request_id", None),
-        )
-        return {"job_id": job_id}
-
+    request_id = getattr(request.state, "request_id", None)
     logger.info(
-        "⚙️ Executing match synchronously for job %s (test mode)", req.job_code
+        "⚙️ Executing match synchronously for job %s (job_id=%s, request_id=%s)",
+        req.job_code,
+        job_id,
+        request_id,
     )
     matches = match_worker(req.job_code, False, enqueue_time, job_id=job_id)
-    return {"job_id": job_id, "matches": matches}
+    return _build_match_response(req.job_code, job_id, matches)
 
 
 @app.post("/rematches/{job_code}")
@@ -2018,19 +1998,16 @@ def rematch_job(
 ):
     """Queue a rematch computation without notifying students."""
     enq_time = datetime.now().timestamp()
-    if hasattr(redis_client, "pipeline"):
-        get_queue().enqueue(
-            match_worker,
-            job_code,
-            False,
-            enq_time,
-            job_timeout=600,
-            meta={"request_id": request.state.request_id},
-        )
-        return {"message": "Rematch queued"}
-    else:
-        matches = match_worker(job_code, False, enq_time)
-        return {"matches": matches}
+    job_id = str(uuid.uuid4())
+    request_id = getattr(request.state, "request_id", None)
+    logger.info(
+        "🔁 Executing rematch synchronously for job %s (job_id=%s, request_id=%s)",
+        job_code,
+        job_id,
+        request_id,
+    )
+    matches = match_worker(job_code, False, enq_time, job_id=job_id)
+    return _build_match_response(job_code, job_id, matches)
 
 
 def _max_travel_distance(student: dict[str, Any]) -> float:
