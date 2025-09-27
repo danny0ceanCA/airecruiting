@@ -697,6 +697,166 @@ def test_student_creation_records_metadata(monkeypatch):
     assert stored2["created_at"] == stored["created_at"]
 
 
+def test_create_student_sends_welcome_email(monkeypatch):
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    login_resp = client.post(
+        "/login",
+        json={"email": "admin@example.com", "password": "admin123"},
+    )
+    token = login_resp.json()["token"]
+
+    admin_key = main_app.user_key("admin@example.com")
+    admin_raw = main_app.redis_client.get(admin_key)
+    admin_data = json.loads(admin_raw)
+    admin_data["institutional_code"] = "1001"
+    admin_data["school_label"] = main_app.get_school_label("1001")
+    main_app.redis_client.set(admin_key, json.dumps(admin_data))
+
+    class FakeResp:
+        def __init__(self):
+            self.data = [type("obj", (), {"embedding": [0.0, 0.1]})]
+
+    def fake_create(input, model):
+        return FakeResp()
+
+    monkeypatch.setattr(main_app.client.embeddings, "create", fake_create)
+    monkeypatch.setattr(main_app, "ensure_index", lambda dim: None)
+    monkeypatch.setattr(main_app, "rebuild_vector_index", lambda: None)
+    main_app.vector_index = None
+
+    captured: dict[str, str] = {}
+
+    def fake_send_email(
+        recipient, subject, body, html_body=None, attachments=None, track_token=None
+    ):
+        captured["recipient"] = recipient
+        captured["subject"] = subject
+        captured["body"] = body
+
+    monkeypatch.setattr(main_app, "send_email", fake_send_email)
+
+    profile = {
+        "first_name": "Stu",
+        "last_name": "Dent",
+        "email": "stud@example.com",
+        "phone": "123",
+        "license": "lvn",
+        "skills": ["python"],
+        "experience_summary": "summary",
+        "interests": "coding",
+        "city": "Town",
+        "state": "ST",
+        "lat": 0.0,
+        "lng": 0.0,
+        "max_travel": 10,
+    }
+
+    resp = client.post(
+        "/students",
+        json=profile,
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+
+    skey = main_app.resolve_student_key(profile["email"])
+    stored = json.loads(main_app.redis_client.get(skey))
+    assert "welcome_email_sent_at" in stored
+    datetime.fromisoformat(stored["welcome_email_sent_at"])
+
+    assert captured["recipient"] == profile["email"]
+    assert captured["subject"] == "Welcome to TalenMatch AI 🎉"
+    assert "Hi Stu" in captured["body"]
+    assert "Unitek-Sacramento" in captured["body"]
+    assert "1001-" not in captured["body"]
+    assert "log in to review your profile" in captured["body"]
+    assert "log in and complete your profile" not in captured["body"]
+
+
+def test_applicant_created_student_sends_welcome_email(monkeypatch):
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    applicant = {
+        "email": "applicant@example.com",
+        "first_name": "App",
+        "last_name": "User",
+        "school_code": "1001",
+        "password": "pass123",
+        "role": "applicant",
+    }
+    client.post("/register", json=applicant)
+    user_key = f"user:{applicant['email']}"
+    stored_user = json.loads(main_app.redis_client.get(user_key))
+    stored_user["approved"] = True
+    main_app.redis_client.set(user_key, json.dumps(stored_user))
+
+    login_resp = client.post(
+        "/login",
+        json={"email": applicant["email"], "password": applicant["password"]},
+    )
+    token = login_resp.json()["token"]
+
+    class FakeResp:
+        def __init__(self):
+            self.data = [type("obj", (), {"embedding": [0.0, 0.1]})]
+
+    def fake_create(input, model):
+        return FakeResp()
+
+    monkeypatch.setattr(main_app.client.embeddings, "create", fake_create)
+    monkeypatch.setattr(main_app, "ensure_index", lambda dim: None)
+    monkeypatch.setattr(main_app, "rebuild_vector_index", lambda: None)
+    main_app.vector_index = None
+
+    captured: dict[str, str] = {}
+
+    def fake_send_email(
+        recipient, subject, body, html_body=None, attachments=None, track_token=None
+    ):
+        captured["recipient"] = recipient
+        captured["subject"] = subject
+        captured["body"] = body
+
+    monkeypatch.setattr(main_app, "send_email", fake_send_email)
+
+    profile = {
+        "first_name": "App",
+        "last_name": "User",
+        "email": applicant["email"],
+        "phone": "555-0000",
+        "license": "lvn",
+        "skills": ["python"],
+        "experience_summary": "summary",
+        "interests": "coding",
+        "city": "Town",
+        "state": "ST",
+        "lat": 0.0,
+        "lng": 0.0,
+        "max_travel": 10,
+    }
+
+    resp = client.post(
+        "/students",
+        json=profile,
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+
+    skey = main_app.resolve_student_key(profile["email"])
+    stored = json.loads(main_app.redis_client.get(skey))
+    assert stored.get("created_by") == applicant["email"]
+    assert "welcome_email_sent_at" in stored
+    datetime.fromisoformat(stored["welcome_email_sent_at"])
+
+    assert captured["recipient"] == profile["email"]
+    assert captured["subject"] == "Welcome to TalenMatch AI 🎉"
+    assert "Hi App" in captured["body"]
+    assert "log in and complete your profile" in captured["body"]
+    assert "log in to review your profile" not in captured["body"]
+
+
 def test_create_student_returns_existing_for_same_user(monkeypatch):
     main_app.redis_client.flushdb()
     init_default_admin()
@@ -762,6 +922,62 @@ def test_create_student_returns_existing_for_same_user(monkeypatch):
     assert resp.status_code == 200
     returned = resp.json()["student"]
     assert returned["email"] == email
+
+
+def test_admin_send_welcome_emails_resend(monkeypatch):
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    sent_messages: list[tuple[str, str, str]] = []
+
+    def fake_send_email(recipient, subject, body, html_body=None, attachments=None, track_token=None):
+        sent_messages.append((recipient, subject, body))
+
+    monkeypatch.setattr(main_app, "send_email", fake_send_email)
+
+    student = {
+        "first_name": "Sam",
+        "email": "sam@example.com",
+        "institutional_code": "1001",
+        "student_id": "1",
+        "welcome_email_sent_at": datetime.utcnow().isoformat(),
+    }
+    main_app.persist_student_record(student["email"], student, "1001", "1")
+
+    login_resp = client.post(
+        "/login",
+        json={"email": "admin@example.com", "password": "admin123"},
+    )
+    admin_token = login_resp.json()["token"]
+
+    first_resp = client.post(
+        "/admin/send-welcome-emails",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert first_resp.status_code == 200
+    first_data = first_resp.json()
+    assert first_data["sent"] == 0
+    assert first_data["skipped"] >= 1
+    assert len(sent_messages) == 0
+
+    raw = main_app.redis_client.get(main_app.student_key("1001", "1"))
+    stored = json.loads(raw)
+    previous_ts = stored["welcome_email_sent_at"]
+
+    second_resp = client.post(
+        "/admin/send-welcome-emails",
+        json={"resend": True},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert second_resp.status_code == 200
+    second_data = second_resp.json()
+    assert second_data["sent"] == 1
+    assert len(sent_messages) == 1
+
+    updated_raw = main_app.redis_client.get(main_app.student_key("1001", "1"))
+    updated = json.loads(updated_raw)
+    assert updated["welcome_email_sent_at"] != previous_ts
+    assert sent_messages[0][1] == "Welcome to TalenMatch AI 🎉"
 
 
 def test_metrics_endpoint():
