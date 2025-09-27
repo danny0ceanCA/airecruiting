@@ -1048,6 +1048,60 @@ class JobRequest(BaseModel):
 class JobCodeRequest(BaseModel):
     job_code: str
 
+
+class EmailBlastRequest(BaseModel):
+    subject: str = Field(..., min_length=1, max_length=200)
+    body: str = Field(..., min_length=1)
+    institutional_codes: list[str] = Field(default_factory=list)
+    license: str | None = None
+    source: str | None = None
+
+    @field_validator("subject", "body", mode="before")
+    @classmethod
+    def _strip_text(cls, value: str | None) -> str | None:
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
+    @field_validator("institutional_codes", mode="before")
+    @classmethod
+    def _normalize_codes(cls, value):
+        if value is None:
+            return []
+        if isinstance(value, str):
+            value = [value]
+        if isinstance(value, (list, tuple, set)):
+            normalized: list[str] = []
+            for item in value:
+                if not isinstance(item, str):
+                    continue
+                stripped = item.strip()
+                if stripped:
+                    normalized.append(stripped)
+            return normalized
+        raise TypeError("institutional_codes must be a string or list of strings")
+
+    @field_validator("license", "source", mode="before")
+    @classmethod
+    def _normalize_optional(cls, value):
+        if value is None:
+            return None
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped or None
+        raise TypeError("license/source must be strings")
+
+    @model_validator(mode="after")
+    def _ensure_filters(self):
+        if (
+            not self.institutional_codes
+            and not self.license
+            and not self.source
+        ):
+            raise ValueError("At least one recipient filter must be provided")
+        return self
+
+
 # -------- Auth -------- #
 def get_current_user(authorization: str = Header(..., alias="Authorization")):
     if not authorization.startswith("Bearer "):
@@ -4335,6 +4389,114 @@ def get_all_students(
             break
     next_cursor = None if cur == 0 else str(cur)
     return {"students": students, "next_cursor": next_cursor}
+
+
+@app.post("/email-blast")
+def send_email_blast(req: EmailBlastRequest, current_user: dict = Depends(get_current_user)):
+    """Dispatch a bulk email to students matching the provided filters."""
+
+    if current_user.get("role") not in ADMIN_ROLES:
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+
+    normalized_codes = {code.lower() for code in req.institutional_codes}
+    license_filter = license_to_code(req.license)
+    license_filter = license_filter.lower() if license_filter else None
+    source_filter = req.source.lower() if req.source else None
+
+    recipients: list[str] = []
+    seen: set[str] = set()
+    skipped_missing_email = 0
+    skipped_filtered = 0
+
+    cursor = 0
+    while True:
+        cursor, keys = redis_client.scan(cursor, match="student:*", count=200)
+        for key in keys:
+            raw = redis_client.get(key)
+            if not raw:
+                continue
+            try:
+                student = json.loads(raw)
+            except Exception:
+                continue
+
+            email = normalize_email(student.get("email"))
+            if not email:
+                skipped_missing_email += 1
+                continue
+            if email in seen:
+                continue
+
+            st_code = _student_institutional_code(student)
+            if normalized_codes and (
+                not st_code or st_code.strip().lower() not in normalized_codes
+            ):
+                skipped_filtered += 1
+                continue
+
+            st_license = license_to_code(
+                student.get("license") or student.get("education_level")
+            )
+            st_license = st_license.lower() if st_license else None
+            if license_filter and st_license != license_filter:
+                skipped_filtered += 1
+                continue
+
+            st_source = (student.get("source") or "").strip().lower()
+            if source_filter and st_source != source_filter:
+                skipped_filtered += 1
+                continue
+
+            recipients.append(email)
+            seen.add(email)
+
+        if cursor == 0:
+            break
+
+    if not recipients:
+        raise HTTPException(
+            status_code=400, detail="No students match the provided criteria"
+        )
+
+    sent = 0
+    failures: list[dict[str, str]] = []
+    for recipient in recipients:
+        try:
+            send_email(recipient, req.subject, req.body)
+            sent += 1
+        except Exception as exc:
+            failures.append({"email": recipient, "error": str(exc)})
+
+    log_entry = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "event": "email_blast",
+        "actor": current_user.get("sub"),
+        "filters": {
+            "institutional_codes": list(req.institutional_codes),
+            "license": req.license,
+            "source": req.source,
+        },
+        "matched": len(recipients),
+        "sent": sent,
+        "failed": len(failures),
+        "skipped_missing_email": skipped_missing_email,
+        "skipped_filtered": skipped_filtered,
+    }
+
+    try:
+        redis_client.rpush(ACTIVITY_LOG_KEY, json.dumps(log_entry))
+    except Exception as e:
+        logger.error("Failed to record email blast activity: %s", e)
+
+    return {
+        "matched": len(recipients),
+        "sent": sent,
+        "failed": len(failures),
+        "failures": failures,
+        "skipped_missing_email": skipped_missing_email,
+        "skipped_filtered": skipped_filtered,
+    }
+
 
 @app.get("/students/by-school")
 def students_by_school(

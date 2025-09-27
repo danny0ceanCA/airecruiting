@@ -42,6 +42,18 @@ function JobPosting() {
   const [previewingResumes, setPreviewingResumes] = useState({});
   const [activeTab, setActiveTab] = useState('jobs');
   const [licenses, setLicenses] = useState([]);
+  const [schoolCodes, setSchoolCodes] = useState([]);
+  const [blastForm, setBlastForm] = useState({
+    subject: '',
+    body: '',
+    institutionalCodes: [],
+    license: '',
+    source: ''
+  });
+  const [blastSubmitting, setBlastSubmitting] = useState(false);
+  const [blastFeedback, setBlastFeedback] = useState(null);
+  const [blastError, setBlastError] = useState(null);
+  const [blastStats, setBlastStats] = useState(null);
   const pollingIntervalsRef = useRef({});
   const pollingMetadataRef = useRef({});
   const isMountedRef = useRef(true);
@@ -84,16 +96,102 @@ function JobPosting() {
   }, [activeTab]);
 
   useEffect(() => {
-    const loadLicenses = async () => {
+    const loadLookups = async () => {
       try {
         const resp = await api.get('/licenses');
         setLicenses(resp.data.licenses || []);
       } catch (err) {
         console.error('Failed to fetch licenses', err);
       }
+
+      try {
+        const resp = await api.get('/school-codes');
+        setSchoolCodes(resp.data.codes || []);
+      } catch (err) {
+        console.error('Failed to fetch school codes', err);
+      }
     };
-    loadLicenses();
+    loadLookups();
   }, []);
+
+  const handleBlastFormChange = (event) => {
+    const { name, value, options } = event.target;
+    if (name === 'institutionalCodes') {
+      const selected = Array.from(options || [])
+        .filter((option) => option.selected)
+        .map((option) => option.value);
+      setBlastForm((prev) => ({ ...prev, institutionalCodes: selected }));
+      return;
+    }
+
+    setBlastForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleBlastSubmit = async (event) => {
+    event.preventDefault();
+    setBlastError(null);
+    setBlastFeedback(null);
+    setBlastStats(null);
+
+    const subject = blastForm.subject.trim();
+    const body = blastForm.body.trim();
+    const source = blastForm.source.trim();
+
+    if (!subject || !body) {
+      setBlastError('Subject and message are required.');
+      return;
+    }
+
+    const hasFilters =
+      (blastForm.institutionalCodes && blastForm.institutionalCodes.length > 0) ||
+      (blastForm.license && blastForm.license.trim()) ||
+      source;
+
+    if (!hasFilters) {
+      setBlastError('Select at least one recipient filter.');
+      return;
+    }
+
+    const payload = {
+      subject,
+      body,
+      institutional_codes: blastForm.institutionalCodes
+    };
+
+    if (blastForm.license) {
+      payload.license = blastForm.license;
+    }
+
+    if (source) {
+      payload.source = source;
+    }
+
+    setBlastSubmitting(true);
+
+    try {
+      const resp = await api.post('/email-blast', payload);
+      const data = resp.data || {};
+      setBlastStats(data);
+      const sent = data.sent ?? 0;
+      const matched = data.matched ?? sent;
+      const failed = data.failed ?? 0;
+      const suffix = matched === 1 ? '' : 's';
+      const failureSuffix = failed ? ` (${failed} failed)` : '';
+      setBlastFeedback(`Blast sent to ${sent} of ${matched} matched student${suffix}${failureSuffix}.`);
+      setBlastForm({
+        subject: '',
+        body: '',
+        institutionalCodes: [],
+        license: '',
+        source: ''
+      });
+    } catch (err) {
+      const detail = err?.response?.data?.detail;
+      setBlastError(detail || 'Failed to send email blast.');
+    } finally {
+      setBlastSubmitting(false);
+    }
+  };
 
   const token = localStorage.getItem('token');
   const decoded = token ? jwtDecode(token) : {};
@@ -1095,8 +1193,111 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
         >
           Post a Job
         </button>
+        <button
+          className={`tab ${activeTab === 'blast' ? 'active' : ''}`}
+          onClick={() => setActiveTab('blast')}
+        >
+          Email Blast
+        </button>
       </div>
       <div className="tab-content">
+        {activeTab === 'blast' && (
+          <div className="blast-panel">
+            <form className="blast-form" onSubmit={handleBlastSubmit}>
+              <h2>Email Blast</h2>
+              <div className="blast-field">
+                <label htmlFor="blast-subject">Subject</label>
+                <input
+                  id="blast-subject"
+                  name="subject"
+                  type="text"
+                  value={blastForm.subject}
+                  onChange={handleBlastFormChange}
+                  placeholder="Enter an email subject"
+                />
+              </div>
+              <div className="blast-field">
+                <label htmlFor="blast-body">Message</label>
+                <textarea
+                  id="blast-body"
+                  name="body"
+                  rows={8}
+                  value={blastForm.body}
+                  onChange={handleBlastFormChange}
+                  placeholder="Write the email you want to send"
+                ></textarea>
+              </div>
+              <div className="blast-field">
+                <label htmlFor="blast-institutional-codes">Institutional Codes</label>
+                <select
+                  id="blast-institutional-codes"
+                  name="institutionalCodes"
+                  multiple
+                  value={blastForm.institutionalCodes}
+                  onChange={handleBlastFormChange}
+                >
+                  {schoolCodes.map((code) => (
+                    <option key={code.code} value={code.code}>
+                      {code.code} — {code.label}
+                    </option>
+                  ))}
+                </select>
+                <small>Select one or more codes to target a specific school.</small>
+              </div>
+              <div className="blast-field">
+                <label htmlFor="blast-license">License</label>
+                <select
+                  id="blast-license"
+                  name="license"
+                  value={blastForm.license}
+                  onChange={handleBlastFormChange}
+                >
+                  <option value="">All Licenses</option>
+                  {licenses.map((l) => (
+                    <option key={l.code} value={l.code}>
+                      {l.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="blast-field">
+                <label htmlFor="blast-source">Source</label>
+                <input
+                  id="blast-source"
+                  name="source"
+                  type="text"
+                  value={blastForm.source}
+                  onChange={handleBlastFormChange}
+                  placeholder="Filter by student source (optional)"
+                />
+              </div>
+              <div className="blast-actions">
+                <button type="submit" disabled={blastSubmitting}>
+                  {blastSubmitting ? 'Sending…' : 'Send Email Blast'}
+                </button>
+              </div>
+              {blastFeedback && <div className="blast-feedback">{blastFeedback}</div>}
+              {blastError && <div className="blast-error">{blastError}</div>}
+              {blastStats && (
+                <div className="blast-stats">
+                  <div><strong>Matched:</strong> {blastStats.matched ?? 0}</div>
+                  <div><strong>Sent:</strong> {blastStats.sent ?? 0}</div>
+                  <div><strong>Failed:</strong> {blastStats.failed ?? 0}</div>
+                  {blastStats.skipped_missing_email ? (
+                    <div>
+                      <strong>Skipped (missing email):</strong> {blastStats.skipped_missing_email}
+                    </div>
+                  ) : null}
+                  {blastStats.skipped_filtered ? (
+                    <div>
+                      <strong>Skipped (filters):</strong> {blastStats.skipped_filtered}
+                    </div>
+                  ) : null}
+                </div>
+              )}
+            </form>
+          </div>
+        )}
         {activeTab === 'post' && (
           <div className="post-job-panel">
             <form onSubmit={handleSubmit} className="post-job-form">

@@ -2913,6 +2913,130 @@ def test_weekly_summary_forbidden():
     assert resp.status_code == 403
 
 
+def test_email_blast_sends_to_matching_students(monkeypatch):
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    student = {
+        "first_name": "Sam",
+        "last_name": "Student",
+        "email": "sam@example.com",
+        "license": "lvn",
+        "institutional_code": "1001",
+        "student_id": "1"
+    }
+    other = {
+        "first_name": "Pat",
+        "last_name": "Student",
+        "email": "pat@example.com",
+        "license": "ma",
+        "institutional_code": "2002",
+        "student_id": "2"
+    }
+
+    main_app.persist_student_record(
+        student["email"], student, student["institutional_code"], student["student_id"]
+    )
+    main_app.persist_student_record(
+        other["email"], other, other["institutional_code"], other["student_id"]
+    )
+
+    sent = []
+
+    def fake_send(recipient, subject, body, html_body=None, attachments=None, track_token=None):
+        sent.append((recipient, subject, body))
+
+    monkeypatch.setattr(main_app, "send_email", fake_send)
+
+    token = client.post(
+        "/login", json={"email": "admin@example.com", "password": "admin123"}
+    ).json()["token"]
+
+    resp = client.post(
+        "/email-blast",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "subject": "Important update",
+            "body": "Please review the latest opportunity.",
+            "institutional_codes": ["1001"],
+            "license": "lvn",
+        },
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["matched"] == 1
+    assert data["sent"] == 1
+    assert data["failed"] == 0
+    assert sent == [("sam@example.com", "Important update", "Please review the latest opportunity.")]
+
+    raw_logs = main_app.redis_client.lists.get(main_app.ACTIVITY_LOG_KEY, [])
+    parsed_logs = [json.loads(item) for item in raw_logs]
+    blast_logs = [entry for entry in parsed_logs if entry.get("event") == "email_blast"]
+    assert blast_logs, f"Expected an email_blast entry in activity log, got: {parsed_logs}"
+    assert blast_logs[-1]["sent"] == 1
+    assert blast_logs[-1]["filters"]["institutional_codes"] == ["1001"]
+
+
+def test_email_blast_requires_admin_role():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    user = {
+        "email": "recruiter@example.com",
+        "first_name": "Rita",
+        "last_name": "Recruiter",
+        "school_code": "1001",
+        "password": "pass1234",
+        "role": "recruiter",
+    }
+    client.post("/register", json=user)
+    key = f"user:{user['email']}"
+    data = json.loads(main_app.redis_client.get(key))
+    data["approved"] = True
+    main_app.redis_client.set(key, json.dumps(data))
+
+    token = client.post(
+        "/login", json={"email": user["email"], "password": user["password"]}
+    ).json()["token"]
+
+    resp = client.post(
+        "/email-blast",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "subject": "Test",
+            "body": "Test",
+            "institutional_codes": ["1001"],
+        },
+    )
+
+    assert resp.status_code == 403
+
+
+def test_email_blast_no_matching_students(monkeypatch):
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    monkeypatch.setattr(main_app, "send_email", lambda *a, **k: None)
+
+    token = client.post(
+        "/login", json={"email": "admin@example.com", "password": "admin123"}
+    ).json()["token"]
+
+    resp = client.post(
+        "/email-blast",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "subject": "Hello",
+            "body": "No one should receive this",
+            "institutional_codes": ["9999"],
+        },
+    )
+
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "No students match the provided criteria"
+
+
 def test_match_metrics_increment(monkeypatch):
     main_app.redis_client.flushdb()
     job = {
