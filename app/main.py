@@ -503,7 +503,12 @@ def _clean_institution_label(label: str | None) -> str | None:
     return cleaned
 
 
-def build_welcome_email(first_name: str | None, institution_label: str | None) -> tuple[str, str]:
+def build_welcome_email(
+    first_name: str | None,
+    institution_label: str | None,
+    *,
+    staff_created: bool = False,
+) -> tuple[str, str]:
     """Return the subject and body for the student welcome email."""
 
     name = (first_name or "").strip()
@@ -517,18 +522,37 @@ def build_welcome_email(first_name: str | None, institution_label: str | None) -
         institution = "your institution"
 
     subject = "Welcome to TalenMatch AI 🎉"
+
+    if staff_created:
+        intro_line = (
+            f"The Career Services team at {institution} has already created your "
+            "TalenMatch AI profile to help you take the next step in your healthcare career.\n\n"
+        )
+        action_line = (
+            "To get started, log in to review your profile. Confirm your details, "
+            "complete any missing information, and keep everything up to date for the "
+            "best matches.\n\n"
+        )
+    else:
+        intro_line = (
+            f"We're excited to share that TalenMatch AI has partnered with {institution} "
+            "to support you in taking the next step in your healthcare career.\n\n"
+        )
+        action_line = (
+            "To get started, log in and complete your profile. A stronger profile means "
+            "better matches and more opportunities.\n\n"
+        )
+
     body = (
         f"Hi {name},\n\n"
-        f"We're excited to share that TalenMatch AI has partnered with {institution} "
-        "to support you in taking the next step in your healthcare career.\n\n"
+        f"{intro_line}"
         "As part of this partnership, you'll have access to:\n\n"
         "✅ Personalized Job Matches – opportunities tailored to your profile.\n\n"
         "🔔 Job Alerts – stay informed as soon as new positions open up in your area.\n\n"
         "📚 Career Resources – resume tips, webinars, and guidance to help you succeed.\n\n"
         "👩‍⚕️ Support from Experienced RNs and LVNs – professional insight and mentorship "
         "to help you prepare with confidence.\n\n"
-        "To get started, log in and complete your profile. A stronger profile means better matches "
-        "and more opportunities.\n\n"
+        f"{action_line}"
         "We're here to support you every step of the way, alongside your Career Services team.\n\n"
         "Wishing you success,\n"
         "The TalenMatch-AI Team"
@@ -556,7 +580,31 @@ def send_student_welcome_email(
         if code:
             label = get_school_label(str(code))
 
-    subject, body = build_welcome_email(student.get("first_name"), label)
+    normalized_student_email = normalize_email(email)
+
+    def _normalize_owner(value: Any) -> str | None:
+        if not isinstance(value, str) or not value.strip():
+            return None
+        owner_value = value
+        if owner_value.startswith("user:"):
+            owner_value = owner_value.split("user:", 1)[1]
+        return normalize_email(owner_value)
+
+    owner_emails = [
+        _normalize_owner(student.get("created_by")),
+        _normalize_owner(student.get("registered_by")),
+    ]
+    owner_emails = [email for email in owner_emails if email]
+
+    staff_created = False
+    if normalized_student_email and owner_emails:
+        staff_created = any(owner_email != normalized_student_email for owner_email in owner_emails)
+
+    subject, body = build_welcome_email(
+        student.get("first_name"),
+        label,
+        staff_created=staff_created,
+    )
     send_email(email, subject, body)
     student["welcome_email_sent_at"] = datetime.now(timezone.utc).isoformat()
     return True
