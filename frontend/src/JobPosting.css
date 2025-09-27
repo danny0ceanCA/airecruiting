@@ -50,14 +50,224 @@
   box-shadow: 0 6px 15px rgba(0, 0, 0, 0.2);
 }
 
+.blast-content {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  align-items: flex-start;
+}
+
 .blast-panel {
-  flex: 1;
-  max-width: 650px;
+  flex: 0 0 360px;
+  max-width: 420px;
   background-color: rgba(255, 255, 255, 0.95);
   padding: 1.75rem;
   border-radius: 12px;
   color: #002244;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+}
+
+.blast-history {
+  flex: 1;
+  min-width: 360px;
+  background-color: rgba(255, 255, 255, 0.95);
+  padding: 1.5rem;
+  border-radius: 12px;
+  color: #002244;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+}
+
+.blast-history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.blast-history-header h2 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.blast-history-refresh {
+  background-color: #0074d9;
+  color: #fff;
+  border: none;
+  padding: 0.45rem 1.1rem;
+  border-radius: 999px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s ease-in-out, transform 0.2s ease-in-out;
+}
+
+.blast-history-refresh:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.blast-history-refresh:not(:disabled):hover {
+  background-color: #005fa3;
+  transform: translateY(-1px);
+}
+
+.blast-history-table-wrapper {
+  max-height: 520px;
+  overflow-y: auto;
+  border-radius: 12px;
+  background: rgba(0, 35, 70, 0.04);
+  padding: 0.5rem;
+}
+
+.blast-history-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+
+.blast-history-table th,
+.blast-history-table td {
+  padding: 0.6rem 0.75rem;
+  text-align: left;
+}
+
+.blast-history-table th {
+  background-color: #003366;
+  color: #fff;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.blast-history-table tbody tr:nth-child(even) {
+  background-color: rgba(0, 51, 102, 0.04);
+}
+
+.blast-expand-cell {
+  width: 48px;
+}
+
+.blast-subject {
+  font-weight: 600;
+}
+
+.blast-metric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.blast-history-loading,
+.blast-history-empty,
+.blast-history-error {
+  text-align: center;
+  padding: 1.25rem;
+  color: #4a5a70;
+  font-weight: 500;
+}
+
+.blast-history-error {
+  color: #b12626;
+  background: #ffecec;
+  border-radius: 8px;
+  margin-bottom: 0.75rem;
+}
+
+.blast-detail {
+  background: #f8fbff;
+  padding: 1.1rem;
+  border-radius: 12px;
+  box-shadow: inset 0 0 0 1px rgba(0, 51, 102, 0.08);
+}
+
+.blast-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.blast-detail-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+.blast-detail-body {
+  background: #fff;
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  box-shadow: inset 0 0 0 1px rgba(0, 51, 102, 0.08);
+}
+
+.blast-detail-body p {
+  margin: 0.5rem 0 0;
+  white-space: pre-wrap;
+}
+
+.blast-recipient-table-wrapper {
+  max-height: 260px;
+  overflow-y: auto;
+  border-radius: 10px;
+  background: rgba(0, 35, 70, 0.03);
+}
+
+.blast-recipient-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.blast-recipient-table th,
+.blast-recipient-table td {
+  padding: 0.55rem 0.65rem;
+  text-align: left;
+}
+
+.blast-recipient-table thead th {
+  background: #002d62;
+  color: #fff;
+  position: sticky;
+  top: 0;
+}
+
+.blast-recipient-table tbody tr:nth-child(even) {
+  background: rgba(0, 35, 70, 0.05);
+}
+
+.blast-recipient-status {
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.blast-recipient-status.status-opened {
+  color: #0f8b45;
+}
+
+.blast-recipient-status.status-failed {
+  color: #c62828;
+}
+
+.blast-recipient-status.status-sent {
+  color: #0a4f94;
+}
+
+.blast-recipient-status.status-pending {
+  color: #7a8899;
+}
+
+@media (max-width: 1024px) {
+  .blast-content {
+    flex-direction: column;
+  }
+
+  .blast-panel,
+  .blast-history {
+    flex: 1;
+    max-width: none;
+    width: 100%;
+  }
 }
 
 .blast-form {
