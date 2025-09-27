@@ -770,7 +770,7 @@ def test_create_student_sends_welcome_email(monkeypatch):
     assert "Hi Stu" in captured["body"]
     assert "Unitek-Sacramento" in captured["body"]
     assert "1001-" not in captured["body"]
-    assert "Log in anytime to explore personalized opportunities" in captured["body"]
+    assert "Log in anytime to explore personalized opportunities" not in captured["body"]
     assert "log in and complete your profile" not in captured["body"]
 
 
@@ -853,7 +853,7 @@ def test_applicant_created_student_sends_welcome_email(monkeypatch):
     assert captured["recipient"] == profile["email"]
     assert captured["subject"] == "Welcome to TalentMatch-AI 🎉"
     assert "Hi App" in captured["body"]
-    assert "log in and complete your profile" in captured["body"]
+    assert "log in and complete your profile" not in captured["body"]
     assert "log in to review your profile" not in captured["body"]
 
 
