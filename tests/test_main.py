@@ -2941,10 +2941,25 @@ def test_email_blast_sends_to_matching_students(monkeypatch):
         other["email"], other, other["institutional_code"], other["student_id"]
     )
 
-    sent = []
+    sent: list[dict[str, str | None]] = []
 
-    def fake_send(recipient, subject, body, html_body=None, attachments=None, track_token=None):
-        sent.append((recipient, subject, body))
+    def fake_send(
+        recipient,
+        subject,
+        body,
+        html_body=None,
+        attachments=None,
+        track_token=None,
+    ):
+        sent.append(
+            {
+                "recipient": recipient,
+                "subject": subject,
+                "body": body,
+                "html_body": html_body,
+                "track_token": track_token,
+            }
+        )
 
     monkeypatch.setattr(main_app, "send_email", fake_send)
 
@@ -2968,7 +2983,32 @@ def test_email_blast_sends_to_matching_students(monkeypatch):
     assert data["matched"] == 1
     assert data["sent"] == 1
     assert data["failed"] == 0
-    assert sent == [("sam@example.com", "Important update", "Please review the latest opportunity.")]
+    assert data["blast_id"]
+    assert len(sent) == 1
+    assert sent[0]["recipient"] == "sam@example.com"
+    assert sent[0]["track_token"]
+    assert sent[0]["html_body"] is not None
+
+    blast_id = data["blast_id"]
+    token_val = sent[0]["track_token"]
+
+    mapping_raw = main_app.redis_client.hget(main_app.EMAIL_OPEN_TOKENS_KEY, token_val)
+    assert mapping_raw is not None
+    mapping = json.loads(mapping_raw)
+    assert mapping["blast_id"] == blast_id
+    assert mapping["recipient"] == "sam@example.com"
+
+    recipient_state_raw = main_app.redis_client.hget(
+        main_app._blast_recipients_key(blast_id), "sam@example.com"
+    )
+    assert recipient_state_raw is not None
+    recipient_state = json.loads(recipient_state_raw)
+    assert recipient_state["status"] == "sent"
+    assert recipient_state["opens"] == 0
+
+    stats_raw = main_app._hash_getall(main_app._blast_stats_key(blast_id))
+    assert main_app._safe_int(stats_raw.get("sent")) == 1
+    assert main_app._safe_int(stats_raw.get("matched")) == 1
 
     raw_logs = main_app.redis_client.lists.get(main_app.ACTIVITY_LOG_KEY, [])
     parsed_logs = [json.loads(item) for item in raw_logs]
@@ -2976,6 +3016,37 @@ def test_email_blast_sends_to_matching_students(monkeypatch):
     assert blast_logs, f"Expected an email_blast entry in activity log, got: {parsed_logs}"
     assert blast_logs[-1]["sent"] == 1
     assert blast_logs[-1]["filters"]["institutional_codes"] == ["1001"]
+
+    list_resp = client.get(
+        "/email-blasts", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert list_resp.status_code == 200
+    blasts = list_resp.json()["blasts"]
+    assert blasts and any(b["blast_id"] == blast_id for b in blasts)
+
+    detail_resp = client.get(
+        f"/email-blasts/{blast_id}", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert detail_resp.status_code == 200
+    detail = detail_resp.json()
+    assert detail["blast"]["blast_id"] == blast_id
+    assert detail["stats"]["sent"] == 1
+    assert detail["stats"]["unique_opens"] == 0
+    assert len(detail["recipients"]) == 1
+    assert detail["recipients"][0]["status"] == "sent"
+
+    track_resp = client.get(f"/track/open/{token_val}.png")
+    assert track_resp.status_code == 200
+
+    detail_after_open = client.get(
+        f"/email-blasts/{blast_id}", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert detail_after_open.status_code == 200
+    detail_payload = detail_after_open.json()
+    assert detail_payload["stats"]["unique_opens"] == 1
+    assert detail_payload["stats"]["total_opens"] == 1
+    assert detail_payload["recipients"][0]["opens"] == 1
+    assert detail_payload["recipients"][0]["status"] == "opened"
 
 
 def test_email_blast_requires_admin_role():
