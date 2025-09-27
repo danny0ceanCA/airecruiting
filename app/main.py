@@ -14,6 +14,7 @@ import sys
 from email.message import EmailMessage
 from fastapi import (
     BackgroundTasks,
+    Body,
     Depends,
     FastAPI,
     File,
@@ -486,6 +487,134 @@ def send_email(
     except Exception as e:
         logger.error("[email] Failed to send email to %s: %s", recipient, e)
         raise
+
+
+def _clean_institution_label(label: str | None) -> str | None:
+    """Remove leading code prefixes from school labels."""
+
+    if not label:
+        return None
+    cleaned = label.strip()
+    if not cleaned:
+        return None
+    parts = cleaned.split("-", 1)
+    if len(parts) == 2 and parts[0].strip().isdigit():
+        return parts[1].strip()
+    return cleaned
+
+
+def build_welcome_email(first_name: str | None, institution_label: str | None) -> tuple[str, str]:
+    """Return the subject and body for the student welcome email."""
+
+    name = (first_name or "").strip()
+    if name:
+        name = name.split()[0]
+    else:
+        name = "there"
+
+    institution = _clean_institution_label(institution_label)
+    if not institution:
+        institution = "your institution"
+
+    subject = "Welcome to TalenMatch AI 🎉"
+    body = (
+        f"Hi {name},\n\n"
+        f"We're excited to share that TalenMatch AI has partnered with {institution} "
+        "to support you in taking the next step in your healthcare career.\n\n"
+        "As part of this partnership, you'll have access to:\n\n"
+        "✅ Personalized Job Matches – opportunities tailored to your profile.\n\n"
+        "🔔 Job Alerts – stay informed as soon as new positions open up in your area.\n\n"
+        "📚 Career Resources – resume tips, webinars, and guidance to help you succeed.\n\n"
+        "👩‍⚕️ Support from Experienced RNs and LVNs – professional insight and mentorship "
+        "to help you prepare with confidence.\n\n"
+        "To get started, log in and complete your profile. A stronger profile means better matches "
+        "and more opportunities.\n\n"
+        "We're here to support you every step of the way, alongside your Career Services team.\n\n"
+        "Wishing you success,\n"
+        "The TalenMatch-AI Team"
+    )
+    return subject, body
+
+
+def send_student_welcome_email(
+    student: dict,
+    *,
+    institution_code: str | None = None,
+) -> bool:
+    """Send the configured welcome email to a student if possible."""
+
+    if not isinstance(student, dict):
+        return False
+
+    email = student.get("email")
+    if not email:
+        return False
+
+    label = student.get("school_label")
+    if not label:
+        code = student.get("institutional_code") or student.get("institution_code") or institution_code
+        if code:
+            label = get_school_label(str(code))
+
+    subject, body = build_welcome_email(student.get("first_name"), label)
+    send_email(email, subject, body)
+    student["welcome_email_sent_at"] = datetime.now(timezone.utc).isoformat()
+    return True
+
+
+def send_welcome_email_for_key(student_key_value: str, *, force: bool = False) -> str:
+    """Send (or skip) the welcome email for a stored student record."""
+
+    raw = redis_client.get(student_key_value)
+    if not raw:
+        return "missing"
+
+    try:
+        student = json.loads(raw)
+    except Exception:
+        logger.exception("Failed to decode student record for %s", student_key_value)
+        return "failed"
+
+    email = student.get("email")
+    if not email:
+        logger.info("Skipping welcome email for %s: missing email", student_key_value)
+        return "skipped"
+
+    if not force and student.get("welcome_email_sent_at"):
+        return "skipped"
+
+    inst_code: str | None = None
+    student_id: str | None = None
+    parts = student_key_value.split(":", 2)
+    if len(parts) == 3:
+        _, inst_raw, student_id = parts
+        inst_code = None if inst_raw == "None" else inst_raw
+    else:
+        idx = redis_client.get(student_email_key(email))
+        if idx:
+            inst_raw, student_id = idx.split(":", 1)
+            inst_code = None if inst_raw == "None" else inst_raw
+
+    try:
+        sent = send_student_welcome_email(student, institution_code=inst_code)
+    except Exception:
+        logger.exception("Failed to send welcome email to %s", email)
+        return "failed"
+
+    if sent and student_id is not None:
+        persist_student_record(email, student, inst_code, student_id)
+
+    return "sent" if sent else "skipped"
+
+
+def queue_welcome_email(student_key_value: str) -> None:
+    """Background task wrapper for sending welcome emails."""
+
+    try:
+        status = send_welcome_email_for_key(student_key_value)
+        logger.info("Welcome email status for %s: %s", student_key_value, status)
+    except Exception:
+        logger.exception("Unexpected error sending welcome email for %s", student_key_value)
 
 async def get_driving_distance_miles(
     orig_lat: float | list[tuple[float, float]],
@@ -1439,8 +1568,14 @@ class SchoolCodeRequest(BaseModel):
     code: str
     label: str
 
+
 class UpdateSchoolCodeRequest(BaseModel):
     label: str
+
+
+class WelcomeEmailRequest(BaseModel):
+    resend: bool = False
+    limit: int | None = None
 
 
 @app.post("/admin/school-codes")
@@ -1578,7 +1713,11 @@ def delete_rss_feed(name: str, current_user: dict = Depends(get_current_user)):
     return {"message": "Feed deleted"}
 
 @app.post("/students")
-async def create_student(request: Request, current_user: dict = Depends(get_current_user)):
+async def create_student(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(get_current_user),
+):
     content_type = request.headers.get("content-type", "")
     resume_file: UploadFile | None = None
 
@@ -1711,6 +1850,8 @@ async def create_student(request: Request, current_user: dict = Depends(get_curr
     data["created_by"] = current_user.get("sub")
     data["created_at"] = datetime.now(timezone.utc).isoformat()
     persist_student_record(student_data.email, data, institution_code, student_id)
+    canonical_key = student_key(institution_code, student_id)
+    background_tasks.add_task(queue_welcome_email, canonical_key)
     logger.info(
         "POST /students success email=%s owner=%s",
         student_data.email,
@@ -4681,6 +4822,47 @@ def admin_test_weekly_summary(current_user: dict = Depends(get_current_user)):
 
     send_weekly_summary(current_user["sub"])
     return {"message": "Weekly summary sent"}
+
+
+@app.post("/admin/send-welcome-emails")
+def admin_send_welcome_emails(
+    payload: WelcomeEmailRequest = Body(default=None),
+    current_user: dict = Depends(get_current_user),
+):
+    """Send the welcome email to existing student profiles."""
+
+    if current_user.get("role") not in ADMIN_ROLES:
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+
+    if payload is None:
+        payload = WelcomeEmailRequest()
+
+    limit = payload.limit
+    resend = payload.resend
+
+    processed = 0
+    sent = 0
+    skipped = 0
+    failed = 0
+
+    for key in redis_client.scan_iter("student:*:*"):
+        if limit is not None and processed >= limit:
+            break
+        status = send_welcome_email_for_key(key, force=resend)
+        processed += 1
+        if status == "sent":
+            sent += 1
+        elif status == "failed":
+            failed += 1
+        else:
+            skipped += 1
+
+    return {
+        "processed": processed,
+        "sent": sent,
+        "skipped": skipped,
+        "failed": failed,
+    }
 
 
 @app.get("/activity-log")
