@@ -608,18 +608,10 @@ def build_welcome_email(
             f"The Career Services team at {institution} has already created your "
             "TalentMatch-AI profile to help you take the next step in your healthcare career.\n\n"
         )
-        action_line = (
-            "Log in anytime to explore personalized opportunities and stay informed "
-            "about the latest matches.\n\n"
-        )
     else:
         intro_line = (
             f"We're excited to share that TalentMatch-AI has partnered with {institution} "
             "to support you in taking the next step in your healthcare career.\n\n"
-        )
-        action_line = (
-            "To get started, log in and complete your profile. A stronger profile means "
-            "better matches and more opportunities.\n\n"
         )
 
     body = (
@@ -631,7 +623,6 @@ def build_welcome_email(
         "📚 Career Resources – resume tips, webinars, and guidance to help you succeed.\n\n"
         "👩‍⚕️ Support from Experienced RNs and LVNs – professional insight and mentorship "
         "to help you prepare with confidence.\n\n"
-        f"{action_line}"
         "We're here to support you every step of the way, alongside your Career Services team.\n\n"
         "Wishing you success,\n"
         "The TalentMatch-AI Team"
