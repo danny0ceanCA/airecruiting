@@ -599,23 +599,22 @@ def build_welcome_email(
 
     institution = _clean_institution_label(institution_label)
     if not institution:
-        institution = "your institution"
+        institution = "your academic institution"
 
-    subject = "Welcome to TalenMatch AI 🎉"
+    subject = "Welcome to TalentMatch-AI 🎉"
 
     if staff_created:
         intro_line = (
             f"The Career Services team at {institution} has already created your "
-            "TalenMatch AI profile to help you take the next step in your healthcare career.\n\n"
+            "TalentMatch-AI profile to help you take the next step in your healthcare career.\n\n"
         )
         action_line = (
-            "To get started, log in to review your profile. Confirm your details, "
-            "complete any missing information, and keep everything up to date for the "
-            "best matches.\n\n"
+            "Log in anytime to explore personalized opportunities and stay informed "
+            "about the latest matches.\n\n"
         )
     else:
         intro_line = (
-            f"We're excited to share that TalenMatch AI has partnered with {institution} "
+            f"We're excited to share that TalentMatch-AI has partnered with {institution} "
             "to support you in taking the next step in your healthcare career.\n\n"
         )
         action_line = (
@@ -635,7 +634,7 @@ def build_welcome_email(
         f"{action_line}"
         "We're here to support you every step of the way, alongside your Career Services team.\n\n"
         "Wishing you success,\n"
-        "The TalenMatch-AI Team"
+        "The TalentMatch-AI Team"
     )
     return subject, body
 
@@ -655,10 +654,12 @@ def send_student_welcome_email(
         return False
 
     label = student.get("school_label")
+    label_from_code = False
     if not label:
         code = student.get("institutional_code") or student.get("institution_code") or institution_code
         if code:
             label = get_school_label(str(code))
+            label_from_code = True
 
     normalized_student_email = normalize_email(email)
 
@@ -682,7 +683,7 @@ def send_student_welcome_email(
 
     subject, body = build_welcome_email(
         student.get("first_name"),
-        label,
+        None if label_from_code else label,
         staff_created=staff_created,
     )
     send_email(email, subject, body)

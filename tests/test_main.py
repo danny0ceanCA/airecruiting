@@ -766,11 +766,11 @@ def test_create_student_sends_welcome_email(monkeypatch):
     datetime.fromisoformat(stored["welcome_email_sent_at"])
 
     assert captured["recipient"] == profile["email"]
-    assert captured["subject"] == "Welcome to TalenMatch AI 🎉"
+    assert captured["subject"] == "Welcome to TalentMatch-AI 🎉"
     assert "Hi Stu" in captured["body"]
     assert "Unitek-Sacramento" in captured["body"]
     assert "1001-" not in captured["body"]
-    assert "log in to review your profile" in captured["body"]
+    assert "Log in anytime to explore personalized opportunities" in captured["body"]
     assert "log in and complete your profile" not in captured["body"]
 
 
@@ -851,10 +851,37 @@ def test_applicant_created_student_sends_welcome_email(monkeypatch):
     datetime.fromisoformat(stored["welcome_email_sent_at"])
 
     assert captured["recipient"] == profile["email"]
-    assert captured["subject"] == "Welcome to TalenMatch AI 🎉"
+    assert captured["subject"] == "Welcome to TalentMatch-AI 🎉"
     assert "Hi App" in captured["body"]
     assert "log in and complete your profile" in captured["body"]
     assert "log in to review your profile" not in captured["body"]
+
+
+def test_welcome_email_generic_institution_when_label_missing(monkeypatch):
+    main_app.redis_client.flushdb()
+
+    captured: dict[str, str] = {}
+
+    def fake_send_email(recipient, subject, body, html_body=None, attachments=None, track_token=None):
+        captured["recipient"] = recipient
+        captured["subject"] = subject
+        captured["body"] = body
+
+    monkeypatch.setattr(main_app, "send_email", fake_send_email)
+    monkeypatch.setattr(main_app, "get_school_label", lambda code: "9999 - West Coast University")
+
+    student = {
+        "email": "generic@example.com",
+        "first_name": "Casey",
+        "institutional_code": "9999",
+    }
+
+    sent = main_app.send_student_welcome_email(student)
+
+    assert sent is True
+    assert captured["subject"] == "Welcome to TalentMatch-AI 🎉"
+    assert "your academic institution" in captured["body"]
+    assert "West Coast University" not in captured["body"]
 
 
 def test_create_student_returns_existing_for_same_user(monkeypatch):
@@ -977,7 +1004,7 @@ def test_admin_send_welcome_emails_resend(monkeypatch):
     updated_raw = main_app.redis_client.get(main_app.student_key("1001", "1"))
     updated = json.loads(updated_raw)
     assert updated["welcome_email_sent_at"] != previous_ts
-    assert sent_messages[0][1] == "Welcome to TalenMatch AI 🎉"
+    assert sent_messages[0][1] == "Welcome to TalentMatch-AI 🎉"
 
 
 def test_metrics_endpoint():
