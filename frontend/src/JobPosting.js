@@ -42,6 +42,25 @@ function JobPosting() {
   const [previewingResumes, setPreviewingResumes] = useState({});
   const [activeTab, setActiveTab] = useState('jobs');
   const [licenses, setLicenses] = useState([]);
+  const [schoolCodes, setSchoolCodes] = useState([]);
+  const [blastForm, setBlastForm] = useState({
+    subject: '',
+    body: '',
+    institutionalCodes: [],
+    license: '',
+    source: ''
+  });
+  const [blastSubmitting, setBlastSubmitting] = useState(false);
+  const [blastFeedback, setBlastFeedback] = useState(null);
+  const [blastError, setBlastError] = useState(null);
+  const [blastStats, setBlastStats] = useState(null);
+  const [blastHistory, setBlastHistory] = useState([]);
+  const [blastHistoryLoading, setBlastHistoryLoading] = useState(false);
+  const [blastHistoryError, setBlastHistoryError] = useState(null);
+  const [expandedBlast, setExpandedBlast] = useState(null);
+  const [blastDetails, setBlastDetails] = useState({});
+  const [blastDetailsLoading, setBlastDetailsLoading] = useState({});
+  const [blastDetailsError, setBlastDetailsError] = useState({});
   const pollingIntervalsRef = useRef({});
   const pollingMetadataRef = useRef({});
   const isMountedRef = useRef(true);
@@ -51,6 +70,49 @@ function JobPosting() {
     return l ? l.label : code;
   };
   const [modalNotes, setModalNotes] = useState(null);
+
+  const formatDateTime = (value) => {
+    if (!value) {
+      return '—';
+    }
+    try {
+      const parsed = new Date(value);
+      if (Number.isNaN(parsed.getTime())) {
+        return value;
+      }
+      return parsed.toLocaleString();
+    } catch (err) {
+      return value;
+    }
+  };
+
+  const calculateOpenRate = (stats = {}, fallbackSent = 0) => {
+    const sentCount = stats.sent ?? fallbackSent ?? 0;
+    const uniqueOpens = stats.unique_opens ?? 0;
+    if (!sentCount) {
+      return '0%';
+    }
+    const percent = Math.round((uniqueOpens / sentCount) * 1000) / 10;
+    return `${Number.isInteger(percent) ? percent.toFixed(0) : percent.toFixed(1)}%`;
+  };
+
+  const blastStatusLabel = (status) => {
+    if (!status) {
+      return 'Pending';
+    }
+    switch (status) {
+      case 'sent':
+        return 'Sent';
+      case 'failed':
+        return 'Failed';
+      case 'opened':
+        return 'Opened';
+      case 'pending':
+        return 'Pending';
+      default:
+        return status.charAt(0).toUpperCase() + status.slice(1);
+    }
+  };
 
   const locationRef = useRef(null);
 
@@ -84,16 +146,176 @@ function JobPosting() {
   }, [activeTab]);
 
   useEffect(() => {
-    const loadLicenses = async () => {
+    const loadLookups = async () => {
       try {
         const resp = await api.get('/licenses');
         setLicenses(resp.data.licenses || []);
       } catch (err) {
         console.error('Failed to fetch licenses', err);
       }
+
+      try {
+        const resp = await api.get('/school-codes');
+        setSchoolCodes(resp.data.codes || []);
+      } catch (err) {
+        console.error('Failed to fetch school codes', err);
+      }
     };
-    loadLicenses();
+    loadLookups();
   }, []);
+
+  const handleBlastFormChange = (event) => {
+    const { name, value, options } = event.target;
+    if (name === 'institutionalCodes') {
+      const selected = Array.from(options || [])
+        .filter((option) => option.selected)
+        .map((option) => option.value);
+      setBlastForm((prev) => ({ ...prev, institutionalCodes: selected }));
+      return;
+    }
+
+    setBlastForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const loadBlastHistory = useCallback(async () => {
+    setBlastHistoryError(null);
+    setBlastHistoryLoading(true);
+    try {
+      const resp = await api.get('/email-blasts');
+      const history = resp?.data?.blasts || [];
+      if (isMountedRef.current) {
+        setBlastHistory(history);
+      }
+    } catch (err) {
+      console.error('Failed to load email blasts', err);
+      if (isMountedRef.current) {
+        setBlastHistoryError('Failed to load email blasts.');
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setBlastHistoryLoading(false);
+      }
+    }
+  }, []);
+
+  const loadBlastDetails = useCallback(
+    async (blastId) => {
+      if (!blastId) {
+        return;
+      }
+      setBlastDetailsError((prev) => ({ ...prev, [blastId]: null }));
+      setBlastDetailsLoading((prev) => ({ ...prev, [blastId]: true }));
+      try {
+        const resp = await api.get(`/email-blasts/${blastId}`);
+        if (isMountedRef.current) {
+          setBlastDetails((prev) => ({ ...prev, [blastId]: resp?.data || {} }));
+        }
+      } catch (err) {
+        console.error('Failed to load blast details', err);
+        if (isMountedRef.current) {
+          setBlastDetailsError((prev) => ({
+            ...prev,
+            [blastId]: 'Failed to load blast details.'
+          }));
+        }
+      } finally {
+        if (isMountedRef.current) {
+          setBlastDetailsLoading((prev) => ({ ...prev, [blastId]: false }));
+        }
+      }
+    },
+    []
+  );
+
+  const handleBlastToggle = useCallback(
+    (blastId) => {
+      setExpandedBlast((prev) => {
+        const next = prev === blastId ? null : blastId;
+        if (prev !== blastId && !blastDetails[blastId] && !blastDetailsLoading[blastId]) {
+          loadBlastDetails(blastId);
+        }
+        return next;
+      });
+    },
+    [blastDetails, blastDetailsLoading, loadBlastDetails]
+  );
+
+  useEffect(() => {
+    if (activeTab === 'blast') {
+      loadBlastHistory();
+    }
+  }, [activeTab, loadBlastHistory]);
+
+  const handleBlastSubmit = async (event) => {
+    event.preventDefault();
+    setBlastError(null);
+    setBlastFeedback(null);
+    setBlastStats(null);
+
+    const subject = blastForm.subject.trim();
+    const body = blastForm.body.trim();
+    const source = blastForm.source.trim();
+
+    if (!subject || !body) {
+      setBlastError('Subject and message are required.');
+      return;
+    }
+
+    const hasFilters =
+      (blastForm.institutionalCodes && blastForm.institutionalCodes.length > 0) ||
+      (blastForm.license && blastForm.license.trim()) ||
+      source;
+
+    if (!hasFilters) {
+      setBlastError('Select at least one recipient filter.');
+      return;
+    }
+
+    const payload = {
+      subject,
+      body,
+      institutional_codes: blastForm.institutionalCodes
+    };
+
+    if (blastForm.license) {
+      payload.license = blastForm.license;
+    }
+
+    if (source) {
+      payload.source = source;
+    }
+
+    setBlastSubmitting(true);
+
+    try {
+      const resp = await api.post('/email-blast', payload);
+      const data = resp.data || {};
+      setBlastStats(data);
+      const sent = data.sent ?? 0;
+      const matched = data.matched ?? sent;
+      const failed = data.failed ?? 0;
+      const suffix = matched === 1 ? '' : 's';
+      const failureSuffix = failed ? ` (${failed} failed)` : '';
+      setBlastFeedback(`Blast sent to ${sent} of ${matched} matched student${suffix}${failureSuffix}.`);
+      setBlastForm({
+        subject: '',
+        body: '',
+        institutionalCodes: [],
+        license: '',
+        source: ''
+      });
+      await loadBlastHistory();
+      if (data.blast_id) {
+        setExpandedBlast(data.blast_id);
+        loadBlastDetails(data.blast_id);
+      }
+    } catch (err) {
+      const detail = err?.response?.data?.detail;
+      setBlastError(detail || 'Failed to send email blast.');
+    } finally {
+      setBlastSubmitting(false);
+    }
+  };
 
   const token = localStorage.getItem('token');
   const decoded = token ? jwtDecode(token) : {};
@@ -1095,8 +1317,254 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
         >
           Post a Job
         </button>
+        <button
+          className={`tab ${activeTab === 'blast' ? 'active' : ''}`}
+          onClick={() => setActiveTab('blast')}
+        >
+          Email Blast
+        </button>
       </div>
       <div className="tab-content">
+        {activeTab === 'blast' && (
+          <div className="blast-content">
+            <div className="blast-panel">
+              <form className="blast-form" onSubmit={handleBlastSubmit}>
+                <h2>Email Blast</h2>
+                <div className="blast-field">
+                  <label htmlFor="blast-subject">Subject</label>
+                  <input
+                    id="blast-subject"
+                    name="subject"
+                    type="text"
+                    value={blastForm.subject}
+                    onChange={handleBlastFormChange}
+                    placeholder="Enter an email subject"
+                  />
+                </div>
+                <div className="blast-field">
+                  <label htmlFor="blast-body">Message</label>
+                  <textarea
+                    id="blast-body"
+                    name="body"
+                    rows={8}
+                    value={blastForm.body}
+                    onChange={handleBlastFormChange}
+                    placeholder="Write the email you want to send"
+                  ></textarea>
+                </div>
+                <div className="blast-field">
+                  <label htmlFor="blast-institutional-codes">Institutional Codes</label>
+                  <select
+                    id="blast-institutional-codes"
+                    name="institutionalCodes"
+                    multiple
+                    value={blastForm.institutionalCodes}
+                    onChange={handleBlastFormChange}
+                  >
+                    {schoolCodes.map((code) => (
+                      <option key={code.code} value={code.code}>
+                        {code.code} — {code.label}
+                      </option>
+                    ))}
+                  </select>
+                  <small>Select one or more codes to target a specific school.</small>
+                </div>
+                <div className="blast-field">
+                  <label htmlFor="blast-license">License</label>
+                  <select
+                    id="blast-license"
+                    name="license"
+                    value={blastForm.license}
+                    onChange={handleBlastFormChange}
+                  >
+                    <option value="">All Licenses</option>
+                    {licenses.map((l) => (
+                      <option key={l.code} value={l.code}>
+                        {l.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="blast-field">
+                  <label htmlFor="blast-source">Source</label>
+                  <input
+                    id="blast-source"
+                    name="source"
+                    type="text"
+                    value={blastForm.source}
+                    onChange={handleBlastFormChange}
+                    placeholder="Filter by student source (optional)"
+                  />
+                </div>
+                <div className="blast-actions">
+                  <button type="submit" disabled={blastSubmitting}>
+                    {blastSubmitting ? 'Sending…' : 'Send Email Blast'}
+                  </button>
+                </div>
+                {blastFeedback && <div className="blast-feedback">{blastFeedback}</div>}
+                {blastError && <div className="blast-error">{blastError}</div>}
+                {blastStats && (
+                  <div className="blast-stats">
+                    <div><strong>Matched:</strong> {blastStats.matched ?? 0}</div>
+                    <div><strong>Sent:</strong> {blastStats.sent ?? 0}</div>
+                    <div><strong>Failed:</strong> {blastStats.failed ?? 0}</div>
+                    {blastStats.skipped_missing_email ? (
+                      <div>
+                        <strong>Skipped (missing email):</strong> {blastStats.skipped_missing_email}
+                      </div>
+                    ) : null}
+                    {blastStats.skipped_filtered ? (
+                      <div>
+                        <strong>Skipped (filters):</strong> {blastStats.skipped_filtered}
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+              </form>
+            </div>
+            <div className="blast-history">
+              <div className="blast-history-header">
+                <h2>Blast History</h2>
+                <button
+                  type="button"
+                  onClick={loadBlastHistory}
+                  disabled={blastHistoryLoading}
+                  className="blast-history-refresh"
+                >
+                  {blastHistoryLoading ? 'Refreshing…' : 'Refresh'}
+                </button>
+              </div>
+              {blastHistoryError && (
+                <div className="blast-error blast-history-error">{blastHistoryError}</div>
+              )}
+              <div className="blast-history-table-wrapper">
+                {blastHistoryLoading && blastHistory.length === 0 ? (
+                  <div className="blast-history-loading">Loading email blasts…</div>
+                ) : blastHistory.length === 0 ? (
+                  <div className="blast-history-empty">No email blasts have been sent yet.</div>
+                ) : (
+                  <table className="blast-history-table">
+                    <thead>
+                      <tr>
+                        <th></th>
+                        <th>Subject</th>
+                        <th>Sent</th>
+                        <th>Delivered</th>
+                        <th>Unique Opens</th>
+                        <th>Open Rate</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {blastHistory.map((blast) => {
+                        const stats = blast.stats || {};
+                        const sentCount = stats.sent ?? blast.sent ?? 0;
+                        const uniqueOpens = stats.unique_opens ?? 0;
+                        const isExpanded = expandedBlast === blast.blast_id;
+                        return (
+                          <React.Fragment key={blast.blast_id}>
+                            <tr className="blast-row">
+                              <td className="blast-expand-cell">
+                                <button
+                                  type="button"
+                                  className="expand-toggle"
+                                  onClick={() => handleBlastToggle(blast.blast_id)}
+                                  title={isExpanded ? 'Collapse' : 'Expand'}
+                                >
+                                  {isExpanded ? '–' : '+'}
+                                </button>
+                              </td>
+                              <td className="blast-subject">{blast.subject}</td>
+                              <td>{formatDateTime(blast.timestamp)}</td>
+                              <td className="blast-metric">{sentCount}</td>
+                              <td className="blast-metric">{uniqueOpens}</td>
+                              <td className="blast-metric">{calculateOpenRate(stats, blast.sent)}</td>
+                            </tr>
+                            {isExpanded && (
+                              <tr className="blast-detail-row">
+                                <td colSpan={6}>
+                                  {blastDetailsLoading[blast.blast_id] ? (
+                                    <div className="blast-history-loading">Loading details…</div>
+                                  ) : blastDetailsError[blast.blast_id] ? (
+                                    <div className="blast-error">{blastDetailsError[blast.blast_id]}</div>
+                                  ) : (
+                                    (() => {
+                                      const detail = blastDetails[blast.blast_id] || {};
+                                      const detailBlast = detail.blast || blast;
+                                      const detailStats = detail.stats || stats;
+                                      const recipients = detail.recipients || [];
+                                      const filters = detailBlast.filters || blast.filters || {};
+                                      return (
+                                        <div className="blast-detail">
+                                          <div className="blast-summary-grid">
+                                            <div><strong>Matched:</strong> {detailBlast.matched ?? blast.matched ?? 0}</div>
+                                            <div><strong>Sent:</strong> {detailStats.sent ?? detailBlast.sent ?? sentCount}</div>
+                                            <div><strong>Failed:</strong> {detailBlast.failed ?? blast.failed ?? 0}</div>
+                                            <div><strong>Unique Opens:</strong> {detailStats.unique_opens ?? uniqueOpens}</div>
+                                            <div><strong>Total Opens:</strong> {detailStats.total_opens ?? 0}</div>
+                                            <div><strong>Open Rate:</strong> {calculateOpenRate(detailStats, detailBlast.sent ?? sentCount)}</div>
+                                            <div><strong>Skipped (missing email):</strong> {detailBlast.skipped_missing_email ?? 0}</div>
+                                            <div><strong>Skipped (filters):</strong> {detailBlast.skipped_filtered ?? 0}</div>
+                                          </div>
+                                          <div className="blast-detail-filters">
+                                            <div><strong>Institutional Codes:</strong> {filters.institutional_codes && filters.institutional_codes.length ? filters.institutional_codes.join(', ') : 'All'}</div>
+                                            <div><strong>License:</strong> {filters.license || 'All'}</div>
+                                            <div><strong>Source:</strong> {filters.source || 'All'}</div>
+                                          </div>
+                                          {detailBlast.body_preview && (
+                                            <div className="blast-detail-body">
+                                              <strong>Message Preview:</strong>
+                                              <p>{detailBlast.body_preview}</p>
+                                            </div>
+                                          )}
+                                          <div className="blast-recipient-table-wrapper">
+                                            {recipients.length === 0 ? (
+                                              <div className="blast-history-empty">No recipient records found.</div>
+                                            ) : (
+                                              <table className="blast-recipient-table">
+                                                <thead>
+                                                  <tr>
+                                                    <th>Email</th>
+                                                    <th>Status</th>
+                                                    <th>Sent At</th>
+                                                    <th>First Open</th>
+                                                    <th>Last Open</th>
+                                                    <th>Opens</th>
+                                                  </tr>
+                                                </thead>
+                                                <tbody>
+                                                  {recipients.map((recipient) => (
+                                                    <tr key={recipient.email}>
+                                                      <td>{recipient.email}</td>
+                                                      <td className={`blast-recipient-status status-${recipient.status || 'pending'}`}>
+                                                        {blastStatusLabel(recipient.status)}
+                                                      </td>
+                                                      <td>{formatDateTime(recipient.sent_at)}</td>
+                                                      <td>{formatDateTime(recipient.first_open)}</td>
+                                                      <td>{formatDateTime(recipient.last_open)}</td>
+                                                      <td className="blast-metric">{recipient.opens ?? 0}</td>
+                                                    </tr>
+                                                  ))}
+                                                </tbody>
+                                              </table>
+                                            )}
+                                          </div>
+                                        </div>
+                                      );
+                                    })()
+                                  )}
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
         {activeTab === 'post' && (
           <div className="post-job-panel">
             <form onSubmit={handleSubmit} className="post-job-form">

@@ -14,6 +14,7 @@ import sys
 from email.message import EmailMessage
 from fastapi import (
     BackgroundTasks,
+    Body,
     Depends,
     FastAPI,
     File,
@@ -423,6 +424,10 @@ def rebuild_vector_index() -> None:
 ACTIVITY_LOG_KEY = "activity_logs"
 # Mapping of email tracking tokens to metadata
 EMAIL_OPEN_TOKENS_KEY = "email_open_tokens"
+EMAIL_BLAST_META_KEY = "email_blast:meta"
+EMAIL_BLAST_INDEX_KEY = "email_blast:index"
+EMAIL_BLAST_STATS_PREFIX = "email_blast:stats:"
+EMAIL_BLAST_RECIPIENTS_PREFIX = "email_blast:recipients:"
 # List key for student load time metrics
 STUDENT_LOAD_TIME_KEY = "metrics:student_load_time"
 # 1x1 transparent PNG
@@ -486,6 +491,250 @@ def send_email(
     except Exception as e:
         logger.error("[email] Failed to send email to %s: %s", recipient, e)
         raise
+
+
+
+def _blast_stats_key(blast_id: str) -> str:
+    return f"{EMAIL_BLAST_STATS_PREFIX}{blast_id}"
+
+
+def _blast_recipients_key(blast_id: str) -> str:
+    return f"{EMAIL_BLAST_RECIPIENTS_PREFIX}{blast_id}"
+
+
+def _plain_text_to_html(body: str) -> str:
+    lines = body.splitlines()
+    escaped_lines = [escape(line) for line in lines]
+    return "<br />".join(escaped_lines)
+
+
+def _safe_int(value: Any) -> int:
+    if isinstance(value, int):
+        return value
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _hash_set_mapping(name: str, mapping: dict[str, Any]) -> None:
+    try:
+        redis_client.hset(name, mapping=mapping)
+    except TypeError:
+        for field, value in mapping.items():
+            redis_client.hset(name, field, value)
+    except AttributeError:
+        if hasattr(redis_client, "hashes"):
+            redis_client.hashes.setdefault(name, {}).update(mapping)  # type: ignore[attr-defined]
+        else:
+            for field, value in mapping.items():
+                redis_client.hset(name, field, value)
+
+
+def _hash_incr(name: str, field: str, amount: int = 1) -> None:
+    try:
+        redis_client.hincrby(name, field, amount)
+    except AttributeError:
+        current = _safe_int(redis_client.hget(name, field))
+        redis_client.hset(name, field, current + amount)
+
+
+def _hash_getall(name: str) -> dict[str, Any]:
+    try:
+        data = redis_client.hgetall(name) or {}
+        return data
+    except AttributeError:
+        if hasattr(redis_client, "hashes"):
+            stored = redis_client.hashes.get(name, {})  # type: ignore[attr-defined]
+            return dict(stored)
+        return {}
+
+
+def _list_range(name: str, start: int, end: int) -> list[Any]:
+    try:
+        return redis_client.lrange(name, start, end) or []
+    except AttributeError:
+        if hasattr(redis_client, "lists"):
+            items = redis_client.lists.get(name, [])  # type: ignore[attr-defined]
+            if not items:
+                return []
+            length = len(items)
+            start_idx = start if start >= 0 else max(length + start, 0)
+            end_idx = end if end >= 0 else length + end
+            if end == -1:
+                end_idx = length - 1
+            end_idx = min(end_idx, length - 1)
+            if start_idx > end_idx:
+                return []
+            return items[start_idx : end_idx + 1]
+        return []
+
+def _clean_institution_label(label: str | None) -> str | None:
+    """Remove leading code prefixes from school labels."""
+
+    if not label:
+        return None
+    cleaned = label.strip()
+    if not cleaned:
+        return None
+    parts = cleaned.split("-", 1)
+    if len(parts) == 2 and parts[0].strip().isdigit():
+        return parts[1].strip()
+    return cleaned
+
+
+def build_welcome_email(
+    first_name: str | None,
+    institution_label: str | None,
+    *,
+    staff_created: bool = False,
+) -> tuple[str, str]:
+    """Return the subject and body for the student welcome email."""
+
+    name = (first_name or "").strip()
+    if name:
+        name = name.split()[0]
+    else:
+        name = "there"
+
+    institution = _clean_institution_label(institution_label)
+    if not institution:
+        institution = "your academic institution"
+
+    subject = "Welcome to TalentMatch-AI 🎉"
+
+    if staff_created:
+        intro_line = (
+            f"The Career Services team at {institution} has already created your "
+            "TalentMatch-AI profile to help you take the next step in your healthcare career.\n\n"
+        )
+    else:
+        intro_line = (
+            f"We're excited to share that TalentMatch-AI has partnered with {institution} "
+            "to support you in taking the next step in your healthcare career.\n\n"
+        )
+
+    body = (
+        f"Hi {name},\n\n"
+        f"{intro_line}"
+        "As part of this partnership, you'll have access to:\n\n"
+        "✅ Personalized Job Matches – opportunities tailored to your profile.\n\n"
+        "🔔 Job Alerts – stay informed as soon as new positions open up in your area.\n\n"
+        "📚 Career Resources – resume tips, webinars, and guidance to help you succeed.\n\n"
+        "👩‍⚕️ Support from Experienced RNs and LVNs – professional insight and mentorship "
+        "to help you prepare with confidence.\n\n"
+        "We're here to support you every step of the way, alongside your Career Services team.\n\n"
+        "Wishing you success,\n"
+        "The TalentMatch-AI Team"
+    )
+    return subject, body
+
+
+def send_student_welcome_email(
+    student: dict,
+    *,
+    institution_code: str | None = None,
+) -> bool:
+    """Send the configured welcome email to a student if possible."""
+
+    if not isinstance(student, dict):
+        return False
+
+    email = student.get("email")
+    if not email:
+        return False
+
+    label = student.get("school_label")
+    label_from_code = False
+    if not label:
+        code = student.get("institutional_code") or student.get("institution_code") or institution_code
+        if code:
+            label = get_school_label(str(code))
+            label_from_code = True
+
+    normalized_student_email = normalize_email(email)
+
+    def _normalize_owner(value: Any) -> str | None:
+        if not isinstance(value, str) or not value.strip():
+            return None
+        owner_value = value
+        if owner_value.startswith("user:"):
+            owner_value = owner_value.split("user:", 1)[1]
+        return normalize_email(owner_value)
+
+    owner_emails = [
+        _normalize_owner(student.get("created_by")),
+        _normalize_owner(student.get("registered_by")),
+    ]
+    owner_emails = [email for email in owner_emails if email]
+
+    staff_created = False
+    if normalized_student_email and owner_emails:
+        staff_created = any(owner_email != normalized_student_email for owner_email in owner_emails)
+
+    subject, body = build_welcome_email(
+        student.get("first_name"),
+        None if label_from_code else label,
+        staff_created=staff_created,
+    )
+    send_email(email, subject, body)
+    student["welcome_email_sent_at"] = datetime.now(timezone.utc).isoformat()
+    return True
+
+
+def send_welcome_email_for_key(student_key_value: str, *, force: bool = False) -> str:
+    """Send (or skip) the welcome email for a stored student record."""
+
+    raw = redis_client.get(student_key_value)
+    if not raw:
+        return "missing"
+
+    try:
+        student = json.loads(raw)
+    except Exception:
+        logger.exception("Failed to decode student record for %s", student_key_value)
+        return "failed"
+
+    email = student.get("email")
+    if not email:
+        logger.info("Skipping welcome email for %s: missing email", student_key_value)
+        return "skipped"
+
+    if not force and student.get("welcome_email_sent_at"):
+        return "skipped"
+
+    inst_code: str | None = None
+    student_id: str | None = None
+    parts = student_key_value.split(":", 2)
+    if len(parts) == 3:
+        _, inst_raw, student_id = parts
+        inst_code = None if inst_raw == "None" else inst_raw
+    else:
+        idx = redis_client.get(student_email_key(email))
+        if idx:
+            inst_raw, student_id = idx.split(":", 1)
+            inst_code = None if inst_raw == "None" else inst_raw
+
+    try:
+        sent = send_student_welcome_email(student, institution_code=inst_code)
+    except Exception:
+        logger.exception("Failed to send welcome email to %s", email)
+        return "failed"
+
+    if sent and student_id is not None:
+        persist_student_record(email, student, inst_code, student_id)
+
+    return "sent" if sent else "skipped"
+
+
+def queue_welcome_email(student_key_value: str) -> None:
+    """Background task wrapper for sending welcome emails."""
+
+    try:
+        status = send_welcome_email_for_key(student_key_value)
+        logger.info("Welcome email status for %s: %s", student_key_value, status)
+    except Exception:
+        logger.exception("Unexpected error sending welcome email for %s", student_key_value)
 
 async def get_driving_distance_miles(
     orig_lat: float | list[tuple[float, float]],
@@ -746,8 +995,47 @@ def track_open(token: str):
             info = json.loads(info_raw)
         except Exception:
             info = {}
+
+    now = datetime.now(timezone.utc)
+    timestamp = now.isoformat()
+
+    blast_id = info.get("blast_id") if isinstance(info, dict) else None
+    recipient = info.get("recipient") if isinstance(info, dict) else None
+    if blast_id and recipient:
+        stats_key = _blast_stats_key(blast_id)
+        recipients_key = _blast_recipients_key(blast_id)
+        try:
+            raw_state = redis_client.hget(recipients_key, recipient)
+            state = json.loads(raw_state) if raw_state else {"email": recipient}
+        except Exception:
+            state = {"email": recipient}
+        opens_val = state.get("opens")
+        try:
+            opens_count = int(opens_val)
+        except (TypeError, ValueError):
+            opens_count = 0
+        opens_count += 1
+        state["opens"] = opens_count
+        if not state.get("first_open"):
+            state["first_open"] = timestamp
+            try:
+                _hash_incr(stats_key, "unique_opens", 1)
+            except Exception as e:
+                logger.error("Failed to increment blast unique opens: %s", e)
+        state["last_open"] = timestamp
+        if state.get("status") != "opened":
+            state["status"] = "opened"
+        try:
+            redis_client.hset(recipients_key, recipient, json.dumps(state))
+        except Exception as e:
+            logger.error("Failed to persist blast recipient open state: %s", e)
+        try:
+            _hash_incr(stats_key, "total_opens", 1)
+        except Exception as e:
+            logger.error("Failed to increment blast total opens: %s", e)
+
     log_entry = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": timestamp,
         "event": "email_open",
         "token": token,
         **info,
@@ -1047,6 +1335,60 @@ class JobRequest(BaseModel):
 
 class JobCodeRequest(BaseModel):
     job_code: str
+
+
+class EmailBlastRequest(BaseModel):
+    subject: str = Field(..., min_length=1, max_length=200)
+    body: str = Field(..., min_length=1)
+    institutional_codes: list[str] = Field(default_factory=list)
+    license: str | None = None
+    source: str | None = None
+
+    @field_validator("subject", "body", mode="before")
+    @classmethod
+    def _strip_text(cls, value: str | None) -> str | None:
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
+    @field_validator("institutional_codes", mode="before")
+    @classmethod
+    def _normalize_codes(cls, value):
+        if value is None:
+            return []
+        if isinstance(value, str):
+            value = [value]
+        if isinstance(value, (list, tuple, set)):
+            normalized: list[str] = []
+            for item in value:
+                if not isinstance(item, str):
+                    continue
+                stripped = item.strip()
+                if stripped:
+                    normalized.append(stripped)
+            return normalized
+        raise TypeError("institutional_codes must be a string or list of strings")
+
+    @field_validator("license", "source", mode="before")
+    @classmethod
+    def _normalize_optional(cls, value):
+        if value is None:
+            return None
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped or None
+        raise TypeError("license/source must be strings")
+
+    @model_validator(mode="after")
+    def _ensure_filters(self):
+        if (
+            not self.institutional_codes
+            and not self.license
+            and not self.source
+        ):
+            raise ValueError("At least one recipient filter must be provided")
+        return self
+
 
 # -------- Auth -------- #
 def get_current_user(authorization: str = Header(..., alias="Authorization")):
@@ -1439,8 +1781,14 @@ class SchoolCodeRequest(BaseModel):
     code: str
     label: str
 
+
 class UpdateSchoolCodeRequest(BaseModel):
     label: str
+
+
+class WelcomeEmailRequest(BaseModel):
+    resend: bool = False
+    limit: int | None = None
 
 
 @app.post("/admin/school-codes")
@@ -1578,7 +1926,11 @@ def delete_rss_feed(name: str, current_user: dict = Depends(get_current_user)):
     return {"message": "Feed deleted"}
 
 @app.post("/students")
-async def create_student(request: Request, current_user: dict = Depends(get_current_user)):
+async def create_student(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(get_current_user),
+):
     content_type = request.headers.get("content-type", "")
     resume_file: UploadFile | None = None
 
@@ -1711,6 +2063,8 @@ async def create_student(request: Request, current_user: dict = Depends(get_curr
     data["created_by"] = current_user.get("sub")
     data["created_at"] = datetime.now(timezone.utc).isoformat()
     persist_student_record(student_data.email, data, institution_code, student_id)
+    canonical_key = student_key(institution_code, student_id)
+    background_tasks.add_task(queue_welcome_email, canonical_key)
     logger.info(
         "POST /students success email=%s owner=%s",
         student_data.email,
@@ -4336,6 +4690,285 @@ def get_all_students(
     next_cursor = None if cur == 0 else str(cur)
     return {"students": students, "next_cursor": next_cursor}
 
+
+@app.post("/email-blast")
+def send_email_blast(req: EmailBlastRequest, current_user: dict = Depends(get_current_user)):
+    """Dispatch a bulk email to students matching the provided filters."""
+
+    if current_user.get("role") not in ADMIN_ROLES:
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+
+    normalized_codes = {code.lower() for code in req.institutional_codes}
+    license_filter = license_to_code(req.license)
+    license_filter = license_filter.lower() if license_filter else None
+    source_filter = req.source.lower() if req.source else None
+
+    recipients: list[str] = []
+    seen: set[str] = set()
+    skipped_missing_email = 0
+    skipped_filtered = 0
+
+    cursor = 0
+    while True:
+        cursor, keys = redis_client.scan(cursor, match="student:*", count=200)
+        for key in keys:
+            raw = redis_client.get(key)
+            if not raw:
+                continue
+            try:
+                student = json.loads(raw)
+            except Exception:
+                continue
+
+            email = normalize_email(student.get("email"))
+            if not email:
+                skipped_missing_email += 1
+                continue
+            if email in seen:
+                continue
+
+            st_code = _student_institutional_code(student)
+            if normalized_codes and (
+                not st_code or st_code.strip().lower() not in normalized_codes
+            ):
+                skipped_filtered += 1
+                continue
+
+            st_license = license_to_code(
+                student.get("license") or student.get("education_level")
+            )
+            st_license = st_license.lower() if st_license else None
+            if license_filter and st_license != license_filter:
+                skipped_filtered += 1
+                continue
+
+            st_source = (student.get("source") or "").strip().lower()
+            if source_filter and st_source != source_filter:
+                skipped_filtered += 1
+                continue
+
+            recipients.append(email)
+            seen.add(email)
+
+        if cursor == 0:
+            break
+
+    if not recipients:
+        raise HTTPException(
+            status_code=400, detail="No students match the provided criteria"
+        )
+
+    blast_id = str(uuid.uuid4())
+    blast_timestamp = datetime.now(timezone.utc).isoformat()
+    stats_key = _blast_stats_key(blast_id)
+    recipients_key = _blast_recipients_key(blast_id)
+    filters_payload = {
+        "institutional_codes": list(req.institutional_codes),
+        "license": req.license,
+        "source": req.source,
+    }
+    html_template = _plain_text_to_html(req.body)
+
+    try:
+        _hash_set_mapping(
+            stats_key,
+            {
+                "matched": len(recipients),
+                "sent": 0,
+                "failed": 0,
+                "unique_opens": 0,
+                "total_opens": 0,
+            },
+        )
+    except Exception as e:
+        logger.error("Failed to initialize blast stats: %s", e)
+
+    sent = 0
+    failures: list[dict[str, str]] = []
+    for recipient in recipients:
+        token = str(uuid.uuid4())
+        sent_at = datetime.now(timezone.utc).isoformat()
+        token_payload = {
+            "blast_id": blast_id,
+            "recipient": recipient,
+            "subject": req.subject,
+            "filters": filters_payload,
+            "sent": sent_at,
+        }
+        try:
+            redis_client.hset(
+                EMAIL_OPEN_TOKENS_KEY, token, json.dumps(token_payload)
+            )
+        except Exception as e:
+            logger.error("Failed to store blast tracking token: %s", e)
+
+        recipient_state = {
+            "email": recipient,
+            "token": token,
+            "sent_at": sent_at,
+            "status": "pending",
+            "opens": 0,
+            "first_open": None,
+            "last_open": None,
+        }
+
+        try:
+            send_email(
+                recipient,
+                req.subject,
+                req.body,
+                html_body=html_template,
+                track_token=token,
+            )
+            sent += 1
+            recipient_state["status"] = "sent"
+            try:
+                _hash_incr(stats_key, "sent", 1)
+            except Exception as e:
+                logger.error("Failed to increment blast sent count: %s", e)
+        except Exception as exc:
+            failures.append({"email": recipient, "error": str(exc)})
+            recipient_state["status"] = "failed"
+            recipient_state["error"] = str(exc)
+            try:
+                _hash_incr(stats_key, "failed", 1)
+            except Exception as e:
+                logger.error("Failed to increment blast failure count: %s", e)
+        finally:
+            try:
+                redis_client.hset(
+                    recipients_key, recipient, json.dumps(recipient_state)
+                )
+            except Exception as e:
+                logger.error("Failed to store blast recipient state: %s", e)
+
+    log_entry = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "event": "email_blast",
+        "actor": current_user.get("sub"),
+        "blast_id": blast_id,
+        "filters": filters_payload,
+        "matched": len(recipients),
+        "sent": sent,
+        "failed": len(failures),
+        "skipped_missing_email": skipped_missing_email,
+        "skipped_filtered": skipped_filtered,
+    }
+
+    try:
+        redis_client.rpush(ACTIVITY_LOG_KEY, json.dumps(log_entry))
+    except Exception as e:
+        logger.error("Failed to record email blast activity: %s", e)
+
+    blast_record = {
+        "blast_id": blast_id,
+        "timestamp": blast_timestamp,
+        "subject": req.subject,
+        "body_preview": req.body[:200],
+        "filters": filters_payload,
+        "matched": len(recipients),
+        "sent": sent,
+        "failed": len(failures),
+        "skipped_missing_email": skipped_missing_email,
+        "skipped_filtered": skipped_filtered,
+    }
+
+    try:
+        redis_client.hset(EMAIL_BLAST_META_KEY, blast_id, json.dumps(blast_record))
+        redis_client.rpush(EMAIL_BLAST_INDEX_KEY, blast_id)
+    except Exception as e:
+        logger.error("Failed to persist blast metadata: %s", e)
+
+    return {
+        "blast_id": blast_id,
+        "matched": len(recipients),
+        "sent": sent,
+        "failed": len(failures),
+        "failures": failures,
+        "skipped_missing_email": skipped_missing_email,
+        "skipped_filtered": skipped_filtered,
+    }
+
+
+@app.get("/email-blasts")
+def list_email_blasts(
+    limit: int = 50, current_user: dict = Depends(get_current_user)
+):
+    if current_user.get("role") not in ADMIN_ROLES:
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+
+    if limit <= 0:
+        limit = 1
+
+    try:
+        ids = _list_range(EMAIL_BLAST_INDEX_KEY, -limit, -1)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list blasts: {e}")
+
+    blasts: list[dict[str, Any]] = []
+    for raw_id in reversed(ids):
+        blast_id = raw_id if isinstance(raw_id, str) else str(raw_id)
+        try:
+            meta_raw = redis_client.hget(EMAIL_BLAST_META_KEY, blast_id)
+        except Exception as e:
+            logger.error("Failed to fetch blast metadata: %s", e)
+            continue
+        if not meta_raw:
+            continue
+        try:
+            meta = json.loads(meta_raw)
+        except Exception:
+            continue
+        stats_raw = _hash_getall(_blast_stats_key(blast_id))
+        stats = {key: _safe_int(value) for key, value in stats_raw.items()}
+        meta.setdefault("blast_id", blast_id)
+        meta["stats"] = stats
+        blasts.append(meta)
+
+    return {"blasts": blasts}
+
+
+@app.get("/email-blasts/{blast_id}")
+def get_email_blast(blast_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") not in ADMIN_ROLES:
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+
+    try:
+        meta_raw = redis_client.hget(EMAIL_BLAST_META_KEY, blast_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to load blast: {e}")
+
+    if not meta_raw:
+        raise HTTPException(status_code=404, detail="Blast not found")
+
+    try:
+        blast = json.loads(meta_raw)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Invalid blast metadata: {e}")
+
+    stats_raw = _hash_getall(_blast_stats_key(blast_id))
+    stats = {key: _safe_int(value) for key, value in stats_raw.items()}
+
+    try:
+        recipients_raw = _hash_getall(_blast_recipients_key(blast_id))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to load blast recipients: {e}")
+
+    recipients: list[dict[str, Any]] = []
+    for email, payload in recipients_raw.items():
+        try:
+            data = json.loads(payload) if payload else {"email": email}
+        except Exception:
+            data = {"email": email}
+        data.setdefault("email", email)
+        recipients.append(data)
+
+    recipients.sort(key=lambda item: item.get("email", ""))
+    blast.setdefault("blast_id", blast_id)
+
+    return {"blast": blast, "stats": stats, "recipients": recipients}
+
+
 @app.get("/students/by-school")
 def students_by_school(
     limit: int = 50,
@@ -4681,6 +5314,47 @@ def admin_test_weekly_summary(current_user: dict = Depends(get_current_user)):
 
     send_weekly_summary(current_user["sub"])
     return {"message": "Weekly summary sent"}
+
+
+@app.post("/admin/send-welcome-emails")
+def admin_send_welcome_emails(
+    payload: WelcomeEmailRequest = Body(default=None),
+    current_user: dict = Depends(get_current_user),
+):
+    """Send the welcome email to existing student profiles."""
+
+    if current_user.get("role") not in ADMIN_ROLES:
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+
+    if payload is None:
+        payload = WelcomeEmailRequest()
+
+    limit = payload.limit
+    resend = payload.resend
+
+    processed = 0
+    sent = 0
+    skipped = 0
+    failed = 0
+
+    for key in redis_client.scan_iter("student:*:*"):
+        if limit is not None and processed >= limit:
+            break
+        status = send_welcome_email_for_key(key, force=resend)
+        processed += 1
+        if status == "sent":
+            sent += 1
+        elif status == "failed":
+            failed += 1
+        else:
+            skipped += 1
+
+    return {
+        "processed": processed,
+        "sent": sent,
+        "skipped": skipped,
+        "failed": failed,
+    }
 
 
 @app.get("/activity-log")
