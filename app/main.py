@@ -502,10 +502,26 @@ def _blast_recipients_key(blast_id: str) -> str:
     return f"{EMAIL_BLAST_RECIPIENTS_PREFIX}{blast_id}"
 
 
+_URL_PATTERN = re.compile(r"(?P<url>(?:https?://|mailto:)[^\s<>\"']+)")
+
+
 def _plain_text_to_html(body: str) -> str:
+    def linkify(text: str) -> str:
+        parts: list[str] = []
+        last_index = 0
+        for match in _URL_PATTERN.finditer(text):
+            start, end = match.span()
+            parts.append(escape(text[last_index:start]))
+            url = match.group("url")
+            escaped_url = escape(url, quote=True)
+            parts.append(f'<a href="{escaped_url}">{escaped_url}</a>')
+            last_index = end
+        parts.append(escape(text[last_index:]))
+        return "".join(parts)
+
     lines = body.splitlines()
-    escaped_lines = [escape(line) for line in lines]
-    return "<br />".join(escaped_lines)
+    linkified_lines = [linkify(line) for line in lines]
+    return "<br />".join(linkified_lines)
 
 
 def _safe_int(value: Any) -> int:
