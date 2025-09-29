@@ -4046,3 +4046,146 @@ def test_match_completes_when_index_missing(monkeypatch):
     stored_payload = json.loads(main_app.redis_client.get(f"match_job:{job_id}"))
     assert stored_payload == {"status": "complete", "results": []}
 
+
+def test_job_analytics_requires_allowed_role():
+    main_app.redis_client.flushdb()
+
+    token = jwt.encode(
+        {
+            "sub": "recruiter@example.com",
+            "role": "recruiter",
+            "exp": datetime.utcnow() + timedelta(hours=1),
+        },
+        JWT_SECRET,
+        algorithm=ALGORITHM,
+    )
+
+    resp = client.get(
+        "/job-analytics",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 403
+    assert resp.json()["detail"] == "Not authorized"
+
+
+def test_job_analytics_filters_by_code_and_creator():
+    main_app.redis_client.flushdb()
+
+    career_user = {
+        "institutional_codes": ["1001"],
+        "role": "career",
+        "approved": True,
+    }
+    main_app.redis_client.set("user:career@example.com", json.dumps(career_user))
+
+    student_accessible = {
+        "first_name": "Stu",
+        "last_name": "Dent",
+        "email": "student1@example.com",
+        "institutional_code": "1001",
+        "student_id": "s1",
+        "created_by": "career@example.com",
+    }
+    student_filtered = {
+        "first_name": "Other",
+        "last_name": "Student",
+        "email": "student2@example.com",
+        "institutional_code": "2002",
+        "student_id": "s2",
+        "created_by": "other@example.com",
+    }
+
+    main_app.persist_student_record(
+        student_accessible["email"],
+        student_accessible,
+        student_accessible["institutional_code"],
+        student_accessible["student_id"],
+    )
+    main_app.persist_student_record(
+        student_filtered["email"],
+        student_filtered,
+        student_filtered["institutional_code"],
+        student_filtered["student_id"],
+    )
+
+    job = {
+        "job_code": "JOB1",
+        "job_title": "Sample Role",
+        "timestamp": "2024-01-01T00:00:00",
+        "source": "Campus",
+        "assigned_students": [
+            student_accessible["email"],
+            student_filtered["email"],
+        ],
+        "placed_students": [student_filtered["email"]],
+        "uninterested_students": [student_filtered["email"]],
+        "rejected_students": [],
+    }
+    main_app.redis_client.set(f"job:{job['job_code']}", json.dumps(job))
+
+    token_value = "token-1"
+    main_app.redis_client.hset(
+        main_app.EMAIL_OPEN_TOKENS_KEY,
+        token_value,
+        json.dumps(
+            {
+                "student_email": student_accessible["email"],
+                "job_code": job["job_code"],
+                "sent": "2024-01-01T00:00:00",
+            }
+        ),
+    )
+    main_app.redis_client.rpush(
+        main_app.ACTIVITY_LOG_KEY,
+        json.dumps(
+            {
+                "token": token_value,
+                "event": "email_open",
+                "timestamp": "2024-01-01T01:00:00",
+            }
+        ),
+    )
+    main_app.redis_client.rpush(
+        main_app.ACTIVITY_LOG_KEY,
+        json.dumps(
+            {
+                "token": token_value,
+                "event": "email_click",
+                "timestamp": "2024-01-01T02:00:00",
+            }
+        ),
+    )
+
+    token = jwt.encode(
+        {
+            "sub": "career@example.com",
+            "role": "career",
+            "exp": datetime.utcnow() + timedelta(hours=1),
+        },
+        JWT_SECRET,
+        algorithm=ALGORITHM,
+    )
+
+    resp = client.get(
+        "/job-analytics",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert len(payload["jobs"]) == 1
+    summary = payload["jobs"][0]
+    assert summary["job_code"] == job["job_code"]
+    assert summary["assigned_count"] == 1
+    assert summary["placed_count"] == 0
+    assert summary["uninterested_count"] == 0
+    assert summary["email_sent_count"] == 1
+    assert summary["opened_count"] == 1
+    assert summary["clicked_count"] == 1
+    assert len(summary["students"]) == 1
+    student_entry = summary["students"][0]
+    assert student_entry["email"] == student_accessible["email"]
+    assert student_entry["status"] == "assigned"
+    assert student_entry["clicked"] is True
+

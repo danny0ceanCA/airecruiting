@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback, lazy, Suspense } from 'react';
 import api, { getAccessToken, getRefreshToken } from './api';
 import { useNavigate } from 'react-router-dom';
 
@@ -89,6 +89,11 @@ function StudentProfiles() {
   const [jobsByEmail, setJobsByEmail] = useState({});
   const [loadingJobs, setLoadingJobs] = useState({});
   const [jobStatsByEmail, setJobStatsByEmail] = useState({});
+  const [jobAnalytics, setJobAnalytics] = useState([]);
+  const [jobAnalyticsLoading, setJobAnalyticsLoading] = useState(false);
+  const [jobAnalyticsError, setJobAnalyticsError] = useState('');
+  const [jobAnalyticsLoaded, setJobAnalyticsLoaded] = useState(false);
+  const [expandedAnalyticsJob, setExpandedAnalyticsJob] = useState(null);
 
   const mergeStudents = (list) => {
     const map = new Map();
@@ -180,6 +185,33 @@ function StudentProfiles() {
   }
   const userRole = decoded?.role;
   const isAdmin = userRole === 'admin' || userRole === 'junior_admin';
+  const canViewJobAnalytics =
+    isAdmin || userRole === 'career' || userRole === 'career_director';
+
+  const loadJobAnalytics = useCallback(async () => {
+    if (!token) return;
+    setJobAnalyticsLoading(true);
+    setJobAnalyticsError('');
+    try {
+      const resp = await api.get('/job-analytics', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setJobAnalytics(resp.data?.jobs || []);
+    } catch (err) {
+      const message =
+        err?.response?.data?.detail || err?.message || 'Failed to load job analytics';
+      setJobAnalyticsError(message);
+    } finally {
+      setJobAnalyticsLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    if (activeTab === 'analytics' && canViewJobAnalytics && !jobAnalyticsLoaded) {
+      loadJobAnalytics();
+      setJobAnalyticsLoaded(true);
+    }
+  }, [activeTab, canViewJobAnalytics, jobAnalyticsLoaded, loadJobAnalytics]);
 
   const fetchStudents = async (cursor = null) => {
     setIsLoading(true);
@@ -628,6 +660,14 @@ function StudentProfiles() {
           >
             New Student Profile
           </button>
+          {canViewJobAnalytics && (
+            <button
+              className={`tab analytics-tab ${activeTab === 'analytics' ? 'active' : ''}`}
+              onClick={() => setActiveTab('analytics')}
+            >
+              Job Analytics
+            </button>
+          )}
         </div>
         {!isLoading && (
           <div className="student-count" data-testid="student-count">
@@ -647,6 +687,194 @@ function StudentProfiles() {
                 isSaving={isSaving}
               />
             </Suspense>
+          </div>
+        )}
+        {activeTab === 'analytics' && canViewJobAnalytics && (
+          <div className="job-analytics-panel">
+            <div className="blast-history">
+              <div className="blast-history-header">
+                <h2>Job Analytics</h2>
+                <button
+                  type="button"
+                  onClick={loadJobAnalytics}
+                  disabled={jobAnalyticsLoading}
+                  className="blast-history-refresh"
+                >
+                  {jobAnalyticsLoading ? 'Refreshing…' : 'Refresh'}
+                </button>
+              </div>
+              {jobAnalyticsError && (
+                <div className="blast-error blast-history-error">{jobAnalyticsError}</div>
+              )}
+              <div className="blast-history-table-wrapper">
+                {jobAnalyticsLoading && jobAnalytics.length === 0 ? (
+                  <div className="blast-history-loading">Loading job analytics…</div>
+                ) : jobAnalytics.length === 0 ? (
+                  <div className="blast-history-empty">No job analytics available yet.</div>
+                ) : (
+                  <table className="blast-history-table job-analytics-table">
+                    <thead>
+                      <tr>
+                        <th></th>
+                        <th>Job Code</th>
+                        <th>Title</th>
+                        <th>Assigned</th>
+                        <th>Placed</th>
+                        <th>Rejected</th>
+                        <th>Uninterested</th>
+                        <th>Emails Sent</th>
+                        <th>Opened</th>
+                        <th>Clicked</th>
+                        <th>Open Rate</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {jobAnalytics.map((job) => {
+                        const isExpanded = expandedAnalyticsJob === job.job_code;
+                        const openRate =
+                          job.email_sent_count > 0
+                            ? `${Math.round(
+                                (job.opened_count / job.email_sent_count) * 100
+                              )}%`
+                            : '—';
+                        return (
+                          <React.Fragment key={job.job_code || job.job_title}>
+                            <tr className="blast-row">
+                              <td className="blast-expand-cell">
+                                <button
+                                  type="button"
+                                  className="expand-toggle"
+                                  onClick={() =>
+                                    setExpandedAnalyticsJob(
+                                      isExpanded ? null : job.job_code
+                                    )
+                                  }
+                                  title={isExpanded ? 'Collapse' : 'Expand'}
+                                >
+                                  {isExpanded ? '–' : '+'}
+                                </button>
+                              </td>
+                              <td>{job.job_code || '—'}</td>
+                              <td className="job-analytics-job">
+                                <div className="job-analytics-job-title">{job.job_title || '—'}</div>
+                                {job.source && (
+                                  <div className="job-analytics-job-meta">Source: {job.source}</div>
+                                )}
+                              </td>
+                              <td className="metric-cell">{job.assigned_count ?? 0}</td>
+                              <td className="metric-cell">{job.placed_count ?? 0}</td>
+                              <td className="metric-cell">{job.rejected_count ?? 0}</td>
+                              <td className="metric-cell">{job.uninterested_count ?? 0}</td>
+                              <td className="metric-cell">{job.email_sent_count ?? 0}</td>
+                              <td className="metric-cell">{job.opened_count ?? 0}</td>
+                              <td className="metric-cell">{job.clicked_count ?? 0}</td>
+                              <td className="metric-cell">{openRate}</td>
+                            </tr>
+                            {isExpanded && (
+                              <tr className="blast-detail-row">
+                                <td colSpan={11}>
+                                  <div className="blast-detail">
+                                    <div className="blast-summary-grid">
+                                      <div>
+                                        <strong>Assigned:</strong> {job.assigned_count ?? 0}
+                                      </div>
+                                      <div>
+                                        <strong>Placed:</strong> {job.placed_count ?? 0}
+                                      </div>
+                                      <div>
+                                        <strong>Rejected:</strong> {job.rejected_count ?? 0}
+                                      </div>
+                                      <div>
+                                        <strong>Uninterested:</strong> {job.uninterested_count ?? 0}
+                                      </div>
+                                      <div>
+                                        <strong>Emails Sent:</strong> {job.email_sent_count ?? 0}
+                                      </div>
+                                      <div>
+                                        <strong>Opened:</strong> {job.opened_count ?? 0}
+                                      </div>
+                                      <div>
+                                        <strong>Clicked:</strong> {job.clicked_count ?? 0}
+                                      </div>
+                                      <div>
+                                        <strong>Open Rate:</strong> {openRate}
+                                      </div>
+                                    </div>
+                                    <div className="blast-detail-filters job-analytics-meta">
+                                      <div>
+                                        <strong>Job Title:</strong> {job.job_title || '—'}
+                                      </div>
+                                      <div>
+                                        <strong>Job Code:</strong> {job.job_code || '—'}
+                                      </div>
+                                      <div>
+                                        <strong>Source:</strong> {job.source || '—'}
+                                      </div>
+                                      <div>
+                                        <strong>Last Updated:</strong> {formatDate(job.timestamp)}
+                                      </div>
+                                    </div>
+                                    <div className="blast-recipient-table-wrapper">
+                                      {job.students?.length ? (
+                                        <table className="blast-recipient-table">
+                                          <thead>
+                                            <tr>
+                                              <th>Student</th>
+                                              <th>Status</th>
+                                              <th>Email Sent</th>
+                                              <th>First Open</th>
+                                              <th>Clicked</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {job.students.map((student) => {
+                                              const fullName = [
+                                                student.first_name,
+                                                student.last_name,
+                                              ]
+                                                .filter(Boolean)
+                                                .join(' ');
+                                              const statusLabel = student.status
+                                                ? student.status.charAt(0).toUpperCase() +
+                                                  student.status.slice(1)
+                                                : '—';
+                                              return (
+                                                <tr key={student.email}>
+                                                  <td>
+                                                    <div className="job-analytics-student-name">
+                                                      {fullName || student.email}
+                                                    </div>
+                                                    <div className="job-analytics-student-email">
+                                                      {student.email}
+                                                    </div>
+                                                  </td>
+                                                  <td>{statusLabel}</td>
+                                                  <td>{formatDate(student.email_sent)}</td>
+                                                  <td>{formatDate(student.first_open)}</td>
+                                                  <td>{student.clicked ? 'Yes' : 'No'}</td>
+                                                </tr>
+                                              );
+                                            })}
+                                          </tbody>
+                                        </table>
+                                      ) : (
+                                        <div className="blast-history-empty">
+                                          No student analytics available.
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
           </div>
         )}
         {activeTab === 'students' && (

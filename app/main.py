@@ -3296,6 +3296,151 @@ def list_jobs(current_user: dict = Depends(get_current_user)):
     return {"jobs": jobs}
 
 
+@app.get("/job-analytics")
+def job_analytics(current_user: dict = Depends(get_current_user)):
+    """Return aggregated job analytics for authorized staff."""
+
+    role = current_user.get("role")
+    if role not in ADMIN_ROLES.union(CAREER_STAFF_ROLES):
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    authorized_codes: set[str] | None = None
+    restrict_creator: str | None = None
+    if role not in ADMIN_ROLES:
+        user_raw = redis_client.get(user_key(current_user.get("sub")))
+        if not user_raw:
+            raise HTTPException(status_code=404, detail="User not found")
+        try:
+            user = json.loads(user_raw)
+        except Exception:
+            raise HTTPException(status_code=500, detail="Corrupted user data")
+        codes = _extract_institutional_codes(user)
+        if not codes:
+            raise HTTPException(status_code=400, detail="Institutional code required")
+        authorized_codes = {code.lower() for code in codes}
+        if role == "career":
+            restrict_creator = current_user.get("sub")
+
+    summaries: list[dict[str, Any]] = []
+    for key in redis_client.scan_iter("job:*"):
+        raw = redis_client.get(key)
+        if not raw:
+            continue
+        try:
+            job = json.loads(raw)
+        except Exception:
+            continue
+
+        job_code = job.get("job_code")
+        assigned = set(job.get("assigned_students") or [])
+        placed = set(job.get("placed_students") or [])
+        rejected = set(job.get("rejected_students") or [])
+        uninterested = set(job.get("uninterested_students") or [])
+
+        all_emails = set().union(assigned, placed, rejected, uninterested)
+        counts = {"assigned": 0, "placed": 0, "rejected": 0, "uninterested": 0}
+        email_sent_count = 0
+        opened_count = 0
+        clicked_count = 0
+        students: list[dict[str, Any]] = []
+
+        for email in sorted(all_emails):
+            student_key_resolved = resolve_student_key(email)
+            student_raw = redis_client.get(student_key_resolved) if student_key_resolved else None
+            student: dict[str, Any] | None = None
+            if student_raw:
+                try:
+                    student = json.loads(student_raw)
+                except Exception:
+                    student = None
+
+            st_code = _student_institutional_code(student)
+            if authorized_codes and (not st_code or st_code.lower() not in authorized_codes):
+                continue
+            if restrict_creator and (not student or student.get("created_by") != restrict_creator):
+                continue
+
+            status = None
+            if email in placed:
+                status = "placed"
+            elif email in assigned:
+                status = "assigned"
+            elif email in rejected:
+                status = "rejected"
+            elif email in uninterested:
+                status = "uninterested"
+
+            track = _tracking_stats(email, job_code)
+            email_sent = track.get("email_sent")
+            first_open = track.get("first_open")
+            clicked = bool(track.get("clicked"))
+
+            if email_sent:
+                email_sent_count += 1
+            if first_open:
+                opened_count += 1
+            if clicked:
+                clicked_count += 1
+            if status in counts:
+                counts[status] += 1
+
+            student_entry: dict[str, Any] = {
+                "email": email,
+                "status": status,
+                "email_sent": email_sent,
+                "first_open": first_open,
+                "clicked": clicked,
+            }
+            if student:
+                student_entry["first_name"] = student.get("first_name")
+                student_entry["last_name"] = student.get("last_name")
+            students.append(student_entry)
+
+        if authorized_codes is not None and role not in ADMIN_ROLES and not students:
+            continue
+
+        students.sort(
+            key=lambda item: (
+                {"placed": 0, "assigned": 1, "rejected": 2, "uninterested": 3}.get(
+                    item.get("status"),
+                    9,
+                ),
+                (item.get("last_name") or "").lower(),
+                (item.get("first_name") or "").lower(),
+                item.get("email") or "",
+            )
+        )
+
+        summaries.append(
+            {
+                "job_code": job_code,
+                "job_title": job.get("job_title"),
+                "timestamp": job.get("timestamp"),
+                "source": job.get("source"),
+                "assigned_count": counts["assigned"],
+                "placed_count": counts["placed"],
+                "rejected_count": counts["rejected"],
+                "uninterested_count": counts["uninterested"],
+                "email_sent_count": email_sent_count,
+                "opened_count": opened_count,
+                "clicked_count": clicked_count,
+                "students": students,
+            }
+        )
+
+    def _timestamp_value(job: dict[str, Any]) -> float:
+        raw_ts = job.get("timestamp")
+        if not raw_ts:
+            return 0.0
+        try:
+            return datetime.fromisoformat(str(raw_ts)).timestamp()
+        except Exception:
+            return 0.0
+
+    summaries.sort(key=_timestamp_value, reverse=True)
+    return {"jobs": summaries}
+
+
 @app.delete("/jobs/{job_code}")
 def delete_job(job_code: str, token_data: dict = Depends(get_current_user)):
     if token_data.get("role") not in ADMIN_ROLES:

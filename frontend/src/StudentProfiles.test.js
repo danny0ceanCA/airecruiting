@@ -89,6 +89,72 @@ test('displays student count in tab bar', async () => {
   localStorage.clear();
 });
 
+test('loads job analytics when tab selected', async () => {
+  const token =
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiY2FyZWVyIiwic3ViIjoiY2FyZWVyQGV4YW1wbGUuY29tIn0.signature';
+  localStorage.setItem('token', token);
+  api.get.mockImplementation((url, options) => {
+    if (url === '/licenses') {
+      return Promise.resolve({ data: { licenses: [] } });
+    }
+    if (url === '/students/by-school') {
+      return Promise.resolve({ data: { students: [] } });
+    }
+    if (url === '/job-analytics') {
+      expect(options).toEqual({
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      return Promise.resolve({
+        data: {
+          jobs: [
+            {
+              job_code: 'J1',
+              job_title: 'Job One',
+              source: 'Campus',
+              timestamp: '2024-01-01T00:00:00',
+              assigned_count: 2,
+              placed_count: 1,
+              rejected_count: 0,
+              uninterested_count: 1,
+              email_sent_count: 2,
+              opened_count: 1,
+              clicked_count: 1,
+              students: [
+                {
+                  email: 'student@example.com',
+                  first_name: 'Stu',
+                  last_name: 'Dent',
+                  status: 'assigned',
+                  email_sent: '2024-01-01T00:00:00',
+                  first_open: '2024-01-01T12:00:00',
+                  clicked: false,
+                },
+              ],
+            },
+          ],
+        },
+      });
+    }
+    throw new Error(`Unexpected URL ${url}`);
+  });
+
+  render(
+    <BrowserRouter>
+      <StudentProfiles />
+    </BrowserRouter>
+  );
+
+  fireEvent.click(await screen.findByText('Job Analytics'));
+
+  expect(await screen.findByText('Job One')).toBeInTheDocument();
+
+  const expand = await screen.findByTitle('Expand');
+  fireEvent.click(expand);
+  expect(screen.getByText('Stu Dent')).toBeInTheDocument();
+  expect(screen.getByText('student@example.com')).toBeInTheDocument();
+  localStorage.clear();
+});
+
 test('opens notes history modal when View Notes clicked', async () => {
   const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYWRtaW4ifQ.signature';
   localStorage.setItem('token', token);
