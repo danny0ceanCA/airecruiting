@@ -1351,6 +1351,10 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
                     onChange={handleBlastFormChange}
                     placeholder="Write the email you want to send"
                   ></textarea>
+                  <small>
+                    Use <code>{'{{first_name}}'}</code> to insert a student's first name. If no
+                    name is available, the blast will say &quot;there&quot; instead.
+                  </small>
                 </div>
                 <div className="blast-field">
                   <label htmlFor="blast-institutional-codes">Institutional Codes</label>

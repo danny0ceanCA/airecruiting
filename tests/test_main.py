@@ -3215,7 +3215,7 @@ def test_email_blast_sends_to_matching_students(monkeypatch):
         headers={"Authorization": f"Bearer {token}"},
         json={
             "subject": "Important update",
-            "body": "Please review the latest opportunity.",
+            "body": "Hi {{first_name}}, please review the latest opportunity.",
             "institutional_codes": ["1001"],
             "license": "lvn",
         },
@@ -3230,7 +3230,8 @@ def test_email_blast_sends_to_matching_students(monkeypatch):
     assert len(sent) == 1
     assert sent[0]["recipient"] == "sam@example.com"
     assert sent[0]["track_token"]
-    assert sent[0]["html_body"] is not None
+    assert sent[0]["html_body"] == "Hi Sam, please review the latest opportunity."
+    assert sent[0]["body"] == "Hi Sam, please review the latest opportunity."
 
     blast_id = data["blast_id"]
     token_val = sent[0]["track_token"]
@@ -3290,6 +3291,66 @@ def test_email_blast_sends_to_matching_students(monkeypatch):
     assert detail_payload["stats"]["total_opens"] == 1
     assert detail_payload["recipients"][0]["opens"] == 1
     assert detail_payload["recipients"][0]["status"] == "opened"
+
+
+def test_email_blast_first_name_fallback(monkeypatch):
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    student = {
+        "first_name": "",
+        "last_name": "Student",
+        "email": "no-name@example.com",
+        "license": "lvn",
+        "institutional_code": "1001",
+        "student_id": "2",
+    }
+
+    main_app.persist_student_record(
+        student["email"], student, student["institutional_code"], student["student_id"]
+    )
+
+    captured: dict[str, str] = {}
+
+    def fake_send(
+        recipient,
+        subject,
+        body,
+        html_body=None,
+        attachments=None,
+        track_token=None,
+    ):
+        captured.update(
+            {
+                "recipient": recipient,
+                "subject": subject,
+                "body": body,
+                "html_body": html_body,
+            }
+        )
+
+    monkeypatch.setattr(main_app, "send_email", fake_send)
+
+    token = client.post(
+        "/login", json={"email": "admin@example.com", "password": "admin123"}
+    ).json()["token"]
+
+    resp = client.post(
+        "/email-blast",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "subject": "Greetings",
+            "body": "Hello {{first_name}}, welcome aboard!",
+            "institutional_codes": ["1001"],
+            "license": "lvn",
+        },
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["sent"] == 1
+    assert captured["recipient"] == student["email"]
+    assert captured["body"] == "Hello there, welcome aboard!"
+    assert captured["html_body"] == "Hello there, welcome aboard!"
 
 
 def test_email_blast_requires_admin_role():
