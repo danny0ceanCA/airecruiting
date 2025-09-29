@@ -503,6 +503,17 @@ def _blast_recipients_key(blast_id: str) -> str:
 
 
 _URL_PATTERN = re.compile(r"(?P<url>(?:https?://|mailto:)[^\s<>\"']+)")
+_FIRST_NAME_TOKEN_PATTERN = re.compile(r"\{\{\s*first_name\s*\}\}")
+
+
+def _personalize_blast_body(
+    template: str, context: dict[str, Any], fallback: str = "there"
+) -> str:
+    """Replace supported personalization tokens within an email blast template."""
+
+    first_name = (context.get("first_name") or "").strip()
+    replacement = first_name or fallback
+    return _FIRST_NAME_TOKEN_PATTERN.sub(replacement, template)
 
 
 def _plain_text_to_html(body: str) -> str:
@@ -4719,7 +4730,7 @@ def send_email_blast(req: EmailBlastRequest, current_user: dict = Depends(get_cu
     license_filter = license_filter.lower() if license_filter else None
     source_filter = req.source.lower() if req.source else None
 
-    recipients: list[str] = []
+    recipients: list[dict[str, str]] = []
     seen: set[str] = set()
     skipped_missing_email = 0
     skipped_filtered = 0
@@ -4763,7 +4774,12 @@ def send_email_blast(req: EmailBlastRequest, current_user: dict = Depends(get_cu
                 skipped_filtered += 1
                 continue
 
-            recipients.append(email)
+            recipients.append(
+                {
+                    "email": email,
+                    "first_name": (student.get("first_name") or "").strip(),
+                }
+            )
             seen.add(email)
 
         if cursor == 0:
@@ -4783,8 +4799,6 @@ def send_email_blast(req: EmailBlastRequest, current_user: dict = Depends(get_cu
         "license": req.license,
         "source": req.source,
     }
-    html_template = _plain_text_to_html(req.body)
-
     try:
         _hash_set_mapping(
             stats_key,
@@ -4802,11 +4816,14 @@ def send_email_blast(req: EmailBlastRequest, current_user: dict = Depends(get_cu
     sent = 0
     failures: list[dict[str, str]] = []
     for recipient in recipients:
+        recipient_email = recipient["email"]
+        personalized_body = _personalize_blast_body(req.body, recipient)
+        personalized_html = _plain_text_to_html(personalized_body)
         token = str(uuid.uuid4())
         sent_at = datetime.now(timezone.utc).isoformat()
         token_payload = {
             "blast_id": blast_id,
-            "recipient": recipient,
+            "recipient": recipient_email,
             "subject": req.subject,
             "filters": filters_payload,
             "sent": sent_at,
@@ -4819,7 +4836,7 @@ def send_email_blast(req: EmailBlastRequest, current_user: dict = Depends(get_cu
             logger.error("Failed to store blast tracking token: %s", e)
 
         recipient_state = {
-            "email": recipient,
+            "email": recipient_email,
             "token": token,
             "sent_at": sent_at,
             "status": "pending",
@@ -4830,10 +4847,10 @@ def send_email_blast(req: EmailBlastRequest, current_user: dict = Depends(get_cu
 
         try:
             send_email(
-                recipient,
+                recipient_email,
                 req.subject,
-                req.body,
-                html_body=html_template,
+                personalized_body,
+                html_body=personalized_html,
                 track_token=token,
             )
             sent += 1
@@ -4843,7 +4860,7 @@ def send_email_blast(req: EmailBlastRequest, current_user: dict = Depends(get_cu
             except Exception as e:
                 logger.error("Failed to increment blast sent count: %s", e)
         except Exception as exc:
-            failures.append({"email": recipient, "error": str(exc)})
+            failures.append({"email": recipient_email, "error": str(exc)})
             recipient_state["status"] = "failed"
             recipient_state["error"] = str(exc)
             try:
@@ -4853,7 +4870,7 @@ def send_email_blast(req: EmailBlastRequest, current_user: dict = Depends(get_cu
         finally:
             try:
                 redis_client.hset(
-                    recipients_key, recipient, json.dumps(recipient_state)
+                    recipients_key, recipient_email, json.dumps(recipient_state)
                 )
             except Exception as e:
                 logger.error("Failed to store blast recipient state: %s", e)
