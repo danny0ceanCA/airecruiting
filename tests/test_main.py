@@ -14,6 +14,7 @@ import app.main as main_app
 from datetime import datetime, timedelta
 import hashlib
 from starlette.requests import Request
+from unittest.mock import patch, call
 
 
 class DummyRedis:
@@ -4133,26 +4134,8 @@ def test_job_analytics_filters_by_code_and_creator():
                 "student_email": student_accessible["email"],
                 "job_code": job["job_code"],
                 "sent": "2024-01-01T00:00:00",
-            }
-        ),
-    )
-    main_app.redis_client.rpush(
-        main_app.ACTIVITY_LOG_KEY,
-        json.dumps(
-            {
-                "token": token_value,
-                "event": "email_open",
-                "timestamp": "2024-01-01T01:00:00",
-            }
-        ),
-    )
-    main_app.redis_client.rpush(
-        main_app.ACTIVITY_LOG_KEY,
-        json.dumps(
-            {
-                "token": token_value,
-                "event": "email_click",
-                "timestamp": "2024-01-01T02:00:00",
+                "first_open": "2024-01-01T01:00:00",
+                "clicked": True,
             }
         ),
     )
@@ -4167,10 +4150,16 @@ def test_job_analytics_filters_by_code_and_creator():
         algorithm=ALGORITHM,
     )
 
-    resp = client.get(
-        "/job-analytics",
-        headers={"Authorization": f"Bearer {token}"},
-    )
+    with patch.object(
+        main_app.redis_client,
+        "lrange",
+        side_effect=AssertionError("lrange should not be used"),
+        create=True,
+    ):
+        resp = client.get(
+            "/job-analytics",
+            headers={"Authorization": f"Bearer {token}"},
+        )
 
     assert resp.status_code == 200
     payload = resp.json()
@@ -4249,4 +4238,85 @@ def test_job_analytics_includes_students_without_creator():
     assert summary["assigned_count"] == 1
     assert len(summary["students"]) == 1
     assert summary["students"][0]["email"] == student_record["email"]
+
+
+def test_job_analytics_caches_student_profiles():
+    main_app.redis_client.flushdb()
+
+    student_record = {
+        "first_name": "Cached",
+        "last_name": "Student",
+        "email": "cached@example.com",
+        "institutional_code": "3003",
+        "student_id": "cache-1",
+    }
+    main_app.persist_student_record(
+        student_record["email"],
+        student_record,
+        student_record["institutional_code"],
+        student_record["student_id"],
+    )
+
+    job_one = {
+        "job_code": "CACHE1",
+        "job_title": "Cache Test One",
+        "timestamp": "2024-02-01T00:00:00",
+        "source": "Portal",
+        "assigned_students": [student_record["email"]],
+        "placed_students": [],
+        "uninterested_students": [],
+        "rejected_students": [],
+    }
+    job_two = {
+        "job_code": "CACHE2",
+        "job_title": "Cache Test Two",
+        "timestamp": "2024-02-02T00:00:00",
+        "source": "Portal",
+        "assigned_students": [],
+        "placed_students": [student_record["email"]],
+        "uninterested_students": [],
+        "rejected_students": [],
+    }
+
+    main_app.redis_client.set(f"job:{job_one['job_code']}", json.dumps(job_one))
+    main_app.redis_client.set(f"job:{job_two['job_code']}", json.dumps(job_two))
+
+    student_key_value = main_app.resolve_student_key(student_record["email"])
+
+    token = jwt.encode(
+        {
+            "sub": "admin@example.com",
+            "role": "admin",
+            "exp": datetime.utcnow() + timedelta(hours=1),
+        },
+        JWT_SECRET,
+        algorithm=ALGORITHM,
+    )
+
+    with patch.object(
+        main_app,
+        "resolve_student_key",
+        wraps=main_app.resolve_student_key,
+    ) as resolve_spy:
+        with patch.object(
+            main_app.redis_client,
+            "get",
+            wraps=main_app.redis_client.get,
+        ) as get_spy:
+            resp = client.get(
+                "/job-analytics",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert len(payload["jobs"]) == 2
+
+    student_get_calls = [
+        call.args[0]
+        for call in get_spy.call_args_list
+        if call.args and call.args[0] == student_key_value
+    ]
+    assert len(student_get_calls) == 1
+    assert resolve_spy.call_count == 1
 

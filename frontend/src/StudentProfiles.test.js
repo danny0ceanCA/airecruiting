@@ -1,5 +1,4 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { act } from 'react';
 import StudentProfiles from './StudentProfiles';
 import { BrowserRouter } from 'react-router-dom';
 import api from './api';
@@ -335,11 +334,13 @@ test('deduplicates students from multiple payloads', async () => {
     return Promise.resolve({ data: { students: [student] } });
   });
 
-  let eventSource;
-  window.EventSource = function () {
-    eventSource = this;
-    this.close = jest.fn();
-  };
+  const duplicatePayload = { students: [student, { ...student }] };
+  global.fetch = jest.fn(() =>
+    Promise.resolve({
+      ok: true,
+      json: () => Promise.resolve(duplicatePayload)
+    })
+  );
 
   render(
     <BrowserRouter>
@@ -349,14 +350,12 @@ test('deduplicates students from multiple payloads', async () => {
 
   expect(await screen.findByText('a@example.com')).toBeInTheDocument();
 
-  await act(async () => {
-    eventSource.onmessage({ data: JSON.stringify(student) });
-  });
+  await waitFor(() => expect(global.fetch).toHaveBeenCalled());
 
   await waitFor(() => {
     expect(screen.getAllByText('a@example.com')).toHaveLength(1);
   });
 
   localStorage.clear();
-  delete window.EventSource;
+  delete global.fetch;
 });

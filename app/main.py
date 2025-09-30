@@ -1071,6 +1071,20 @@ def track_open(token: str):
         redis_client.rpush(ACTIVITY_LOG_KEY, json.dumps(log_entry))
     except Exception as e:
         logger.error("Failed to log email open: %s", e)
+
+    if isinstance(info, dict):
+        updated = False
+        if "first_open" not in info or not info.get("first_open"):
+            info["first_open"] = timestamp
+            updated = True
+        if "clicked" not in info:
+            info["clicked"] = bool(info.get("clicked", False))
+            updated = True
+        if updated:
+            try:
+                redis_client.hset(EMAIL_OPEN_TOKENS_KEY, token, json.dumps(info))
+            except Exception as e:
+                logger.error("Failed to persist aggregated open metadata: %s", e)
     return Response(content=TRANSPARENT_PNG, media_type="image/png")
 
 
@@ -1097,6 +1111,19 @@ def track_click(token: str):
         redis_client.rpush(ACTIVITY_LOG_KEY, json.dumps(log_entry))
     except Exception as e:
         logger.error("Failed to log email click: %s", e)
+    if isinstance(info, dict):
+        updated = False
+        if "clicked" not in info or info.get("clicked") is not True:
+            info["clicked"] = True
+            updated = True
+        if "first_open" not in info:
+            info["first_open"] = info.get("first_open")
+            updated = True
+        if updated:
+            try:
+                redis_client.hset(EMAIL_OPEN_TOKENS_KEY, token, json.dumps(info))
+            except Exception as e:
+                logger.error("Failed to persist aggregated click metadata: %s", e)
     return RedirectResponse(url=external_url)
 
 @app.get("/school-codes")
@@ -3296,6 +3323,124 @@ def list_jobs(current_user: dict = Depends(get_current_user)):
     return {"jobs": jobs}
 
 
+def _build_tracking_lookup() -> dict[tuple[str, str], dict[str, Any]]:
+    """Return cached tracking details keyed by (email, job_code)."""
+
+    lookup: dict[tuple[str, str], dict[str, Any]] = {}
+    token_index: dict[str, tuple[str, str]] = {}
+
+    def _ensure_str(value: Any) -> str | None:
+        if isinstance(value, (bytes, bytearray)):
+            return value.decode("utf-8", "ignore")
+        return value
+
+    try:
+        if hasattr(redis_client, "hscan_iter"):
+            iterator = redis_client.hscan_iter(EMAIL_OPEN_TOKENS_KEY)
+        else:
+            raw_items = redis_client.hashes.get(EMAIL_OPEN_TOKENS_KEY, {}) if hasattr(redis_client, "hashes") else {}
+            iterator = raw_items.items()
+    except Exception:
+        iterator = []
+
+    tokens_needing_log: set[str] = set()
+
+    def _should_replace(existing: dict[str, Any] | None, sent: Any) -> bool:
+        if existing is None:
+            return True
+        current_sent = existing.get("email_sent")
+        if sent and not current_sent:
+            return True
+        if isinstance(sent, str) and isinstance(current_sent, str) and sent > current_sent:
+            return True
+        return False
+
+    for raw_token, raw_info in iterator:
+        token = _ensure_str(raw_token)
+        try:
+            info = json.loads(raw_info)
+        except Exception:
+            continue
+        email = normalize_email(info.get("student_email"))
+        job_code = info.get("job_code")
+        if not email or not job_code:
+            continue
+        sent = info.get("sent")
+        key = (email, job_code)
+        token_index[token] = key
+
+        has_first_open_field = "first_open" in info
+        has_clicked_field = "clicked" in info
+        first_open_value = info.get("first_open") if has_first_open_field else None
+        clicked_value = bool(info.get("clicked")) if has_clicked_field else False
+
+        if _should_replace(lookup.get(key), sent):
+            lookup[key] = {
+                "token": token,
+                "email_sent": sent,
+                "first_open": first_open_value,
+                "clicked": clicked_value,
+                "has_first_open_field": has_first_open_field,
+                "has_clicked_field": has_clicked_field,
+            }
+        else:
+            record = lookup[key]
+            if not record.get("has_first_open_field") and has_first_open_field:
+                record["first_open"] = first_open_value
+                record["has_first_open_field"] = True
+            if not record.get("has_clicked_field") and has_clicked_field:
+                record["clicked"] = clicked_value
+                record["has_clicked_field"] = True
+
+        record = lookup.get(key)
+        if record and (not record.get("has_first_open_field") or not record.get("has_clicked_field")):
+            if token:
+                tokens_needing_log.add(token)
+
+    if tokens_needing_log:
+        try:
+            if hasattr(redis_client, "lrange"):
+                raw_entries = redis_client.lrange(ACTIVITY_LOG_KEY, 0, -1) or []
+            else:
+                raw_entries = (
+                    redis_client.lists.get(ACTIVITY_LOG_KEY, [])
+                    if hasattr(redis_client, "lists")
+                    else []
+                )
+        except Exception:
+            raw_entries = []
+
+        for raw in raw_entries:
+            try:
+                entry = json.loads(raw)
+            except Exception:
+                continue
+            token = _ensure_str(entry.get("token"))
+            if not token or token not in tokens_needing_log:
+                continue
+            pair = token_index.get(token)
+            if not pair:
+                continue
+            record = lookup.get(pair)
+            if not record or record.get("token") != token:
+                continue
+            event = entry.get("event")
+            timestamp = entry.get("timestamp")
+            if event == "email_open" and record.get("first_open") is None:
+                record["first_open"] = timestamp
+            elif event == "email_click":
+                record["clicked"] = True
+
+    finalized: dict[tuple[str, str], dict[str, Any]] = {}
+    for key, record in lookup.items():
+        finalized[key] = {
+            "email_sent": record.get("email_sent"),
+            "first_open": record.get("first_open"),
+            "clicked": bool(record.get("clicked")),
+        }
+    return finalized
+
+
 @app.get("/job-analytics")
 def job_analytics(current_user: dict = Depends(get_current_user)):
     """Return aggregated job analytics for authorized staff."""
@@ -3321,6 +3466,9 @@ def job_analytics(current_user: dict = Depends(get_current_user)):
         if role == "career":
             restrict_creator = current_user.get("sub")
 
+    tracking_lookup = _build_tracking_lookup()
+    resolved_student_keys: dict[str, str | None] = {}
+    student_profiles: dict[str, dict[str, Any] | None] = {}
     summaries: list[dict[str, Any]] = []
     for key in redis_client.scan_iter("job:*"):
         raw = redis_client.get(key)
@@ -3345,14 +3493,29 @@ def job_analytics(current_user: dict = Depends(get_current_user)):
         students: list[dict[str, Any]] = []
 
         for email in sorted(all_emails):
-            student_key_resolved = resolve_student_key(email)
-            student_raw = redis_client.get(student_key_resolved) if student_key_resolved else None
-            student: dict[str, Any] | None = None
-            if student_raw:
-                try:
-                    student = json.loads(student_raw)
-                except Exception:
-                    student = None
+            normalized_email = normalize_email(email)
+            if normalized_email in resolved_student_keys:
+                student_key_resolved = resolved_student_keys[normalized_email]
+            else:
+                student_key_resolved = resolve_student_key(email)
+                resolved_student_keys[normalized_email] = student_key_resolved
+
+            if normalized_email in student_profiles:
+                student = student_profiles[normalized_email]
+            else:
+                student_raw = (
+                    redis_client.get(student_key_resolved)
+                    if student_key_resolved
+                    else None
+                )
+                student_obj: dict[str, Any] | None = None
+                if student_raw:
+                    try:
+                        student_obj = json.loads(student_raw)
+                    except Exception:
+                        student_obj = None
+                student_profiles[normalized_email] = student_obj
+                student = student_obj
 
             st_code = _student_institutional_code(student)
             if authorized_codes and (not st_code or st_code.lower() not in authorized_codes):
@@ -3372,7 +3535,7 @@ def job_analytics(current_user: dict = Depends(get_current_user)):
             elif email in uninterested:
                 status = "uninterested"
 
-            track = _tracking_stats(email, job_code)
+            track = _tracking_stats(email, job_code, tracking_lookup)
             email_sent = track.get("email_sent")
             first_open = track.get("first_open")
             clicked = bool(track.get("clicked"))
@@ -4109,6 +4272,8 @@ def notify_interest(data: dict, token_data: dict = Depends(get_current_user)):
                     "job_code": job_code,
                     "external_url": external_url,
                     "sent": datetime.now(timezone.utc).isoformat(),
+                    "first_open": None,
+                    "clicked": False,
                 }
             ),
         )
@@ -4676,9 +4841,28 @@ def _normalize_notes(value):
     return [], None
 
 
-def _tracking_stats(student_email: str, job_code: str) -> dict:
+def _tracking_stats(
+    student_email: str,
+    job_code: str | None,
+    lookup: dict[tuple[str, str], dict[str, Any]] | None = None,
+) -> dict:
     """Return email tracking info for a student/job pair."""
-    tokens: list[dict] = []
+
+    if not job_code:
+        return {"email_sent": None, "first_open": None, "clicked": False}
+
+    if lookup is not None:
+        key = (normalize_email(student_email), job_code)
+        cached = lookup.get(key)
+        if cached:
+            return {
+                "email_sent": cached.get("email_sent"),
+                "first_open": cached.get("first_open"),
+                "clicked": bool(cached.get("clicked")),
+            }
+        return {"email_sent": None, "first_open": None, "clicked": False}
+
+    tokens: list[dict[str, Any]] = []
     try:
         if hasattr(redis_client, "hscan_iter"):
             iterator = redis_client.hscan_iter(EMAIL_OPEN_TOKENS_KEY)
@@ -4769,6 +4953,7 @@ def _fetch_student_jobs(email: str) -> list[dict]:
     }
     all_codes: set[str] = set().union(*statuses.values())
     jobs_list: list[dict] = []
+    tracking_lookup = _build_tracking_lookup()
     for code in all_codes:
         raw = redis_client.get(f"job:{code}")
         if not raw:
@@ -4789,7 +4974,7 @@ def _fetch_student_jobs(email: str) -> list[dict]:
             status = None
         notes_raw = job.get("student_notes", {}).get(email, [])
         notes, latest_note = _normalize_notes(notes_raw)
-        track = _tracking_stats(email, job.get("job_code"))
+        track = _tracking_stats(email, job.get("job_code"), tracking_lookup)
         jobs_list.append(
             {
                 "job_code": job.get("job_code"),
@@ -4974,6 +5159,8 @@ def send_email_blast(req: EmailBlastRequest, current_user: dict = Depends(get_cu
             "subject": req.subject,
             "filters": filters_payload,
             "sent": sent_at,
+            "first_open": None,
+            "clicked": False,
         }
         try:
             redis_client.hset(
