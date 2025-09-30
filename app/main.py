@@ -3354,7 +3354,6 @@ def _build_tracking_lookup() -> dict[tuple[str, str], dict[str, Any]]:
         if isinstance(sent, str) and isinstance(current_sent, str) and sent > current_sent:
             return True
         return False
-
     for raw_token, raw_info in iterator:
         token = _ensure_str(raw_token)
         try:
@@ -3368,7 +3367,6 @@ def _build_tracking_lookup() -> dict[tuple[str, str], dict[str, Any]]:
         sent = info.get("sent")
         key = (email, job_code)
         token_index[token] = key
-
         has_first_open_field = "first_open" in info
         has_clicked_field = "clicked" in info
         first_open_value = info.get("first_open") if has_first_open_field else None
@@ -3439,7 +3437,6 @@ def _build_tracking_lookup() -> dict[tuple[str, str], dict[str, Any]]:
             "clicked": bool(record.get("clicked")),
         }
     return finalized
-
 
 class _StudentLookupCache:
     """Memoize student key/profile lookups during analytics aggregation."""
