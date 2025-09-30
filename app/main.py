@@ -3357,8 +3357,10 @@ def job_analytics(current_user: dict = Depends(get_current_user)):
             st_code = _student_institutional_code(student)
             if authorized_codes and (not st_code or st_code.lower() not in authorized_codes):
                 continue
-            if restrict_creator and (not student or student.get("created_by") != restrict_creator):
-                continue
+            if restrict_creator and student:
+                creator = student.get("created_by")
+                if creator and creator != restrict_creator:
+                    continue
 
             status = None
             if email in placed:

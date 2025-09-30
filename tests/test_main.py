@@ -4189,3 +4189,64 @@ def test_job_analytics_filters_by_code_and_creator():
     assert student_entry["status"] == "assigned"
     assert student_entry["clicked"] is True
 
+
+def test_job_analytics_includes_students_without_creator():
+    main_app.redis_client.flushdb()
+
+    career_user = {
+        "institutional_codes": ["1001"],
+        "role": "career",
+        "approved": True,
+    }
+    main_app.redis_client.set("user:career@example.com", json.dumps(career_user))
+
+    student_record = {
+        "first_name": "Casey",
+        "last_name": "Career",
+        "email": "career_student@example.com",
+        "institutional_code": "1001",
+        "student_id": "s3",
+    }
+    main_app.persist_student_record(
+        student_record["email"],
+        student_record,
+        student_record["institutional_code"],
+        student_record["student_id"],
+    )
+
+    job = {
+        "job_code": "JOB2",
+        "job_title": "Another Role",
+        "timestamp": "2024-01-02T00:00:00",
+        "source": "Campus",
+        "assigned_students": [student_record["email"]],
+        "placed_students": [],
+        "uninterested_students": [],
+        "rejected_students": [],
+    }
+    main_app.redis_client.set(f"job:{job['job_code']}", json.dumps(job))
+
+    token = jwt.encode(
+        {
+            "sub": "career@example.com",
+            "role": "career",
+            "exp": datetime.utcnow() + timedelta(hours=1),
+        },
+        JWT_SECRET,
+        algorithm=ALGORITHM,
+    )
+
+    resp = client.get(
+        "/job-analytics",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert len(payload["jobs"]) == 1
+    summary = payload["jobs"][0]
+    assert summary["job_code"] == job["job_code"]
+    assert summary["assigned_count"] == 1
+    assert len(summary["students"]) == 1
+    assert summary["students"][0]["email"] == student_record["email"]
+
