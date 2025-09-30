@@ -3296,6 +3296,87 @@ def list_jobs(current_user: dict = Depends(get_current_user)):
     return {"jobs": jobs}
 
 
+def _build_tracking_lookup() -> dict[tuple[str, str], dict[str, Any]]:
+    """Return cached tracking details keyed by (email, job_code)."""
+
+    lookup: dict[tuple[str, str], dict[str, Any]] = {}
+    token_index: dict[str, tuple[str, str]] = {}
+
+    def _ensure_str(value: Any) -> str | None:
+        if isinstance(value, (bytes, bytearray)):
+            return value.decode("utf-8", "ignore")
+        return value
+
+    try:
+        if hasattr(redis_client, "hscan_iter"):
+            iterator = redis_client.hscan_iter(EMAIL_OPEN_TOKENS_KEY)
+        else:
+            raw_items = redis_client.hashes.get(EMAIL_OPEN_TOKENS_KEY, {}) if hasattr(redis_client, "hashes") else {}
+            iterator = raw_items.items()
+    except Exception:
+        iterator = []
+
+    for raw_token, raw_info in iterator:
+        token = _ensure_str(raw_token)
+        try:
+            info = json.loads(raw_info)
+        except Exception:
+            continue
+        email = normalize_email(info.get("student_email"))
+        job_code = info.get("job_code")
+        if not email or not job_code:
+            continue
+        sent = info.get("sent")
+        key = (email, job_code)
+        token_index[token] = key
+        existing = lookup.get(key)
+        if existing is None or (sent and (existing.get("email_sent") is None or sent > existing.get("email_sent"))):
+            lookup[key] = {
+                "token": token,
+                "email_sent": sent,
+                "first_open": None,
+                "clicked": False,
+            }
+
+    try:
+        if hasattr(redis_client, "lrange"):
+            raw_entries = redis_client.lrange(ACTIVITY_LOG_KEY, 0, -1) or []
+        else:
+            raw_entries = redis_client.lists.get(ACTIVITY_LOG_KEY, []) if hasattr(redis_client, "lists") else []
+    except Exception:
+        raw_entries = []
+
+    for raw in raw_entries:
+        try:
+            entry = json.loads(raw)
+        except Exception:
+            continue
+        token = _ensure_str(entry.get("token"))
+        if not token:
+            continue
+        pair = token_index.get(token)
+        if not pair:
+            continue
+        record = lookup.get(pair)
+        if not record or record.get("token") != token:
+            continue
+        event = entry.get("event")
+        timestamp = entry.get("timestamp")
+        if event == "email_open" and record.get("first_open") is None:
+            record["first_open"] = timestamp
+        elif event == "email_click":
+            record["clicked"] = True
+
+    finalized: dict[tuple[str, str], dict[str, Any]] = {}
+    for key, record in lookup.items():
+        finalized[key] = {
+            "email_sent": record.get("email_sent"),
+            "first_open": record.get("first_open"),
+            "clicked": bool(record.get("clicked")),
+        }
+    return finalized
+
+
 @app.get("/job-analytics")
 def job_analytics(current_user: dict = Depends(get_current_user)):
     """Return aggregated job analytics for authorized staff."""
@@ -3321,6 +3402,7 @@ def job_analytics(current_user: dict = Depends(get_current_user)):
         if role == "career":
             restrict_creator = current_user.get("sub")
 
+    tracking_lookup = _build_tracking_lookup()
     summaries: list[dict[str, Any]] = []
     for key in redis_client.scan_iter("job:*"):
         raw = redis_client.get(key)
@@ -3372,7 +3454,7 @@ def job_analytics(current_user: dict = Depends(get_current_user)):
             elif email in uninterested:
                 status = "uninterested"
 
-            track = _tracking_stats(email, job_code)
+            track = _tracking_stats(email, job_code, tracking_lookup)
             email_sent = track.get("email_sent")
             first_open = track.get("first_open")
             clicked = bool(track.get("clicked"))
@@ -4676,9 +4758,28 @@ def _normalize_notes(value):
     return [], None
 
 
-def _tracking_stats(student_email: str, job_code: str) -> dict:
+def _tracking_stats(
+    student_email: str,
+    job_code: str | None,
+    lookup: dict[tuple[str, str], dict[str, Any]] | None = None,
+) -> dict:
     """Return email tracking info for a student/job pair."""
-    tokens: list[dict] = []
+
+    if not job_code:
+        return {"email_sent": None, "first_open": None, "clicked": False}
+
+    if lookup is not None:
+        key = (normalize_email(student_email), job_code)
+        cached = lookup.get(key)
+        if cached:
+            return {
+                "email_sent": cached.get("email_sent"),
+                "first_open": cached.get("first_open"),
+                "clicked": bool(cached.get("clicked")),
+            }
+        return {"email_sent": None, "first_open": None, "clicked": False}
+
+    tokens: list[dict[str, Any]] = []
     try:
         if hasattr(redis_client, "hscan_iter"):
             iterator = redis_client.hscan_iter(EMAIL_OPEN_TOKENS_KEY)
@@ -4769,6 +4870,7 @@ def _fetch_student_jobs(email: str) -> list[dict]:
     }
     all_codes: set[str] = set().union(*statuses.values())
     jobs_list: list[dict] = []
+    tracking_lookup = _build_tracking_lookup()
     for code in all_codes:
         raw = redis_client.get(f"job:{code}")
         if not raw:
@@ -4789,7 +4891,7 @@ def _fetch_student_jobs(email: str) -> list[dict]:
             status = None
         notes_raw = job.get("student_notes", {}).get(email, [])
         notes, latest_note = _normalize_notes(notes_raw)
-        track = _tracking_stats(email, job.get("job_code"))
+        track = _tracking_stats(email, job.get("job_code"), tracking_lookup)
         jobs_list.append(
             {
                 "job_code": job.get("job_code"),
