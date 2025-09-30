@@ -274,21 +274,44 @@ function StudentProfiles() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!window.EventSource) return;
-    const source = new EventSource('/students/stream');
-    source.onmessage = (e) => {
+    if (!token) return;
+
+    const controller = new AbortController();
+
+    const refreshStudents = async () => {
       try {
-        const data = JSON.parse(e.data);
-        const incoming = Array.isArray(data) ? data : [data];
-        setSchoolStudents((prev) => mergeStudents([...prev, ...incoming]));
+        const response = await fetch('/students/all?limit=50', {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error(`Failed to fetch students: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const incoming = Array.isArray(data?.students)
+          ? data.students
+          : Array.isArray(data)
+            ? data
+            : [];
+
+        if (incoming.length) {
+          setSchoolStudents((prev) => mergeStudents([...prev, ...incoming]));
+        }
       } catch (err) {
-        console.error('Failed to parse student update:', err);
+        if (err.name === 'AbortError') return;
+        console.error('Failed to refresh students:', err);
       }
     };
-    return () => {
-      source.close();
-    };
-  }, []);
+
+    refreshStudents();
+
+    return () => controller.abort();
+  }, [token]);
 
   const toggleRow = (email) => {
     setExpandedRows((prev) => {
