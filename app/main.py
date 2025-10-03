@@ -118,12 +118,14 @@ def all_licenses() -> dict[str, str]:
     return licenses
 
 
-def license_to_code(value: str | None) -> str | None:
+def license_to_code(
+    value: str | None, license_map: dict[str, str] | None = None
+) -> str | None:
     """Return the license code for a given code or label."""
     if not value:
         return value
     val = value.strip()
-    licenses = all_licenses()
+    licenses = license_map or all_licenses()
     low = val.lower()
     if low in licenses:
         return low
@@ -2567,7 +2569,8 @@ async def _perform_match_async(
                 if status != "pending":
                     was_matched_before = True
 
-    required_license = license_to_code(job.get("required_license"))
+    license_map = all_licenses()
+    required_license = license_to_code(job.get("required_license"), license_map)
 
     poster_code = None
     poster_raw = redis_client.get(f"user:{job.get('posted_by')}")
@@ -2763,7 +2766,10 @@ async def _perform_match_async(
                 continue
             if student.get("email") in uninterested_students:
                 continue
-            student_license = license_to_code(student.get("license") or student.get("education_level"))
+            student_license = license_to_code(
+                student.get("license") or student.get("education_level"),
+                license_map,
+            )
             if required_license and student_license != required_license:
                 continue
             candidate_entry = (student, emb)
