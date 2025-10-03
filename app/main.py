@@ -118,12 +118,14 @@ def all_licenses() -> dict[str, str]:
     return licenses
 
 
-def license_to_code(value: str | None) -> str | None:
+def license_to_code(
+    value: str | None, license_map: dict[str, str] | None = None
+) -> str | None:
     """Return the license code for a given code or label."""
     if not value:
         return value
     val = value.strip()
-    licenses = all_licenses()
+    licenses = license_map or all_licenses()
     low = val.lower()
     if low in licenses:
         return low
@@ -2567,7 +2569,8 @@ async def _perform_match_async(
                 if status != "pending":
                     was_matched_before = True
 
-    required_license = license_to_code(job.get("required_license"))
+    license_map = all_licenses()
+    required_license = license_to_code(job.get("required_license"), license_map)
 
     poster_code = None
     poster_raw = redis_client.get(f"user:{job.get('posted_by')}")
@@ -2712,30 +2715,114 @@ async def _perform_match_async(
         job_identifier,
     )
 
+    resolved_student_keys: list[tuple[str, str]] = []
     for email in candidate_emails:
         skey = resolve_student_key(email)
-        student_raw = redis_client.get(skey) if skey else None
-        if not student_raw:
+        if skey:
+            resolved_student_keys.append((email, skey))
+
+    def chunked_pairs(pairs: list, size: int):
+        for i in range(0, len(pairs), size):
+            yield pairs[i : i + size]
+
+    student_fetch_start = time.perf_counter()
+    student_payloads: dict[str, dict] = {}
+    student_hits = 0
+    if resolved_student_keys:
+        for chunk in chunked_pairs(resolved_student_keys, 500):
+            chunk_keys = [key for _, key in chunk]
+            raw_values = redis_client.mget(chunk_keys)
+            for (email, _), raw in zip(chunk, raw_values):
+                if not raw:
+                    continue
+                student_hits += 1
+                try:
+                    student_payloads[email] = json.loads(raw)
+                except Exception:
+                    continue
+    student_fetch_duration = time.perf_counter() - student_fetch_start
+    student_requests = len(resolved_student_keys)
+    student_misses = max(student_requests - student_hits, 0)
+    logger.info(
+        "🧠 Prefetched %d student records for job %s (job_id=%s): hits=%d misses=%d duration=%.2fs",
+        student_requests,
+        job_code,
+        job_identifier,
+        student_hits,
+        student_misses,
+        student_fetch_duration,
+    )
+
+    uninterested_students = set(job.get("uninterested_students", []))
+    ordered_candidates: list[tuple[dict, list] | None] = []
+    user_lookup_entries: list[tuple[int, str]] = []
+    for email in candidate_emails:
+        student = student_payloads.get(email)
+        if not student:
             continue
         try:
-            student = json.loads(student_raw)
             emb = student.get("embedding")
             if not emb:
                 continue
-            if student.get("email") in job.get("uninterested_students", []):
+            if student.get("email") in uninterested_students:
                 continue
-            student_license = license_to_code(student.get("license") or student.get("education_level"))
+            student_license = license_to_code(
+                student.get("license") or student.get("education_level"),
+                license_map,
+            )
             if required_license and student_license != required_license:
                 continue
-            student_user_raw = redis_client.get(f"user:{student.get('email')}")
-            if student_user_raw and poster_code:
-                try:
-                    su = json.loads(student_user_raw)
-                    stu_code = su.get("institutional_code") or su.get("school_code")
-                    if su.get("role") == "applicant" and stu_code != poster_code:
-                        continue
-                except Exception:
-                    pass
+            candidate_entry = (student, emb)
+            ordered_candidates.append(candidate_entry)
+            if poster_code:
+                student_email = student.get("email")
+                user_lookup_entries.append((len(ordered_candidates) - 1, f"user:{student_email}"))
+        except Exception:
+            continue
+
+    user_fetch_duration = 0.0
+    if poster_code and user_lookup_entries:
+        user_fetch_start = time.perf_counter()
+        user_hits = 0
+        user_requests = len(user_lookup_entries)
+        for chunk in chunked_pairs(user_lookup_entries, 500):
+            chunk_keys = [key for _, key in chunk]
+            raw_values = redis_client.mget(chunk_keys)
+            for (candidate_index, _), raw in zip(chunk, raw_values):
+                if raw:
+                    user_hits += 1
+                if raw:
+                    try:
+                        su = json.loads(raw)
+                        stu_code = su.get("institutional_code") or su.get("school_code")
+                        if su.get("role") == "applicant" and stu_code != poster_code:
+                            ordered_candidates[candidate_index] = None
+                    except Exception:
+                        pass
+        user_fetch_duration = time.perf_counter() - user_fetch_start
+        user_misses = max(user_requests - user_hits, 0)
+        logger.info(
+            "🏫 Prefetched %d candidate user records for job %s (job_id=%s): hits=%d misses=%d duration=%.2fs",
+            user_requests,
+            job_code,
+            job_identifier,
+            user_hits,
+            user_misses,
+            user_fetch_duration,
+        )
+
+    base_filtered_candidates = [c for c in ordered_candidates if c is not None]
+    filtering_phase_duration = time.perf_counter() - filtering_perf_start
+    logger.info(
+        "🧹 Initial candidate filtering completed for job %s (job_id=%s) in %.2fs (%d candidates remain)",
+        job_code,
+        job_identifier,
+        filtering_phase_duration,
+        len(base_filtered_candidates),
+    )
+
+    for student, emb in base_filtered_candidates:
+        try:
             coord = (float(student.get("lat")), float(student.get("lng")))
             candidate_coords.append(coord)
             candidates.append((student, emb, coord))
