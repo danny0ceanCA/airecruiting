@@ -257,6 +257,149 @@
   color: #7a8899;
 }
 
+.blast-recipient-status.status-responded,
+.blast-recipient-status.blast-responded {
+  color: #1a7f37;
+}
+
+.blast-recipient-row.responded {
+  background: #f0f8f2;
+}
+
+.blast-recipient-row.responded:nth-child(even) {
+  background: #f0f8f2;
+}
+
+.blast-recipient-row.responded .blast-reply-at.has-reply {
+  font-weight: 700;
+  color: #0f8b45;
+}
+
+.blast-reply-excerpt-cell {
+  max-width: 320px;
+  word-break: break-word;
+}
+
+.blast-reply-excerpt {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.blast-reply-view {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  padding: 0;
+  color: #1b5ed3;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.blast-reply-view:hover,
+.blast-reply-view:focus {
+  text-decoration: underline;
+}
+
+.blast-no-replies-row td {
+  text-align: center;
+  padding: 1.2rem 0.65rem;
+  font-style: italic;
+  color: #5c6f82;
+}
+
+.blast-reply-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  z-index: 1050;
+}
+
+.blast-reply-modal-content {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.18);
+  max-width: 640px;
+  width: 100%;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.blast-reply-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem 0;
+}
+
+.blast-reply-modal-title {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.blast-reply-modal-meta {
+  font-size: 0.85rem;
+  color: #4a5a70;
+  margin-top: 0.35rem;
+}
+
+.blast-reply-modal-close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  color: #4a5a70;
+}
+
+.blast-reply-modal-close:hover,
+.blast-reply-modal-close:focus {
+  color: #1b5ed3;
+}
+
+.blast-reply-modal-body {
+  padding: 0 1.5rem 1.5rem;
+  overflow-y: auto;
+}
+
+.blast-reply-modal-message {
+  white-space: pre-wrap;
+  line-height: 1.55;
+  color: #1d2a3a;
+}
+
+.blast-reply-modal-loading {
+  font-style: italic;
+  color: #4a5a70;
+}
+
+.blast-reply-modal-error {
+  margin: 0.75rem 1.5rem 0;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  background: #ffecec;
+  color: #b12626;
+  font-weight: 600;
+}
+
+@media (max-width: 768px) {
+  .blast-recipient-table th,
+  .blast-recipient-table td {
+    font-size: 0.85rem;
+  }
+
+  .blast-reply-excerpt-cell {
+    max-width: 240px;
+  }
+}
+
 @media (max-width: 1024px) {
   .blast-content {
     flex-direction: column;

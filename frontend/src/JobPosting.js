@@ -70,6 +70,9 @@ function JobPosting() {
     return l ? l.label : code;
   };
   const [modalNotes, setModalNotes] = useState(null);
+  const [replyModalData, setReplyModalData] = useState(null);
+  const [replyModalLoading, setReplyModalLoading] = useState(false);
+  const [replyModalError, setReplyModalError] = useState(null);
 
   const formatDateTime = (value) => {
     if (!value) {
@@ -107,10 +110,73 @@ function JobPosting() {
         return 'Failed';
       case 'opened':
         return 'Opened';
+      case 'responded':
+        return 'Replied';
       case 'pending':
         return 'Pending';
       default:
         return status.charAt(0).toUpperCase() + status.slice(1);
+    }
+  };
+
+  const handleCloseReplyModal = () => {
+    setReplyModalData(null);
+    setReplyModalError(null);
+    setReplyModalLoading(false);
+  };
+
+  const handleViewFullReply = async (recipient) => {
+    if (!recipient) {
+      return;
+    }
+    const respondedAt = recipient.response_at || recipient.reply_at || null;
+    const excerpt = recipient.response_excerpt || '';
+    setReplyModalData({
+      email: recipient.email,
+      respondedAt,
+      body: excerpt
+    });
+    setReplyModalError(null);
+    setReplyModalLoading(false);
+
+    if (!recipient.response_url) {
+      return;
+    }
+
+    setReplyModalLoading(true);
+    try {
+      const resp = await api.get(recipient.response_url);
+      if (!isMountedRef.current) {
+        return;
+      }
+      const data = resp?.data;
+      let body = '';
+      if (typeof data === 'string') {
+        body = data;
+      } else if (data && typeof data === 'object') {
+        body =
+          data.response_body ||
+          data.body ||
+          data.message ||
+          data.content ||
+          '';
+      }
+      setReplyModalData((prev) =>
+        prev
+          ? {
+              ...prev,
+              body: body || excerpt
+            }
+          : prev
+      );
+    } catch (error) {
+      if (isMountedRef.current) {
+        setReplyModalError(error?.response?.data?.detail || 'Unable to load the full reply.');
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setReplyModalLoading(false);
+      }
     }
   };
 
@@ -1277,6 +1343,35 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
 
   return (
     <div className="job-posting-container job-matching-module">
+      {replyModalData && (
+        <div className="blast-reply-modal" role="dialog" aria-modal="true">
+          <div className="blast-reply-modal-content">
+            <div className="blast-reply-modal-header">
+              <div>
+                <h3 className="blast-reply-modal-title">Reply from {replyModalData.email}</h3>
+                {replyModalData.respondedAt && (
+                  <div className="blast-reply-modal-meta">
+                    Replied {formatDateTime(replyModalData.respondedAt)}
+                  </div>
+                )}
+              </div>
+              <button type="button" className="blast-reply-modal-close" onClick={handleCloseReplyModal}>
+                ×
+              </button>
+            </div>
+            {replyModalError && <div className="blast-reply-modal-error">{replyModalError}</div>}
+            <div className="blast-reply-modal-body">
+              {replyModalLoading ? (
+                <div className="blast-reply-modal-loading">Loading full reply…</div>
+              ) : (
+                <div className="blast-reply-modal-message">
+                  {replyModalData.body ? replyModalData.body : 'No reply content available.'}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       <AdminMenu>
         {userRole === "admin" && (
           <button
@@ -1496,6 +1591,13 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
                                       const detailBlast = detail.blast || blast;
                                       const detailStats = detail.stats || stats;
                                       const recipients = detail.recipients || [];
+                                      const hasReplies = recipients.some(
+                                        (recipient) =>
+                                          recipient?.status === 'responded' ||
+                                          recipient?.response_at ||
+                                          recipient?.reply_at ||
+                                          recipient?.response_excerpt
+                                      );
                                       const filters = detailBlast.filters || blast.filters || {};
                                       return (
                                         <div className="blast-detail">
@@ -1533,21 +1635,74 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
                                                     <th>First Open</th>
                                                     <th>Last Open</th>
                                                     <th>Opens</th>
+                                                    <th>Reply At</th>
+                                                    <th>Reply Excerpt</th>
                                                   </tr>
                                                 </thead>
                                                 <tbody>
-                                                  {recipients.map((recipient) => (
-                                                    <tr key={recipient.email}>
-                                                      <td>{recipient.email}</td>
-                                                      <td className={`blast-recipient-status status-${recipient.status || 'pending'}`}>
-                                                        {blastStatusLabel(recipient.status)}
-                                                      </td>
-                                                      <td>{formatDateTime(recipient.sent_at)}</td>
-                                                      <td>{formatDateTime(recipient.first_open)}</td>
-                                                      <td>{formatDateTime(recipient.last_open)}</td>
-                                                      <td className="blast-metric">{recipient.opens ?? 0}</td>
+                                                  {recipients.map((recipient) => {
+                                                    const rawStatus = recipient.status || 'pending';
+                                                    const respondedAt = recipient.response_at || recipient.reply_at;
+                                                    const hasResponse =
+                                                      rawStatus === 'responded' ||
+                                                      Boolean(respondedAt) ||
+                                                      Boolean(recipient.response_excerpt);
+                                                    const statusKey = hasResponse ? 'responded' : rawStatus;
+                                                    const excerpt = recipient.response_excerpt;
+                                                    const showFullReply = Boolean(
+                                                      recipient.response_url ||
+                                                        (excerpt && excerpt.length >= 200)
+                                                    );
+                                                    return (
+                                                      <tr
+                                                        key={recipient.email}
+                                                        className={`blast-recipient-row ${
+                                                          hasResponse ? 'responded' : ''
+                                                        }`}
+                                                      >
+                                                        <td>{recipient.email}</td>
+                                                        <td
+                                                          className={`blast-recipient-status status-${statusKey} ${
+                                                            hasResponse ? 'blast-responded' : ''
+                                                          }`}
+                                                        >
+                                                          {blastStatusLabel(statusKey)}
+                                                        </td>
+                                                        <td>{formatDateTime(recipient.sent_at)}</td>
+                                                        <td>{formatDateTime(recipient.first_open)}</td>
+                                                        <td>{formatDateTime(recipient.last_open)}</td>
+                                                        <td className="blast-metric">{recipient.opens ?? 0}</td>
+                                                        <td className={`blast-reply-at ${hasResponse ? 'has-reply' : ''}`}>
+                                                          {respondedAt ? formatDateTime(respondedAt) : '—'}
+                                                        </td>
+                                                        <td className="blast-reply-excerpt-cell">
+                                                          {excerpt || showFullReply ? (
+                                                            <div className="blast-reply-excerpt">
+                                                              <span>{excerpt || 'Full reply available'}</span>
+                                                              {showFullReply && (
+                                                                <button
+                                                                  type="button"
+                                                                  className="blast-reply-view"
+                                                                  onClick={() => handleViewFullReply(recipient)}
+                                                                >
+                                                                  View full reply
+                                                                </button>
+                                                              )}
+                                                            </div>
+                                                          ) : hasResponse ? (
+                                                            <span>No reply yet</span>
+                                                          ) : (
+                                                            <span>—</span>
+                                                          )}
+                                                        </td>
+                                                      </tr>
+                                                    );
+                                                  })}
+                                                  {!hasReplies && (
+                                                    <tr className="blast-no-replies-row">
+                                                      <td colSpan={8}>No replies yet.</td>
                                                     </tr>
-                                                  ))}
+                                                  )}
                                                 </tbody>
                                               </table>
                                             )}
