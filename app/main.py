@@ -20,6 +20,7 @@ from fastapi import (
     File,
     Header,
     HTTPException,
+    Form,
     Request,
     UploadFile,
 )
@@ -444,7 +445,8 @@ def send_email(
     html_body: str | None = None,
     attachments: list[tuple[str, bytes | str, str]] | None = None,
     track_token: str | None = None,
-) -> None:
+    reply_token: str | None = None,
+) -> str:
     """Send an email with optional attachments.
 
     Raises a RuntimeError if SMTP settings are missing or if sending fails so
@@ -457,6 +459,16 @@ def send_email(
         msg["From"] = EMAIL_SENDER
         msg["To"] = recipient
         msg["Subject"] = subject
+
+        reply_to = EMAIL_SENDER
+        if reply_token:
+            try:
+                _, domain = EMAIL_SENDER.split("@", 1)
+            except ValueError:
+                domain = ""
+            if domain:
+                reply_to = f"blast+{reply_token}@{domain}"
+        msg["Reply-To"] = reply_to
 
         text_body = body
         html_part = html_body or body
@@ -490,6 +502,7 @@ def send_email(
                 s.login(SMTP_USER, SMTP_PASSWORD)
             s.send_message(msg)
         logger.info("[email] Sent notification to %s", recipient)
+        return reply_to
     except Exception as e:
         logger.error("[email] Failed to send email to %s: %s", recipient, e)
         raise
@@ -1127,6 +1140,143 @@ def track_click(token: str):
             except Exception as e:
                 logger.error("Failed to persist aggregated click metadata: %s", e)
     return RedirectResponse(url=external_url)
+
+
+def _resolve_blast_response_token(token: str) -> dict[str, Any]:
+    info_raw = redis_client.hget(EMAIL_OPEN_TOKENS_KEY, token)
+    if not info_raw:
+        raise HTTPException(status_code=404, detail="Response link not found")
+    try:
+        info = json.loads(info_raw)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Response link not found")
+    if not isinstance(info, dict):
+        raise HTTPException(status_code=404, detail="Response link not found")
+    blast_id = info.get("blast_id")
+    recipient = info.get("recipient")
+    if not blast_id or not recipient:
+        raise HTTPException(status_code=404, detail="Response link not found")
+    return info
+
+
+@app.get("/blast-response/{token}", response_class=HTMLResponse)
+def get_blast_response_form(token: str):
+    info = _resolve_blast_response_token(token)
+    subject = escape(str(info.get("subject") or ""))
+    recipient = escape(str(info.get("recipient") or ""))
+    heading = "Respond to message"
+    if subject:
+        heading = f"Respond to: {subject}"
+    content = f"""<!DOCTYPE html>
+<html lang=\"en\">
+<head>
+    <meta charset=\"utf-8\" />
+    <title>{heading}</title>
+    <style>
+        body {{ font-family: Arial, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; }}
+        textarea {{ width: 100%; min-height: 10rem; padding: 0.5rem; font-size: 1rem; }}
+        button {{ margin-top: 1rem; padding: 0.5rem 1.5rem; font-size: 1rem; cursor: pointer; }}
+        .meta {{ color: #555; margin-bottom: 1rem; }}
+        form {{ display: flex; flex-direction: column; }}
+        label {{ font-weight: 600; margin-bottom: 0.5rem; }}
+    </style>
+</head>
+<body>
+    <h1>{heading}</h1>
+    <p class=\"meta\">You are replying as <strong>{recipient or "student"}</strong>.</p>
+    <form method=\"post\">
+        <label for=\"response\">Your reply</label>
+        <textarea id=\"response\" name=\"response\" required></textarea>
+        <button type=\"submit\">Submit</button>
+    </form>
+</body>
+</html>"""
+    return HTMLResponse(content=content)
+
+
+@app.post("/blast-response/{token}", response_class=HTMLResponse)
+async def submit_blast_response(
+    token: str,
+    request: Request,
+    response: str | None = Form(default=None),
+):
+    info = _resolve_blast_response_token(token)
+    if response is None:
+        try:
+            payload = await request.json()
+        except Exception:
+            payload = {}
+        if isinstance(payload, dict):
+            response = payload.get("response")
+    if response is None or not str(response).strip():
+        raise HTTPException(status_code=400, detail="Response is required")
+
+    response_text = str(response).strip()
+    excerpt = response_text[:200]
+    timestamp = datetime.now(timezone.utc).isoformat()
+
+    blast_id = info.get("blast_id")
+    recipient = info.get("recipient")
+    stats_key = _blast_stats_key(blast_id)
+    recipients_key = _blast_recipients_key(blast_id)
+
+    try:
+        raw_state = redis_client.hget(recipients_key, recipient)
+        state = json.loads(raw_state) if raw_state else {"email": recipient}
+    except Exception:
+        state = {"email": recipient}
+
+    previously_responded = state.get("status") == "responded"
+    state["status"] = "responded"
+    state["response_at"] = timestamp
+    state["response_body"] = response_text
+    state["response_excerpt"] = excerpt
+
+    try:
+        redis_client.hset(recipients_key, recipient, json.dumps(state))
+    except Exception as e:
+        logger.error("Failed to persist blast response: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to record response")
+
+    if not previously_responded:
+        try:
+            _hash_incr(stats_key, "responses", 1)
+        except Exception as e:
+            logger.error("Failed to increment blast response count: %s", e)
+
+    info["response_at"] = timestamp
+    info["response_excerpt"] = excerpt
+    try:
+        redis_client.hset(EMAIL_OPEN_TOKENS_KEY, token, json.dumps(info))
+    except Exception as e:
+        logger.error("Failed to persist response metadata on token: %s", e)
+
+    log_entry = {
+        "timestamp": timestamp,
+        "event": "email_reply",
+        "blast_id": blast_id,
+        "token": token,
+        "recipient": recipient,
+        "excerpt": excerpt,
+    }
+    try:
+        redis_client.rpush(ACTIVITY_LOG_KEY, json.dumps(log_entry))
+    except Exception as e:
+        logger.error("Failed to log blast response: %s", e)
+
+    confirmation = """<!DOCTYPE html>
+<html lang=\"en\">
+<head>
+    <meta charset=\"utf-8\" />
+    <title>Response recorded</title>
+    <style>body {{ font-family: Arial, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; }}</style>
+</head>
+<body>
+    <h1>Thank you</h1>
+    <p>Your reply has been recorded.</p>
+</body>
+</html>"""
+    return HTMLResponse(content=confirmation)
 
 @app.get("/school-codes")
 def school_codes():
@@ -2731,10 +2881,18 @@ async def _perform_match_async(
     if resolved_student_keys:
         for chunk in chunked_pairs(resolved_student_keys, 500):
             chunk_keys = [key for _, key in chunk]
-            raw_values = redis_client.mget(chunk_keys)
-            for (email, _), raw in zip(chunk, raw_values):
+            try:
+                raw_values = redis_client.mget(chunk_keys)
+            except AttributeError:
+                raw_values = [redis_client.get(key) for key in chunk_keys]
+            for (email, key), raw in zip(chunk, raw_values):
                 if not raw:
-                    continue
+                    try:
+                        raw = redis_client.get(key)
+                    except Exception:
+                        raw = None
+                    if not raw:
+                        continue
                 student_hits += 1
                 try:
                     student_payloads[email] = json.loads(raw)
@@ -2787,11 +2945,18 @@ async def _perform_match_async(
         user_requests = len(user_lookup_entries)
         for chunk in chunked_pairs(user_lookup_entries, 500):
             chunk_keys = [key for _, key in chunk]
-            raw_values = redis_client.mget(chunk_keys)
-            for (candidate_index, _), raw in zip(chunk, raw_values):
+            try:
+                raw_values = redis_client.mget(chunk_keys)
+            except AttributeError:
+                raw_values = [redis_client.get(key) for key in chunk_keys]
+            for (candidate_index, key), raw in zip(chunk, raw_values):
+                if not raw:
+                    try:
+                        raw = redis_client.get(key)
+                    except Exception:
+                        raw = None
                 if raw:
                     user_hits += 1
-                if raw:
                     try:
                         su = json.loads(raw)
                         stu_code = su.get("institutional_code") or su.get("school_code")
@@ -5241,6 +5406,7 @@ def send_email_blast(req: EmailBlastRequest, current_user: dict = Depends(get_cu
                 "failed": 0,
                 "unique_opens": 0,
                 "total_opens": 0,
+                "responses": 0,
             },
         )
     except Exception as e:
@@ -5263,6 +5429,8 @@ def send_email_blast(req: EmailBlastRequest, current_user: dict = Depends(get_cu
             "first_open": None,
             "clicked": False,
         }
+        response_url = f"{SITE_BASE_URL}/blast-response/{token}" if SITE_BASE_URL else f"/blast-response/{token}"
+        token_payload["response_url"] = response_url
         try:
             redis_client.hset(
                 EMAIL_OPEN_TOKENS_KEY, token, json.dumps(token_payload)
@@ -5278,16 +5446,20 @@ def send_email_blast(req: EmailBlastRequest, current_user: dict = Depends(get_cu
             "opens": 0,
             "first_open": None,
             "last_open": None,
+            "response_url": response_url,
         }
 
         try:
-            send_email(
+            reply_to_address = send_email(
                 recipient_email,
                 req.subject,
                 personalized_body,
                 html_body=personalized_html,
                 track_token=token,
+                reply_token=token,
             )
+            if reply_to_address:
+                recipient_state["reply_to"] = reply_to_address
             sent += 1
             recipient_state["status"] = "sent"
             try:

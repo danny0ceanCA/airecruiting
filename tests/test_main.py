@@ -730,11 +730,18 @@ def test_create_student_sends_welcome_email(monkeypatch):
     captured: dict[str, str] = {}
 
     def fake_send_email(
-        recipient, subject, body, html_body=None, attachments=None, track_token=None
+        recipient,
+        subject,
+        body,
+        html_body=None,
+        attachments=None,
+        track_token=None,
+        reply_token=None,
     ):
         captured["recipient"] = recipient
         captured["subject"] = subject
         captured["body"] = body
+        return main_app.EMAIL_SENDER
 
     monkeypatch.setattr(main_app, "send_email", fake_send_email)
 
@@ -814,11 +821,18 @@ def test_applicant_created_student_sends_welcome_email(monkeypatch):
     captured: dict[str, str] = {}
 
     def fake_send_email(
-        recipient, subject, body, html_body=None, attachments=None, track_token=None
+        recipient,
+        subject,
+        body,
+        html_body=None,
+        attachments=None,
+        track_token=None,
+        reply_token=None,
     ):
         captured["recipient"] = recipient
         captured["subject"] = subject
         captured["body"] = body
+        return main_app.EMAIL_SENDER
 
     monkeypatch.setattr(main_app, "send_email", fake_send_email)
 
@@ -863,10 +877,19 @@ def test_welcome_email_generic_institution_when_label_missing(monkeypatch):
 
     captured: dict[str, str] = {}
 
-    def fake_send_email(recipient, subject, body, html_body=None, attachments=None, track_token=None):
+    def fake_send_email(
+        recipient,
+        subject,
+        body,
+        html_body=None,
+        attachments=None,
+        track_token=None,
+        reply_token=None,
+    ):
         captured["recipient"] = recipient
         captured["subject"] = subject
         captured["body"] = body
+        return main_app.EMAIL_SENDER
 
     monkeypatch.setattr(main_app, "send_email", fake_send_email)
     monkeypatch.setattr(main_app, "get_school_label", lambda code: "9999 - West Coast University")
@@ -958,8 +981,17 @@ def test_admin_send_welcome_emails_resend(monkeypatch):
 
     sent_messages: list[tuple[str, str, str]] = []
 
-    def fake_send_email(recipient, subject, body, html_body=None, attachments=None, track_token=None):
+    def fake_send_email(
+        recipient,
+        subject,
+        body,
+        html_body=None,
+        attachments=None,
+        track_token=None,
+        reply_token=None,
+    ):
         sent_messages.append((recipient, subject, body))
+        return main_app.EMAIL_SENDER
 
     monkeypatch.setattr(main_app, "send_email", fake_send_email)
 
@@ -3054,10 +3086,19 @@ def test_admin_test_notification(monkeypatch):
 
     sent = {}
 
-    def fake_send_email(recipient, subject, body, html_body=None, attachments=None, track_token=None):
+    def fake_send_email(
+        recipient,
+        subject,
+        body,
+        html_body=None,
+        attachments=None,
+        track_token=None,
+        reply_token=None,
+    ):
         sent["recipient"] = recipient
         sent["subject"] = subject
         sent["body"] = body
+        return main_app.EMAIL_SENDER
 
     monkeypatch.setattr(main_app, "send_email", fake_send_email)
 
@@ -3194,6 +3235,7 @@ def test_email_blast_sends_to_matching_students(monkeypatch):
         html_body=None,
         attachments=None,
         track_token=None,
+        reply_token=None,
     ):
         sent.append(
             {
@@ -3202,8 +3244,10 @@ def test_email_blast_sends_to_matching_students(monkeypatch):
                 "body": body,
                 "html_body": html_body,
                 "track_token": track_token,
+                "reply_token": reply_token,
             }
         )
+        return main_app.EMAIL_SENDER
 
     monkeypatch.setattr(main_app, "send_email", fake_send)
 
@@ -3233,6 +3277,7 @@ def test_email_blast_sends_to_matching_students(monkeypatch):
     assert sent[0]["track_token"]
     assert sent[0]["html_body"] == "Hi Sam, please review the latest opportunity."
     assert sent[0]["body"] == "Hi Sam, please review the latest opportunity."
+    assert sent[0]["reply_token"] == sent[0]["track_token"]
 
     blast_id = data["blast_id"]
     token_val = sent[0]["track_token"]
@@ -3242,6 +3287,7 @@ def test_email_blast_sends_to_matching_students(monkeypatch):
     mapping = json.loads(mapping_raw)
     assert mapping["blast_id"] == blast_id
     assert mapping["recipient"] == "sam@example.com"
+    assert mapping["response_url"] == f"/blast-response/{token_val}"
 
     recipient_state_raw = main_app.redis_client.hget(
         main_app._blast_recipients_key(blast_id), "sam@example.com"
@@ -3250,10 +3296,12 @@ def test_email_blast_sends_to_matching_students(monkeypatch):
     recipient_state = json.loads(recipient_state_raw)
     assert recipient_state["status"] == "sent"
     assert recipient_state["opens"] == 0
+    assert recipient_state["response_url"] == f"/blast-response/{token_val}"
 
     stats_raw = main_app._hash_getall(main_app._blast_stats_key(blast_id))
     assert main_app._safe_int(stats_raw.get("sent")) == 1
     assert main_app._safe_int(stats_raw.get("matched")) == 1
+    assert main_app._safe_int(stats_raw.get("responses")) == 0
 
     raw_logs = main_app.redis_client.lists.get(main_app.ACTIVITY_LOG_KEY, [])
     parsed_logs = [json.loads(item) for item in raw_logs]
@@ -3279,6 +3327,7 @@ def test_email_blast_sends_to_matching_students(monkeypatch):
     assert detail["stats"]["unique_opens"] == 0
     assert len(detail["recipients"]) == 1
     assert detail["recipients"][0]["status"] == "sent"
+    assert detail["recipients"][0]["response_url"] == f"/blast-response/{token_val}"
 
     track_resp = client.get(f"/track/open/{token_val}.png")
     assert track_resp.status_code == 200
@@ -3292,6 +3341,48 @@ def test_email_blast_sends_to_matching_students(monkeypatch):
     assert detail_payload["stats"]["total_opens"] == 1
     assert detail_payload["recipients"][0]["opens"] == 1
     assert detail_payload["recipients"][0]["status"] == "opened"
+
+    form_resp = client.get(f"/blast-response/{token_val}")
+    assert form_resp.status_code == 200
+    assert "<form" in form_resp.text.lower()
+
+    reply_text = "Thanks for the update!"
+    submit_resp = client.post(
+        f"/blast-response/{token_val}", data={"response": reply_text}
+    )
+    assert submit_resp.status_code == 200
+    assert "thank you" in submit_resp.text.lower()
+
+    updated_state_raw = main_app.redis_client.hget(
+        main_app._blast_recipients_key(blast_id), "sam@example.com"
+    )
+    updated_state = json.loads(updated_state_raw)
+    assert updated_state["status"] == "responded"
+    assert updated_state["response_body"] == reply_text
+    assert updated_state["response_excerpt"] == reply_text
+    assert "response_at" in updated_state and updated_state["response_at"]
+    assert updated_state["opens"] == 1
+
+    stats_after_response = main_app._hash_getall(main_app._blast_stats_key(blast_id))
+    assert main_app._safe_int(stats_after_response.get("responses")) == 1
+
+    raw_logs_after = main_app.redis_client.lists.get(main_app.ACTIVITY_LOG_KEY, [])
+    parsed_after = [json.loads(item) for item in raw_logs_after]
+    reply_logs = [entry for entry in parsed_after if entry.get("event") == "email_reply"]
+    assert reply_logs
+    assert reply_logs[-1]["blast_id"] == blast_id
+    assert reply_logs[-1]["token"] == token_val
+
+    detail_after_reply = client.get(
+        f"/email-blasts/{blast_id}", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert detail_after_reply.status_code == 200
+    payload_after_reply = detail_after_reply.json()
+    assert payload_after_reply["stats"]["responses"] == 1
+    recipient_after_reply = payload_after_reply["recipients"][0]
+    assert recipient_after_reply["status"] == "responded"
+    assert recipient_after_reply["response_excerpt"] == reply_text
+    assert recipient_after_reply["response_at"]
 
 
 def test_email_blast_first_name_fallback(monkeypatch):
@@ -3320,6 +3411,7 @@ def test_email_blast_first_name_fallback(monkeypatch):
         html_body=None,
         attachments=None,
         track_token=None,
+        reply_token=None,
     ):
         captured.update(
             {
@@ -3329,6 +3421,7 @@ def test_email_blast_first_name_fallback(monkeypatch):
                 "html_body": html_body,
             }
         )
+        return main_app.EMAIL_SENDER
 
     monkeypatch.setattr(main_app, "send_email", fake_send)
 
@@ -3352,6 +3445,19 @@ def test_email_blast_first_name_fallback(monkeypatch):
     assert captured["recipient"] == student["email"]
     assert captured["body"] == "Hello there, welcome aboard!"
     assert captured["html_body"] == "Hello there, welcome aboard!"
+
+
+def test_blast_response_invalid_token():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    form_resp = client.get("/blast-response/not-a-real-token")
+    assert form_resp.status_code == 404
+
+    post_resp = client.post(
+        "/blast-response/not-a-real-token", data={"response": "Hello"}
+    )
+    assert post_resp.status_code == 404
 
 
 def test_email_blast_requires_admin_role():
