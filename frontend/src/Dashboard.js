@@ -43,7 +43,7 @@ function Dashboard() {
             <Link to="/students" className="dashboard-tile">Student Profiles</Link>
             <Link to="/metrics" className="dashboard-tile">School Metrics</Link>
             <Link to="/career-info" className="dashboard-tile">Career Staff Information</Link>
-            <Link to="/recruiter/jobs" className="dashboard-tile">Jobs</Link>
+            <Link to="/recruiter/jobs" className="dashboard-tile">Job Matching</Link>
           </>
         )}
 

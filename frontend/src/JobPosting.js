@@ -324,6 +324,7 @@ function JobPosting() {
   const isAdmin = userRole === 'admin' || userRole === 'junior_admin';
   const isRecruiter = userRole === 'recruiter';
   const isCareer = userRole === 'career' || userRole === 'career_director';
+  const canUseBlast = isAdmin || isRecruiter;
   const canAccessJobsPage = isAdmin || isRecruiter || isCareer;
   const shouldRedirect = !canAccessJobsPage;
 
@@ -510,6 +511,12 @@ function JobPosting() {
     },
     [loadMatchResults, stopPollingJob, token]
   );
+
+  useEffect(() => {
+    if (!canUseBlast && activeTab === 'blast') {
+      setActiveTab('jobs');
+    }
+  }, [activeTab, canUseBlast]);
 
   useEffect(() => {
     return () => {
@@ -1321,15 +1328,17 @@ function JobPosting() {
         >
           Post a Job
         </button>
-        <button
-          className={`tab ${activeTab === 'blast' ? 'active' : ''}`}
-          onClick={() => setActiveTab('blast')}
-        >
-          Email Blast
-        </button>
+        {canUseBlast && (
+          <button
+            className={`tab ${activeTab === 'blast' ? 'active' : ''}`}
+            onClick={() => setActiveTab('blast')}
+          >
+            Email Blast
+          </button>
+        )}
       </div>
       <div className="tab-content">
-        {activeTab === 'blast' && (
+        {activeTab === 'blast' && canUseBlast && (
           <div className="blast-content">
             <div className="blast-panel">
               <form className="blast-form" onSubmit={handleBlastSubmit}>
