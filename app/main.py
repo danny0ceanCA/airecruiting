@@ -2280,6 +2280,8 @@ def create_job(job: JobRequest, current_user: dict = Depends(get_current_user)):
     data["required_license"] = license_to_code(data.get("required_license"))
     user_email = current_user.get("sub")
     user_role = current_user.get("role")
+    if user_role not in ADMIN_ROLES | {"recruiter"} | CAREER_STAFF_ROLES:
+        raise HTTPException(status_code=403, detail="Not authorized to create jobs")
     # Autopopulate source for recruiters if missing or blank
     if user_role == "recruiter" or not data.get("source"):
         raw_user = redis_client.get(f"user:{user_email}")
@@ -2732,7 +2734,9 @@ async def _perform_match_async(
         for chunk in chunked_pairs(resolved_student_keys, 500):
             chunk_keys = [key for _, key in chunk]
             raw_values = redis_client.mget(chunk_keys)
-            for (email, _), raw in zip(chunk, raw_values):
+            for (email, key), raw in zip(chunk, raw_values):
+                if not raw and hasattr(redis_client, "get"):
+                    raw = redis_client.get(key)
                 if not raw:
                     continue
                 student_hits += 1
@@ -2788,7 +2792,9 @@ async def _perform_match_async(
         for chunk in chunked_pairs(user_lookup_entries, 500):
             chunk_keys = [key for _, key in chunk]
             raw_values = redis_client.mget(chunk_keys)
-            for (candidate_index, _), raw in zip(chunk, raw_values):
+            for (candidate_index, key), raw in zip(chunk, raw_values):
+                if not raw and hasattr(redis_client, "get"):
+                    raw = redis_client.get(key)
                 if raw:
                     user_hits += 1
                 if raw:
@@ -3384,6 +3390,8 @@ def has_match_data(job_id: str):
 
 @app.get("/jobs")
 def list_jobs(current_user: dict = Depends(get_current_user)):
+    role = current_user.get("role")
+    user_email = current_user.get("sub")
     jobs = []
     for key in redis_client.scan_iter("job:*"):
         job_data = redis_client.get(key)
@@ -3395,6 +3403,9 @@ def list_jobs(current_user: dict = Depends(get_current_user)):
             job.setdefault("rejected_students", [])
             job.setdefault("student_notes", {})
             jobs.append(job)
+
+    if role not in ADMIN_ROLES:
+        jobs = [job for job in jobs if job.get("posted_by") == user_email]
 
     def _timestamp_value(job: dict[str, Any]) -> float:
         raw = job.get("timestamp")

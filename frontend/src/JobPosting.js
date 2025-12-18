@@ -320,9 +320,12 @@ function JobPosting() {
   const token = localStorage.getItem('token');
   const decoded = token ? jwtDecode(token) : {};
   const userRole = decoded?.role;
-const { sub: email } = decoded;
-const isRecruiter = userRole === 'recruiter';
-const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && userRole !== 'recruiter';
+  const { sub: email } = decoded;
+  const isAdmin = userRole === 'admin' || userRole === 'junior_admin';
+  const isRecruiter = userRole === 'recruiter';
+  const isCareer = userRole === 'career' || userRole === 'career_director';
+  const canAccessJobsPage = isAdmin || isRecruiter || isCareer;
+  const shouldRedirect = !canAccessJobsPage;
 
 
   const formatJobDate = (value) => {
@@ -353,10 +356,10 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
         headers: { Authorization: `Bearer ${token}` }
       });
       const allJobs = resp.data.jobs || [];
-      const filtered = isRecruiter
-        ? allJobs.filter((job) => job.posted_by === email)
-        : allJobs;
-      const sorted = [...filtered].sort((a, b) => {
+      const visibleJobs = isAdmin
+        ? allJobs
+        : allJobs.filter((job) => job.posted_by === email);
+      const sorted = [...visibleJobs].sort((a, b) => {
         const aTime = a?.timestamp ? new Date(a.timestamp).getTime() : 0;
         const bTime = b?.timestamp ? new Date(b.timestamp).getTime() : 0;
         const safeATime = Number.isNaN(aTime) ? 0 : aTime;
@@ -1274,6 +1277,7 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
     return codeMatch && titleMatch && sourceMatch && createdMatch;
   };
   const filteredJobs = jobs.filter(matchFilter);
+  const jobsTabLabel = isCareer ? 'My Jobs' : 'Jobs';
 
   return (
     <div className="job-posting-container job-matching-module">
@@ -1309,7 +1313,7 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
           className={`tab ${activeTab === 'jobs' ? 'active' : ''}`}
           onClick={() => setActiveTab('jobs')}
         >
-          Jobs
+          {jobsTabLabel}
         </button>
         <button
           className={`tab ${activeTab === 'post' ? 'active' : ''}`}
@@ -1768,7 +1772,7 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
                         if (!isExpanded) {
                           setActiveSubtab((prev) => ({
                             ...prev,
-                            [job.job_code]: 'matches',
+                            [job.job_code]: isCareer ? 'details' : 'matches',
                           }));
                         }
                       }}
@@ -1837,24 +1841,57 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
                     </td>
                   )}
                   <td>
-                    {(() => {
-                      const matchListLength = matches[job.job_code]?.length || 0;
-                      const hasMatchInRedis = matchPresence[job.job_code] === true;
-                      const assignedCount = job.assigned_students?.length || 0;
-                      const hasStoredMatches =
-                        hasMatchInRedis || matchListLength > 0 || assignedCount > 0;
-                      console.debug(
-                        `🧠 [debug] Job ${job.job_code} button render -> matchPresence: ${hasMatchInRedis}, stored length: ${matchListLength}. Showing ${hasStoredMatches ? 'View Matches + Match Again' : 'Match only'} buttons.`
-                      );
+                    {isCareer ? (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const isExpanded = expandedJob === job.job_code;
+                          setExpandedJob(isExpanded ? null : job.job_code);
+                          setActiveSubtab((prev) => ({
+                            ...prev,
+                            [job.job_code]: 'details',
+                          }));
+                        }}
+                      >
+                        View Details
+                      </button>
+                    ) : (
+                      (() => {
+                        const matchListLength = matches[job.job_code]?.length || 0;
+                        const hasMatchInRedis = matchPresence[job.job_code] === true;
+                        const assignedCount = job.assigned_students?.length || 0;
+                        const hasStoredMatches =
+                          hasMatchInRedis || matchListLength > 0 || assignedCount > 0;
+                        console.debug(
+                          `🧠 [debug] Job ${job.job_code} button render -> matchPresence: ${hasMatchInRedis}, stored length: ${matchListLength}. Showing ${hasStoredMatches ? 'View Matches + Match Again' : 'Match only'} buttons.`
+                        );
 
-                      return hasStoredMatches ? (
-                        <>
+                        return hasStoredMatches ? (
+                          <>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (hasMatchInRedis && !matches[job.job_code]) {
+                                  loadMatchResults(job.job_code);
+                                }
+                                setExpandedJob(job.job_code);
+                                setActiveSubtab((prev) => ({
+                                  ...prev,
+                                  [job.job_code]: 'matches',
+                                }));
+                              }}
+                            >
+                              View Matches
+                            </button>
+                            <button onClick={() => handleRematch(job.job_code)}>
+                              Match Again
+                            </button>
+                          </>
+                        ) : (
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              if (hasMatchInRedis && !matches[job.job_code]) {
-                                loadMatchResults(job.job_code);
-                              }
+                              handleMatch(job.job_code);
                               setExpandedJob(job.job_code);
                               setActiveSubtab((prev) => ({
                                 ...prev,
@@ -1862,28 +1899,11 @@ const shouldRedirect = userRole !== 'admin' && userRole !== 'junior_admin' && us
                               }));
                             }}
                           >
-                            View Matches
+                            Match
                           </button>
-                          <button onClick={() => handleRematch(job.job_code)}>
-                            Match Again
-                          </button>
-                        </>
-                      ) : (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleMatch(job.job_code);
-                            setExpandedJob(job.job_code);
-                            setActiveSubtab((prev) => ({
-                              ...prev,
-                              [job.job_code]: 'matches',
-                            }));
-                          }}
-                        >
-                          Match
-                        </button>
-                      );
-                    })()}
+                        );
+                      })()
+                    )}
                   </td>
                 </tr>
                 {expandedJob === job.job_code && (
