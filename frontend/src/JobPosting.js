@@ -324,6 +324,7 @@ function JobPosting() {
   const isAdmin = userRole === 'admin' || userRole === 'junior_admin';
   const isRecruiter = userRole === 'recruiter';
   const isCareer = userRole === 'career' || userRole === 'career_director';
+  const canMatchJobs = isAdmin || isRecruiter || isCareer;
   const canUseBlast = isAdmin || isRecruiter;
   const canAccessJobsPage = isAdmin || isRecruiter || isCareer;
   const shouldRedirect = !canAccessJobsPage;
@@ -832,7 +833,7 @@ function JobPosting() {
       jobCode: job.job_code,
       studentEmail: row.email,
       canAdd:
-        isRecruiter &&
+        (isAdmin || isRecruiter || isCareer) &&
         job.posted_by === email &&
         row.status === 'assigned',
       onSaved: (newNote) => {
@@ -1781,7 +1782,7 @@ function JobPosting() {
                         if (!isExpanded) {
                           setActiveSubtab((prev) => ({
                             ...prev,
-                            [job.job_code]: isCareer ? 'details' : 'matches',
+                            [job.job_code]: 'matches',
                           }));
                         }
                       }}
@@ -1850,21 +1851,7 @@ function JobPosting() {
                     </td>
                   )}
                   <td>
-                    {isCareer ? (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const isExpanded = expandedJob === job.job_code;
-                          setExpandedJob(isExpanded ? null : job.job_code);
-                          setActiveSubtab((prev) => ({
-                            ...prev,
-                            [job.job_code]: 'details',
-                          }));
-                        }}
-                      >
-                        View Details
-                      </button>
-                    ) : (
+                    {canMatchJobs ? (
                       (() => {
                         const matchListLength = matches[job.job_code]?.length || 0;
                         const hasMatchInRedis = matchPresence[job.job_code] === true;
@@ -1912,6 +1899,20 @@ function JobPosting() {
                           </button>
                         );
                       })()
+                    ) : (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const isExpanded = expandedJob === job.job_code;
+                          setExpandedJob(isExpanded ? null : job.job_code);
+                          setActiveSubtab((prev) => ({
+                            ...prev,
+                            [job.job_code]: 'details',
+                          }));
+                        }}
+                      >
+                        View Details
+                      </button>
                     )}
                   </td>
                 </tr>

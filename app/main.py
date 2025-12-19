@@ -2389,6 +2389,18 @@ def match_job(
     """Launch a background matching job and return immediately."""
 
     job_id = str(uuid.uuid4())
+    job_key = f"job:{req.job_code}"
+    job_raw = redis_client.get(job_key)
+    if not job_raw:
+        raise HTTPException(status_code=404, detail="Job not found")
+    try:
+        job = json.loads(job_raw)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Malformed job record")
+
+    role = current_user.get("role")
+    if role not in ADMIN_ROLES and job.get("posted_by") != current_user.get("sub"):
+        raise HTTPException(status_code=403, detail="Not authorized to match this job")
 
     enqueue_time = datetime.now().timestamp()
     request_id = getattr(request.state, "request_id", None)
@@ -2409,6 +2421,19 @@ def rematch_job(
     current_user: dict = Depends(get_current_user),
 ):
     """Queue a rematch computation without notifying students."""
+    job_key = f"job:{job_code}"
+    job_raw = redis_client.get(job_key)
+    if not job_raw:
+        raise HTTPException(status_code=404, detail="Job not found")
+    try:
+        job = json.loads(job_raw)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Malformed job record")
+
+    role = current_user.get("role")
+    if role not in ADMIN_ROLES and job.get("posted_by") != current_user.get("sub"):
+        raise HTTPException(status_code=403, detail="Not authorized to rematch this job")
+
     enq_time = datetime.now().timestamp()
     job_id = str(uuid.uuid4())
     request_id = getattr(request.state, "request_id", None)
