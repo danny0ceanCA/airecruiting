@@ -48,7 +48,7 @@ class DummyRedis:
         return val
 
     def mget(self, keys):
-        return [self.store.get(k) for k in keys]
+        return [self.get(k) for k in keys]
 
     def smembers(self, key):
         return self.sets.get(key, set())
@@ -69,7 +69,7 @@ class DummyRedis:
         return val
 
     def mget(self, keys):
-        return [self.store.get(k) for k in keys]
+        return [self.get(k) for k in keys]
 
     def flushdb(self):
         self.store.clear()
@@ -87,10 +87,32 @@ client = TestClient(app)
 def setup_module():
     main_app.redis_client.flushdb()
     init_default_admin()
+    main_app.vector_emails.clear()
+    main_app.vector_index = None
+    main_app.EMBEDDING_DIM = None
 
 
 def login_admin():
     resp = client.post("/login", json={"email": "admin@example.com", "password": "admin123"})
+    return resp.json()["token"]
+
+
+def register_user(email: str, role: str = "career", school_code: str = "1001"):
+    user = {
+        "email": email,
+        "first_name": "Test",
+        "last_name": "User",
+        "school_code": school_code,
+        "password": "pw",
+        "role": role,
+    }
+    client.post("/register", json=user)
+    key = f"user:{email}"
+    data = json.loads(main_app.redis_client.get(key))
+    data["approved"] = True
+    data["role"] = role
+    main_app.redis_client.set(key, json.dumps(data))
+    resp = client.post("/login", json={"email": email, "password": "pw"})
     return resp.json()["token"]
 
 
@@ -1451,6 +1473,82 @@ def test_student_note_multiple_posts_unassigned(monkeypatch):
     assert len(notes) == 2
     assert notes[0]["text"] == note1
     assert notes[-1]["text"] == note2
+
+
+def test_career_can_create_jobs_and_jobs_are_owned():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    career_email = "career1@example.com"
+    career_token = register_user(career_email, role="career")
+
+    job_payload = {
+        "job_title": "Career Posted Role",
+        "job_description": "Posted by career services",
+        "desired_skills": ["skill"],
+        "source": "career board",
+        "min_pay": 10.0,
+        "max_pay": 20.0,
+        "city": "City",
+        "state": "ST",
+        "lat": 0.0,
+        "lng": 0.0,
+    }
+
+    resp = client.post("/jobs", json=job_payload, headers={"Authorization": f"Bearer {career_token}"})
+    assert resp.status_code == 200
+    job_code = resp.json()["job_code"]
+
+    stored = json.loads(main_app.redis_client.get(f"job:{job_code}"))
+    assert stored["posted_by"] == career_email
+
+
+def test_job_listing_scoped_by_owner_for_non_admins():
+    main_app.redis_client.flushdb()
+    init_default_admin()
+
+    career1_email = "career1@example.com"
+    career2_email = "career2@example.com"
+    career1_token = register_user(career1_email, role="career")
+    career2_token = register_user(career2_email, role="career", school_code="1002")
+
+    def make_job(title):
+        return {
+            "job_title": title,
+            "job_description": "desc",
+            "desired_skills": ["python"],
+            "source": "career board",
+            "min_pay": 1.0,
+            "max_pay": 2.0,
+            "city": "City",
+            "state": "ST",
+            "lat": 0.0,
+            "lng": 0.0,
+        }
+
+    job_code1 = client.post(
+        "/jobs", json=make_job("Role 1"), headers={"Authorization": f"Bearer {career1_token}"}
+    ).json()["job_code"]
+    job_code2 = client.post(
+        "/jobs", json=make_job("Role 2"), headers={"Authorization": f"Bearer {career2_token}"}
+    ).json()["job_code"]
+
+    resp_career1 = client.get("/jobs", headers={"Authorization": f"Bearer {career1_token}"})
+    jobs_career1 = resp_career1.json()["jobs"]
+    assert len(jobs_career1) == 1
+    assert jobs_career1[0]["job_code"] == job_code1
+    assert jobs_career1[0]["posted_by"] == career1_email
+
+    resp_career2 = client.get("/jobs", headers={"Authorization": f"Bearer {career2_token}"})
+    jobs_career2 = resp_career2.json()["jobs"]
+    assert len(jobs_career2) == 1
+    assert jobs_career2[0]["job_code"] == job_code2
+    assert jobs_career2[0]["posted_by"] == career2_email
+
+    admin_token = login_admin()
+    resp_admin = client.get("/jobs", headers={"Authorization": f"Bearer {admin_token}"})
+    admin_job_codes = {job["job_code"] for job in resp_admin.json()["jobs"]}
+    assert {job_code1, job_code2}.issubset(admin_job_codes)
 
 
 def test_recruiter_can_add_note_for_assigned_student():

@@ -2280,6 +2280,8 @@ def create_job(job: JobRequest, current_user: dict = Depends(get_current_user)):
     data["required_license"] = license_to_code(data.get("required_license"))
     user_email = current_user.get("sub")
     user_role = current_user.get("role")
+    if user_role not in ADMIN_ROLES | {"recruiter"} | CAREER_STAFF_ROLES:
+        raise HTTPException(status_code=403, detail="Not authorized to create jobs")
     # Autopopulate source for recruiters if missing or blank
     if user_role == "recruiter" or not data.get("source"):
         raw_user = redis_client.get(f"user:{user_email}")
@@ -2387,6 +2389,18 @@ def match_job(
     """Launch a background matching job and return immediately."""
 
     job_id = str(uuid.uuid4())
+    job_key = f"job:{req.job_code}"
+    job_raw = redis_client.get(job_key)
+    if not job_raw:
+        raise HTTPException(status_code=404, detail="Job not found")
+    try:
+        job = json.loads(job_raw)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Malformed job record")
+
+    role = current_user.get("role")
+    if role not in ADMIN_ROLES and job.get("posted_by") != current_user.get("sub"):
+        raise HTTPException(status_code=403, detail="Not authorized to match this job")
 
     enqueue_time = datetime.now().timestamp()
     request_id = getattr(request.state, "request_id", None)
@@ -2407,6 +2421,19 @@ def rematch_job(
     current_user: dict = Depends(get_current_user),
 ):
     """Queue a rematch computation without notifying students."""
+    job_key = f"job:{job_code}"
+    job_raw = redis_client.get(job_key)
+    if not job_raw:
+        raise HTTPException(status_code=404, detail="Job not found")
+    try:
+        job = json.loads(job_raw)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Malformed job record")
+
+    role = current_user.get("role")
+    if role not in ADMIN_ROLES and job.get("posted_by") != current_user.get("sub"):
+        raise HTTPException(status_code=403, detail="Not authorized to rematch this job")
+
     enq_time = datetime.now().timestamp()
     job_id = str(uuid.uuid4())
     request_id = getattr(request.state, "request_id", None)
@@ -2732,7 +2759,9 @@ async def _perform_match_async(
         for chunk in chunked_pairs(resolved_student_keys, 500):
             chunk_keys = [key for _, key in chunk]
             raw_values = redis_client.mget(chunk_keys)
-            for (email, _), raw in zip(chunk, raw_values):
+            for (email, key), raw in zip(chunk, raw_values):
+                if not raw and hasattr(redis_client, "get"):
+                    raw = redis_client.get(key)
                 if not raw:
                     continue
                 student_hits += 1
@@ -2788,7 +2817,9 @@ async def _perform_match_async(
         for chunk in chunked_pairs(user_lookup_entries, 500):
             chunk_keys = [key for _, key in chunk]
             raw_values = redis_client.mget(chunk_keys)
-            for (candidate_index, _), raw in zip(chunk, raw_values):
+            for (candidate_index, key), raw in zip(chunk, raw_values):
+                if not raw and hasattr(redis_client, "get"):
+                    raw = redis_client.get(key)
                 if raw:
                     user_hits += 1
                 if raw:
@@ -3384,6 +3415,8 @@ def has_match_data(job_id: str):
 
 @app.get("/jobs")
 def list_jobs(current_user: dict = Depends(get_current_user)):
+    role = current_user.get("role")
+    user_email = current_user.get("sub")
     jobs = []
     for key in redis_client.scan_iter("job:*"):
         job_data = redis_client.get(key)
@@ -3395,6 +3428,9 @@ def list_jobs(current_user: dict = Depends(get_current_user)):
             job.setdefault("rejected_students", [])
             job.setdefault("student_notes", {})
             jobs.append(job)
+
+    if role not in ADMIN_ROLES:
+        jobs = [job for job in jobs if job.get("posted_by") == user_email]
 
     def _timestamp_value(job: dict[str, Any]) -> float:
         raw = job.get("timestamp")
@@ -3945,14 +3981,42 @@ def assign_student(data: dict, token_data: dict = Depends(get_current_user)):
     role = token_data.get("role")
     if role == "recruiter" and job.get("posted_by") != token_data.get("sub"):
         raise HTTPException(status_code=403, detail="Not authorized to modify this job")
-    if role not in ADMIN_ROLES | {"recruiter"}:
+    if role not in ADMIN_ROLES | {"recruiter"} | CAREER_STAFF_ROLES:
         raise HTTPException(status_code=403, detail="Admin privileges required")
+
+    student_key_resolved = resolve_student_key(student_email)
+    student_raw = redis_client.get(student_key_resolved) if student_key_resolved else None
+    student: dict[str, Any] | None = None
+    if student_raw:
+        try:
+            student = json.loads(student_raw)
+        except Exception:
+            raise HTTPException(status_code=500, detail="Corrupted profile data")
+
+    if role in CAREER_STAFF_ROLES:
+        user_raw = redis_client.get(user_key(token_data.get("sub")))
+        if not user_raw:
+            raise HTTPException(status_code=404, detail="User not found")
+        try:
+            user = json.loads(user_raw)
+        except Exception:
+            raise HTTPException(status_code=500, detail="Corrupted user data")
+        codes = _extract_institutional_codes(user)
+        if not codes:
+            raise HTTPException(status_code=400, detail="Institutional code required")
+        st_code = _student_institutional_code(student)
+        if not st_code or st_code.lower() not in {code.lower() for code in codes}:
+            raise HTTPException(status_code=403, detail="Not authorized")
+        if role == "career" and student and student.get("created_by") != token_data.get("sub"):
+            raise HTTPException(status_code=403, detail="Not authorized")
     job.setdefault("assigned_students", [])
+    new_assignment = False
     if student_email not in job["assigned_students"]:
         job["assigned_students"].append(student_email)
         _add_student_job(student_email, job_code, "assigned")
         _remove_student_job(student_email, job_code, "rejected")
         _remove_student_job(student_email, job_code, "uninterested")
+        new_assignment = True
 
     if note is not None:
         note_obj = {
@@ -3989,6 +4053,14 @@ def assign_student(data: dict, token_data: dict = Depends(get_current_user)):
     resp = {"message": f"Assigned {student_email}"}
     if note is not None:
         resp["notes"] = job["student_notes"][student_email]
+    if new_assignment:
+        try:
+            _send_candidate_notification(job, student_email)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.error("Notification email failed: %s", exc)
+            raise HTTPException(status_code=500, detail="Failed to send notification email")
     return resp
 
 
@@ -4298,24 +4370,12 @@ def mark_not_interested(data: dict, token_data: dict = Depends(get_current_user)
     return {"message": "Not interested recorded"}
 
 
-@app.post("/notify-interest")
-def notify_interest(data: dict, token_data: dict = Depends(get_current_user)):
-    """Notify a student that a recruiter is interested and send them a job description."""
-    job_code = data.get("job_code")
-    student_email = data.get("student_email")
-    if not job_code or not student_email:
-        raise HTTPException(status_code=400, detail="Missing job_code or student_email")
+def _send_candidate_notification(job: dict, student_email: str) -> None:
+    job_code = job.get("job_code")
+    if not job_code:
+        raise HTTPException(status_code=400, detail="Job code missing")
 
-    key = f"job:{job_code}"
-    raw = redis_client.get(key)
-    if not raw:
-        raise HTTPException(status_code=404, detail="Job not found")
-
-    job = json.loads(raw)
-    if student_email not in job.get("assigned_students", []) and student_email not in job.get("placed_students", []):
-        raise HTTPException(status_code=400, detail="Student not assigned to job")
-
-    desc_html, _ = generate_job_description_html(job_code, student_email)
+    generate_job_description_html(job_code, student_email)
 
     skey = resolve_student_key(student_email)
     student_raw = redis_client.get(skey) if skey else None
@@ -4388,9 +4448,29 @@ def notify_interest(data: dict, token_data: dict = Depends(get_current_user)):
             html_body=html_body,
             track_token=token,
         )
-    except Exception as e:
-        logger.error("Notification email failed: %s", e)
+    except Exception as exc:
+        logger.error("Notification email failed: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to send notification email")
+
+
+@app.post("/notify-interest")
+def notify_interest(data: dict, token_data: dict = Depends(get_current_user)):
+    """Notify a student that a recruiter is interested and send them a job description."""
+    job_code = data.get("job_code")
+    student_email = data.get("student_email")
+    if not job_code or not student_email:
+        raise HTTPException(status_code=400, detail="Missing job_code or student_email")
+
+    key = f"job:{job_code}"
+    raw = redis_client.get(key)
+    if not raw:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    job = json.loads(raw)
+    if student_email not in job.get("assigned_students", []) and student_email not in job.get("placed_students", []):
+        raise HTTPException(status_code=400, detail="Student not assigned to job")
+
+    _send_candidate_notification(job, student_email)
 
     return {"message": "Notification sent"}
 
